@@ -1,10 +1,11 @@
+import {validateMono, type MonoConfig} from './mono.ts';
 import {curveBend, curveWord} from './envelopeCurve.ts';
 import {defaultFx,validateFx,type FxRack,modulationSeconds} from './schema.ts';
 import {fxRoutePatch} from './fxRouting.ts';
 // Wavetable patch: mirrors Advanced src/synth/wavetable_patch.h. Normalized U16
 // parameters, two envelope/LFO banks in the Physical Strings layout and sparse
 // source -> parameter routes, carried on the generic engine transport.
-export const wavetableEngine = 7, wavetableSchema = 4;  // 4: per-segment envelope curves
+export const wavetableEngine = 7, wavetableSchema = 5;  // 5: pitch controls, second oscillator and phase modulation
 export const P = {
   Frame: 0, FrameSpread: 1, Unison: 2, Detune: 3, Width: 4, WarpMode: 5, WarpAmount: 6, WarpBias: 7, Brightness: 8,
   Noise: 9, Transient: 10, TransientShape: 11, Sub: 12, SubOctave: 13, SubShape: 14,
@@ -13,9 +14,13 @@ export const P = {
   Resonator: 24, ResonatorMix: 25, ResonatorTune: 26, ResonatorDecay: 27,
   Level: 28, Classic: 29, EdgeBlend: 30, PhaseMode: 31, TableLow: 32, TableHigh: 33,
   // Amp envelope segment curves: 32768 is a straight line (envelopeCurve.ts).
-  AmpAttackCurve: 34, AmpDecayCurve: 35, AmpReleaseCurve: 36
+  AmpAttackCurve: 34, AmpDecayCurve: 35, AmpReleaseCurve: 36,
+  // Pitch: coarse +-24 semitones, fine +-100 cents (32768 unchanged).
+  Coarse: 37, Fine: 38, SubCoarse: 39, SubFine: 40,
+  // Second oscillator and its phase modulation of the wavetable (0..1 cycle).
+  Osc2Shape: 41, Osc2Level: 42, Osc2Coarse: 43, Osc2Fine: 44, PhaseMod: 45
 } as const;
-export const parameterCount = 37, modSettingCount = 18, routeCount = 16;
+export const parameterCount = 46, modSettingCount = 18, routeCount = 16;
 export const editCount = parameterCount + 2 * modSettingCount, wordCount = editCount + 2 * routeCount;
 export const S = {Velocity: 0, Pressure: 1, Release: 2, TiltX: 3, TiltY: 4, Env1: 5, Lfo1: 6, Env2: 7, Lfo2: 8, Joystick: 9, Pedal: 10} as const;
 export const sourceCount = 11;
@@ -28,20 +33,25 @@ export const resonatorNames = ['Off', 'Comb', 'Bell', 'Marimba'] as const;
 export const filterNames = ['Low-pass', 'Band-pass', 'High-pass'] as const;
 export const transientNames = ['Pick', 'Mallet', 'Breath'] as const;
 export const shapeNames = ['Sine', 'Triangle', 'Saw', 'Square'] as const;
-const optionCounts: Record<number, number> = {[P.Unison]: 7, [P.WarpMode]: 5, [P.TransientShape]: 3, [P.SubOctave]: 2, [P.SubShape]: 2, [P.FilterMode]: 3, [P.Resonator]: 4, [P.Classic]: 2,[P.PhaseMode]:3};
+const optionCounts: Record<number, number> = {[P.Unison]: 7, [P.WarpMode]: 5, [P.TransientShape]: 3, [P.SubOctave]: 2, [P.SubShape]: 2, [P.FilterMode]: 3, [P.Resonator]: 4, [P.Classic]: 2,[P.PhaseMode]:3,[P.Osc2Shape]:5};
 export const options = (id: number) => optionCounts[id] ?? 0;
 export const discrete = (id: number) => options(id) !== 0;
 export function option(id: number, value: number) { const n = options(id); return n < 2 ? 0 : Math.floor((value * (n - 1) + 32767) / 65535); }
 export function optionValue(id: number, choice: number) { const n = options(id); return n < 2 ? 0 : Math.floor(choice * 65535 / (n - 1)); }
-export const modulatable = (id: number, _source?: number) => id >= 0 && id < P.TableLow && !discrete(id) && id !== P.Classic;
+export const modulatable = (id: number, _source?: number) => id >= 0 && (id < P.TableLow || (id >= P.Coarse && id < parameterCount)) && !discrete(id) && id !== P.Classic;
+export const osc2Names = ['Sine', 'Triangle', 'Saw', 'Square', 'Noise'] as const;
+/** Coarse +-24 semitones (32768 centered); whole-semitone base values. */
+export const coarseSemitones = (v: number) => (v - 32768) / 32767 * 24;
+export const coarseValue = (semitones: number) => Math.round(32768 + Math.max(-24, Math.min(24, Math.round(semitones))) * 32767 / 24);
 export const validModSetting = (id: number, v: number) => Number.isInteger(v) && v >= 0 && v <= 65535 && ((id !== 7 && id !== 10 && id !== 14) || v === 0 || v === 65535) && (id !== 9 || v % 13107 === 0);
 /** Bipolar: signed sources move the target both ways around its base value. */
 export const bipolarSource = (source: number, p?: WavetablePatch) => source === S.TiltX || source === S.TiltY || source === S.Joystick || ((source === S.Lfo1 || source === S.Lfo2) && !p?.mod[source === S.Lfo1 ? 0 : 1][14]);
 
 export interface WavetableRoute {source: number; destination: number; depth: number}
 export interface WavetablePatch {parameters: number[]; mod: [number[], number[]]; routes: WavetableRoute[]}
-export const wavetableFormat = 'hexboard.wavetable.v4';
-export interface WavetablePreset extends WavetablePatch {format: typeof wavetableFormat; name: string; effects: FxRack; table?: {id:string;name:string}}
+export const wavetableFormat = 'hexboard.wavetable.v5';
+/** mono: Physical Strings' shared voice mode, priority and glide. */
+export interface WavetablePreset extends WavetablePatch {format: typeof wavetableFormat; name: string; effects: FxRack; table?: {id:string;name:string}; mono?: MonoConfig}
 /** New wavetable sounds start with the two-voice Ensemble in the shared FX rack. */
 export const wavetableDefaultFx = (): FxRack => ({...defaultFx(), order: [6]});
 const unused = (): WavetableRoute => ({source: sourceCount, destination: 0, depth: 0});
@@ -65,16 +75,21 @@ export function initialWavetable(): WavetablePatch {
       10650, 37740, 52428, 37740,
       0, 26000, 0, 40000,
       46000, 0, 65535, 0, 0, 0,
-      32768, 32768, 32768],
+      32768, 32768, 32768,
+      32768, 32768, 32768, 32768, 0, 0, 32768, 32768, 0],
     mod: [[...defaultMod], [...defaultMod]], routes
   };
 }
 function validTableRef(value:unknown):{id:string;name:string}|undefined {if(value===undefined)return undefined;const v=value as {id?:unknown;name?:unknown};if(!v||typeof v.id!=='string'||!v.id||v.id.length>100||typeof v.name!=='string'||!v.name||v.name.length>80)throw Error('Invalid table reference.');return {id:v.id,name:v.name};}
 export const tableCrc=(p:WavetablePatch)=>(p.parameters[P.TableLow]|p.parameters[P.TableHigh]<<16)>>>0;
 // v3 sounds predate envelope curves: add straight amp curves and bank curve words.
+// v4 adds straight curves; v5 adds centered pitch, a silent second oscillator and no phase modulation.
 function upgradeV3(p: Partial<WavetablePreset> | undefined): Partial<WavetablePreset> | undefined {
-  if (!p || (p.format as string) !== 'hexboard.wavetable.v3' || p.parameters?.length !== 34 || !p.mod || p.mod.some(m => m.length !== 16)) return p;
-  return {...p, format: wavetableFormat, parameters: [...p.parameters, 32768, 32768, 32768], mod: p.mod.map(m => [...m, m[6], m[6]]) as [number[], number[]]};
+  if (p && (p.format as string) === 'hexboard.wavetable.v3' && p.parameters?.length === 34 && p.mod && p.mod.every(m => m.length === 16))
+    p = {...p, format: 'hexboard.wavetable.v4' as typeof wavetableFormat, parameters: [...p.parameters, 32768, 32768, 32768], mod: p.mod.map(m => [...m, m[6], m[6]]) as [number[], number[]]};
+  if (p && (p.format as string) === 'hexboard.wavetable.v4' && p.parameters?.length === 37)
+    p = {...p, format: wavetableFormat, parameters: [...p.parameters, 32768, 32768, 32768, 32768, 0, 0, 32768, 32768, 0]};
+  return p;
 }
 export function wavetableFromUnknown(value: unknown): WavetablePreset {
   const p = upgradeV3(value as Partial<WavetablePreset> | undefined);
@@ -82,10 +97,10 @@ export function wavetableFromUnknown(value: unknown): WavetablePreset {
   if (typeof p.name !== 'string' || !p.name.trim() || p.name.length > 80) throw Error('Give the preset a name.');
   const patch = {parameters: [...(p.parameters ?? [])], mod: [[...(p.mod?.[0] ?? [])], [...(p.mod?.[1] ?? [])]] as [number[], number[]], routes: (p.routes ?? []).map(r => ({...r}))};
   if (!validWavetable(patch)) throw Error('This wavetable preset has invalid settings or routes.');
-  return {format: wavetableFormat, name: p.name.trim(), table:validTableRef(p.table), effects:validateFx(p.effects ?? wavetableDefaultFx()), ...patch};
+  return {format: wavetableFormat, name: p.name.trim(), table:validTableRef(p.table), effects:validateFx(p.effects ?? wavetableDefaultFx()), mono: validateMono(p.mono), ...patch};
 }
-export const wavetablePreset = (name: string, patch: WavetablePatch): WavetablePreset => ({format: wavetableFormat, name, table:validTableRef('table' in patch ? patch.table : undefined), effects:validateFx('effects' in patch ? patch.effects : wavetableDefaultFx()), parameters: [...patch.parameters], mod: [[...patch.mod[0]], [...patch.mod[1]]], routes: patch.routes.map(r => ({...r}))});
-export const sameWavetable = (a: WavetablePreset, b: WavetablePreset) => a.name === b.name && JSON.stringify([a.parameters, a.mod, a.routes,a.effects,a.table]) === JSON.stringify([b.parameters, b.mod, b.routes,b.effects,b.table]);
+export const wavetablePreset = (name: string, patch: WavetablePatch): WavetablePreset => ({format: wavetableFormat, name, table:validTableRef('table' in patch ? patch.table : undefined), effects:validateFx('effects' in patch ? patch.effects : wavetableDefaultFx()), mono: validateMono('mono' in patch ? patch.mono : undefined), parameters: [...patch.parameters], mod: [[...patch.mod[0]], [...patch.mod[1]]], routes: patch.routes.map(r => ({...r}))});
+export const sameWavetable = (a: WavetablePreset, b: WavetablePreset) => a.name === b.name && JSON.stringify([a.parameters, a.mod, a.routes,a.effects,a.table,a.mono]) === JSON.stringify([b.parameters, b.mod, b.routes,b.effects,b.table,b.mono]);
 
 // Word layout: parameters, Mod 1, Mod 2, then per route source << 8 | destination
 // and depth + 65536.
@@ -120,6 +135,8 @@ export function effectiveWavetable(p: WavetablePatch, sources: number[]): number
   return values.map(v => Math.max(0, Math.min(1, v)));
 }
 
+const semis = (v: number) => { const n = coarseSemitones(v), r = Math.round(n * 10) / 10; return `${r > 0 ? '+' : ''}${Number.isInteger(r) ? r : r.toFixed(1)} st`; };
+const cents = (v: number) => { const c = Math.round((v - 32768) / 32767 * 100); return `${c > 0 ? '+' : ''}${c}¢`; };
 const pct = (v: number) => `${Math.round(v / 65535 * 100)}%`;
 const seconds = (v: number) => { const t = modulationSeconds(v); return t === 0 ? '0 ms' : t < 1 ? `${Math.round(t * 1000)} ms` : `${t.toFixed(2)} s`; };
 export const cutoffHz = (v: number) => 20 * 2 ** (9.813781 * v);
@@ -164,7 +181,10 @@ export const wavetableParameters: ParameterInfo[] = [
   {name: 'Start phase', describe: v => ['Random','Reset','Evenly spread'][option(P.PhaseMode,v)]},
   {name: 'Table identity', describe: v => String(v)},
   {name: 'Table identity', describe: v => String(v)},
-  ...(['Attack', 'Decay', 'Release'] as const).map(name => ({name: `${name} curve`, describe: (v: number) => { const b = curveBend(v); return b === 0 ? 'Straight' : `${b < 0 ? 'Fast' : 'Slow'} ${Math.round(Math.abs(b) * 100)}%`; }}))
+  ...(['Attack', 'Decay', 'Release'] as const).map(name => ({name: `${name} curve`, describe: (v: number) => { const b = curveBend(v); return b === 0 ? 'Straight' : `${b < 0 ? 'Fast' : 'Slow'} ${Math.round(Math.abs(b) * 100)}%`; }})),
+  {name: 'Coarse', describe: semis}, {name: 'Fine', describe: cents}, {name: 'Sub coarse', describe: semis}, {name: 'Sub fine', describe: cents},
+  {name: 'Osc 2 shape', describe: v => osc2Names[option(P.Osc2Shape, v)]}, {name: 'Osc 2 level', describe: pct}, {name: 'Osc 2 coarse', describe: semis}, {name: 'Osc 2 fine', describe: cents},
+  {name: 'Phase mod', describe: v => `${(v / 65535 * 360).toFixed(0)}° peak`}
 ];
 export function warpAmountDescription(mode: number, v: number) { return mode === 4 ? `×${(1 + 7 * v / 65535).toFixed(2)} sync` : pct(v); }
 

@@ -1,3 +1,5 @@
+import {MonoControls} from './MonoControls.tsx';
+import {defaultMono, type MonoConfig} from './mono.ts';
 import {CurvedEnvelope} from './CurvedEnvelope.tsx';
 import {curveBend, curveWord} from './envelopeCurve.ts';
 import {factoryTables} from './wavetable/factory.ts';
@@ -26,7 +28,7 @@ import {targetingEscape, sourceClickTool} from './modulationTargeting.ts';
 import {RouteChip, RouteMenu, dropDepth, useSourceDrag} from './modulationGestures.tsx';
 import {type FxRack,modulationRate, modulationSeconds} from './schema.ts';
 import {
-  P, S, modSettingCount, factoryWavetablePresets, filterNames, modulatable, option, optionValue, parameterCount,
+  P, S, modSettingCount, osc2Names, coarseValue, coarseSemitones, factoryWavetablePresets, filterNames, modulatable, option, optionValue, parameterCount,
   resonatorNames, tableCrc, routeDepth, routesUsed, sameWavetable, sourceCount, transientNames, warpAmountDescription, warpNames, wavetableEngine,
   wavetableFromUnknown, wavetableParameters, wavetablePreset, wavetableSourceColors, wavetableSourceShort, wavetableSources, withRoute, bipolarSource, type WavetablePreset
 } from './wavetableSchema.ts';
@@ -43,8 +45,10 @@ const store = (key: string, value: unknown) => { try { writeStoredText(localStor
 function readLibrary(): WavetablePreset[] {
   try { const raw = localStorage.getItem(libraryKey); return raw ? (JSON.parse(raw) as unknown[]).flatMap(p => { try { return [wavetableFromUnknown(p)]; } catch { return []; } }) : []; } catch { return []; }
 }
+// Controls whose neutral value is the centre (double-click resets there).
+const centredParameters = new Set<number>([P.Coarse, P.Fine, P.SubCoarse, P.SubFine, P.Osc2Coarse, P.Osc2Fine, P.FilterEnvelope, P.AmpAttackCurve, P.AmpDecayCurve, P.AmpReleaseCurve]);
 const stageOrder: {id: WavetableStage; label: string}[] = [
-  {id: 'oscillator', label: 'Oscillator'}, {id: 'warp', label: 'Warp'}, {id: 'unison', label: 'Unison'}, {id: 'layers', label: 'Layers'},
+  {id: 'oscillator', label: 'Oscillator'}, {id: 'osc2', label: 'Osc 2'}, {id: 'warp', label: 'Warp'}, {id: 'unison', label: 'Unison'}, {id: 'layers', label: 'Layers'},
   {id: 'resonator', label: 'Resonator'}, {id: 'filter', label: 'Filter'}, {id: 'amp', label: 'Amp'}, {id: 'output', label: 'Output'}
 ];
 function modText(id: number, v: number) {
@@ -127,9 +131,13 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
     // The board admits a patch against the rack it holds; clear the previous
     // sound's rack first so the new patch and rack are each checked once.
     await client.effects({...next.effects, order: [], routes: next.effects.routes?.map(() => 0)});
+    // Mono shares Physical Strings' main-owned setting; a voice-mode change needs a stopped synth.
+    const mono=next.mono??defaultMono(),held=await client.monoSettings();let restart=false;
+    if((held.flags&3)!==(mono.flags&3)&&(await client.status()).state!=='stopped'){await client.stopAndWait();restart=state.state==='playing';}
+    await client.monoSettings(mono);
     await client.applyWavetable(next);
     await client.effects(next.effects);
-    return (start||(tableChanged&&state.state==='playing')) && (await client.status()).state !== 'playing' ? client.start(wavetableEngine) : client.status();
+    return (start||restart||(tableChanged&&state.state==='playing')) && (await client.status()).state !== 'playing' ? client.start(wavetableEngine) : client.status();
   }, start ? 'Starting wavetable…' : 'Loading sound…') : Promise.resolve();
   const apply = (next: WavetablePreset) => { retainedDraft.current = true; resetPreset(next); setTool('value'); setLocked(false); setRouteMenu(undefined); if (onDevice) void loadOnDevice(next, false); };
   const restore = (direction: 'undo' | 'redo') => { setRouteMenu(undefined); const next = direction === 'undo' ? undo() : redo(); if (next && onDevice) void loadOnDevice(next, false); };
@@ -143,7 +151,15 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
     retainedDraft.current=true;setPreset(p=>({...p,effects}));
     queue('fx',()=>client!.effects(effects));
   };
-  const setParameter = (id: number, value: number) => {
+  const setMono = (mono: MonoConfig) => {
+    const modeChanged = (mono.flags & 3) !== ((preset.mono?.flags ?? 0) & 3), next = {...preset, mono};
+    retainedDraft.current = true; setPreset(x => ({...x, mono}));
+    if (!onDevice) return;
+    if (modeChanged) void loadOnDevice(next, false); else queue('mono', () => client!.monoSettings(mono));
+  };
+  const setParameter = (id: number, input: number) => {
+    // Coarse pitch bases snap to whole semitones; modulation depth stays continuous.
+    const value = id === P.Coarse || id === P.SubCoarse || id === P.Osc2Coarse ? coarseValue(coarseSemitones(input)) : input;
     retainedDraft.current = true; setPreset(x => ({...x, parameters: x.parameters.map((v, i) => i === id ? value : v)}));
     queue(`p${id}`, () => client!.editWavetable(id, value));
   };
@@ -185,7 +201,7 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
       onPointerEnter={() => setHoverTarget(id)} onPointerLeave={() => setHoverTarget(undefined)}>
       <strong>{label}</strong>
       <PreviewValues ids={[id]}>{([effective]) => <><div className="knob-wrap">
-        <Knob key={modulating ? `route-${source}` : 'value'} label={modulating ? `${wavetableSources[source]} to ${label}` : label} value={value} min={modulating ? -65536 : 0} max={modulating ? 65536 : 65535}
+        <Knob key={modulating ? `route-${source}` : 'value'} label={modulating ? `${wavetableSources[source]} to ${label}` : label} value={value} min={modulating ? -65536 : 0} max={modulating ? 65536 : 65535} neutral={!modulating && centredParameters.has(id) ? 32768 : undefined} keyStep={!modulating && (id === P.Coarse || id === P.SubCoarse || id === P.Osc2Coarse) ? 32767 / 24 : undefined}
           disabled={busy || full || (tool === 'modulate' && !canRoute)} baseValue={p[id]} effectiveValue={effective} routes={routes}
           onRouteDepth={(i, d) => { setRoute(id, i, d); }} onRouteMenu={menu} alternate={alternate}
           onChange={v => modulating ? setRoute(id, source, Math.round(v)) : setParameter(id, Math.round(v))} onRelease={() => { if (modulating && !locked) setTool('value'); }}/>
@@ -207,7 +223,7 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
   const copies = option(P.Unison, p[P.Unison]) + 1, warpMode = option(P.WarpMode, p[P.WarpMode]), resonator = option(P.Resonator, p[P.Resonator]);
   const filterBypassed = filterOpen(preset);
   const flow = stageOrder.map(s => ({...s, cost: pct(cost.stages[s.id]),
-    active: s.id === 'warp' ? warpMode > 0 : s.id === 'unison' ? copies > 1 : s.id === 'layers' ? p[P.Noise] > 0 || p[P.Transient] > 0 : s.id === 'resonator' ? resonator > 0 : s.id === 'filter' ? !filterBypassed : s.id === 'output' ? true : true}));
+    active: s.id === 'osc2' ? p[P.Osc2Level] > 0 || p[P.PhaseMod] > 0 : s.id === 'warp' ? warpMode > 0 : s.id === 'unison' ? copies > 1 : s.id === 'layers' ? p[P.Noise] > 0 || p[P.Transient] > 0 : s.id === 'resonator' ? resonator > 0 : s.id === 'filter' ? !filterBypassed : s.id === 'output' ? true : true}));
   const select = (id: string) => { setFocused(id); document.getElementById(`wt-stage-${id}`)?.scrollIntoView({behavior: 'smooth', block: 'nearest'}); window.setTimeout(() => setFocused(f => f === id ? undefined : f), 1200); };
   const editorBank = sourceEditor === undefined ? 0 : sourceEditor === S.Env1 || sourceEditor === S.Lfo1 ? 0 : 1;
   const hint = tool === 'modulate' ? `${wavetableSources[source]}${locked ? ' locked' : ''} → drag knobs · ${locked ? 'click it again or Esc to finish' : 'Shift-click to lock'}` : `Drag knobs or pictures · drag a source onto a knob · ⌥/Alt-drag adds ${wavetableSourceShort[source]} · drag a route ring or chip for depth`;
@@ -223,7 +239,7 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
       if (!e.metaKey && !e.ctrlKey && !e.altKey) beginEdit();
     }}>
     {importing&&<WavetableImporter initial={importing==='edit'?selectedTable:undefined} onClose={()=>setImporting(undefined)} onUse={asset=>void useTable(asset)}/>}
-    <PerformanceRow transport={transport} disabled={busy}/><ControllerControls transport={transport} disabled={busy} onState={preview.setController}/>
+    <PerformanceRow transport={transport} disabled={busy} voiceControls={<MonoControls value={preset.mono ?? defaultMono()} disabled={busy} onChange={setMono}/>}/><ControllerControls transport={transport} disabled={busy} onState={preview.setController}/>
 
     <div className="modulation-toolbar" role="toolbar" aria-label="Modulation tools">
       <div className="sound-history" role="group" aria-label="Sound edit history"><button type="button" disabled={!canUndo || busy} title="Undo · Ctrl/⌘ Z" onClick={() => restore('undo')}>Undo</button><button type="button" disabled={!canRedo || busy} title="Redo · Ctrl/⌘ Shift Z" onClick={() => restore('redo')}>Redo</button></div>
@@ -271,8 +287,12 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
         {stage('oscillator', 'Oscillator', true, <>
           <div className="wt-table-viewer" data-table-missing={!!tableCrc(preset)&&!selectedTable||undefined}><div className="wt-table-picker"><select aria-label="Wavetable table" disabled={busy} value={preset.table?.id??'basic'} onChange={e=>{const id=e.target.value;if(id==='import'){setImporting('new');return;}if(id==='edit'){setImporting('edit');return;}if(id==='export'){if(selectedTable)download(exportTable(selectedTable),`${selectedTable.name}.hexwav.json`);return;}if(id==='basic')chooseTable();else void getTable(id).then(t=>{if(!t)throw Error('The table is no longer in this browser.');chooseTable(t);}).catch(fail);}}><option value="basic">Basic Shapes</option>{['HexBoard Classic','Classic source cycles'].map(group=><optgroup key={group} label={group}>{factoryTables.filter(t=>t.group===group).map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</optgroup>)}{tables.length>0&&<optgroup label="My tables">{tables.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</optgroup>}{preset.table&&![...factoryTables,...tables].some(t=>t.id===preset.table?.id)&&<option value={preset.table.id}>{preset.table.name}</option>}<option value="import">Import WAV…</option>{selectedTable&&<><option value="edit">Edit import settings…</option><option value="export">Export table…</option></>}</select></div>{!!tableCrc(preset)&&!selectedTable&&<div className="wt-table-unavailable">This sound uses a custom table. Import its sound file or original WAV to preview it.</div>}
           <PreviewValues ids={[P.Frame, P.FrameSpread, P.WarpAmount, P.Brightness]}>{([frame, spread, amount, brightness]) => <TableTerrain table={selectedTable?.prepared} frame={p[P.Frame] / 65535} live={frame} spread={spread} copies={copies} warpMode={warpMode} warpAmount={amount} brightness={brightness} disabled={busy || tool !== 'value'} onFrame={v => setParameter(P.Frame, v)}/>}</PreviewValues></div>
-          <div className="knob-bank">{control(P.Frame,'Frame',tableCrc(preset)?v=>`${(v/65535*15+1).toFixed(1)} / 16`:undefined)}{control(P.FrameSpread)}{control(P.Brightness)}</div>
+          <div className="knob-bank">{control(P.Frame,'Frame',tableCrc(preset)?v=>`${(v/65535*15+1).toFixed(1)} / 16`:undefined)}{control(P.FrameSpread)}{control(P.Brightness)}{control(P.Coarse)}{control(P.Fine)}</div>
         </>, 'Scan the table with Frame · pressure moves it by default. Spread fans unison copies across neighbouring frames.')}
+        {stage('osc2', 'Osc 2', p[P.Osc2Level] > 0 || p[P.PhaseMod] > 0, <>
+          {choice(P.Osc2Shape, osc2Names, 'Osc 2 shape')}
+          <div className="knob-bank">{control(P.Osc2Level, 'Level')}{control(P.Osc2Coarse, 'Coarse')}{control(P.Osc2Fine, 'Fine')}{control(P.PhaseMod)}</div>
+        </>, 'Mix it in, or raise Phase mod to bend the wavetable’s phase with it. Coarse 0, +12, +19 and +24 give harmonic ratios.')}
         {stage('warp', 'Warp', warpMode > 0, <>
           {choice(P.WarpMode, warpNames, 'Warp mode')}
           <PreviewValues ids={[P.WarpAmount, P.Frame, P.Brightness]}>{([amount, frame, brightness]) => <WarpScope table={selectedTable?.prepared} mode={warpMode} amount={amount} frame={frame} brightness={brightness}/>}</PreviewValues>
@@ -285,7 +305,7 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
         </>)}
         {stage('layers', 'Layers', p[P.Noise] > 0 || p[P.Transient] > 0 || p[P.Sub] > 0, <>
           <div className="wt-layer"><div className="knob-bank">{control(P.Noise)}{control(P.Transient, 'Attack transient')}</div>{choice(P.TransientShape, transientNames, 'Transient shape')}</div>
-          <div className="wt-layer wt-sub"><div className="knob-bank">{control(P.Sub)}</div>{choice(P.SubOctave, ['−1 oct', '−2 oct'], 'Sub octave')}{choice(P.SubShape, ['Sine', 'Triangle'], 'Sub shape')}<small>Clean sub skips the resonator, filter and FX rack.</small></div>
+          <div className="wt-layer wt-sub"><div className="knob-bank">{control(P.Sub)}{control(P.SubCoarse, 'Coarse')}{control(P.SubFine, 'Fine')}</div>{choice(P.SubOctave, ['−1 oct', '−2 oct'], 'Sub octave')}{choice(P.SubShape, ['Sine', 'Triangle'], 'Sub shape')}<small>Clean sub skips the resonator, filter and FX rack.</small></div>
         </>)}
         {stage('resonator', 'Resonator', resonator > 0, <>
           {choice(P.Resonator, resonatorNames, 'Resonator')}

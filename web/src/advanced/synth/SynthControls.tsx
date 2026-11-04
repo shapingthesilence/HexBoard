@@ -34,7 +34,7 @@ function ringAt(el: Element, x: number, y: number, count: number) {
     for (let slot = 1; slot < count; ++slot) if (Math.abs(d - ringRadius(slot, count)) < Math.abs(d - ringRadius(best, count))) best = slot;
     return best;
 }
-export function Knob({ label, value, min = 0, max = 65535, disabled, onChange, onRelease, baseValue, effectiveValue, routes = [], onRouteDepth, onRouteMenu, alternate }: {
+export function Knob({ label, value, min = 0, max = 65535, disabled, onChange, onRelease, baseValue, effectiveValue, routes = [], onRouteDepth, onRouteMenu, alternate, neutral, keyStep }: {
     label: string;
     value: number;
     min?: number;
@@ -51,6 +51,10 @@ export function Knob({ label, value, min = 0, max = 65535, disabled, onChange, o
     onRouteMenu?: (source: number, x: number, y: number) => void;
     /** Option/Alt-drag edits this route depth instead of the value. */
     alternate?: { value: number; onChange: (depth: number) => void };
+    /** Double-click value: centre for centred controls; default 0 for signed ranges, else the minimum (off). */
+    neutral?: number;
+    /** Arrow-key step (for example one semitone); default 1% (0.1% with Shift). */
+    keyStep?: number;
 }) {
     const base = baseValue === undefined ? (value - min) / (max - min) : baseValue / 65535;
     const liveDot = knobRingPoint(effectiveValue ?? base, 34);
@@ -91,10 +95,18 @@ export function Knob({ label, value, min = 0, max = 65535, disabled, onChange, o
       onPointerUp={e => { if (e.currentTarget.hasPointerCapture(e.pointerId))
         e.currentTarget.releasePointerCapture(e.pointerId); finish(); }} onPointerCancel={finish} onLostPointerCapture={finish} onBlur={finish}
       onPointerLeave={e => e.currentTarget.removeAttribute("data-ring-hover")}
+      onDoubleClick={e => {
+        if (disabled) return; e.preventDefault();
+        // On a ring, clear that modulation; elsewhere return the knob to neutral.
+        const ring = onRouteDepth ? ringRoute(e) : undefined;
+        if (ring) { onRouteDepth!(ring.i, 0); return; }
+        const target = neutral ?? (min < 0 && max > 0 ? 0 : min);
+        if (target !== value) { onChange(target); onRelease?.(); }
+      }}
       onContextMenu={e => { const ring = onRouteMenu ? ringRoute(e) : undefined; if (ring) { e.preventDefault(); onRouteMenu!(ring.i, e.clientX, e.clientY); } }}
       onKeyDown={e => { if (!disabled && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
         e.preventDefault();
-        change(clamp(e.key === 'Home' ? min : e.key === 'End' ? max : value + (['ArrowUp', 'ArrowRight'].includes(e.key) ? 1 : -1) * (max - min) / (e.shiftKey ? 1000 : 100)));
+        change(clamp(e.key === 'Home' ? min : e.key === 'End' ? max : value + (['ArrowUp', 'ArrowRight'].includes(e.key) ? 1 : -1) * (keyStep ?? (max - min) / (e.shiftKey ? 1000 : 100))));
     } }} onKeyUp={finish}>
     <svg className="knob-rings" viewBox={knobRingViewBox} aria-hidden="true">
       {routes.flatMap((r, slot) => modulationRings(r.depth, 26 + slot * (routes.length <= 4 ? 3 : 2), base, r.bipolar ?? (r.i === 3 || r.i === 4 || r.i === 6)).map((arc, side) => {
