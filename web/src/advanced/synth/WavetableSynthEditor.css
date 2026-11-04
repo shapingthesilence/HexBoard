@@ -79,3 +79,31 @@
 .wt-table-viewer{position:relative}.wt-table-picker{position:absolute;z-index:2;top:.45rem;right:.45rem;max-width:55%}.wt-table-picker select{max-width:100%;border-radius:1rem;background:var(--surface,#171723);font-size:.8rem;padding:.3rem .6rem}
 .wt-import-dialog{width:min(720px,calc(100vw - 2rem));max-height:90vh;overflow:auto;border:1px solid var(--border,#50435f);border-radius:1rem;padding:1.2rem;background:var(--surface,#171723);color:var(--text,#eee);box-shadow:0 20px 100px #0009}.wt-import-dialog::backdrop{background:#0009}.wt-import-dialog header,.wt-import-dialog footer,.wt-preview-legend{display:flex;align-items:center;justify-content:space-between;gap:.75rem}.wt-import-dialog h3{margin:.2rem 0}.wt-import-dialog label{display:flex;align-items:center;gap:.65rem;margin:.75rem 0}.wt-import-dialog label>input:not([type=checkbox]):not([type=range]),.wt-import-dialog select{min-width:0;flex:1}.wt-import-dialog input,.wt-import-dialog select{padding:.4rem;border-radius:.4rem;border:1px solid var(--border,#50435f);background:var(--surface,#171723);color:inherit}.wt-import-dialog input[type=range]{flex:1}.wt-import-preview{margin:1rem 0;border:1px solid var(--border,#50435f);border-radius:.65rem;padding:.5rem}.wt-import-scope{width:100%;height:auto}.wt-preview-legend{font-size:.75rem;flex-wrap:wrap;opacity:.8}.wt-import-options{display:grid;grid-template-columns:1fr 1fr;gap:0 1rem}.wt-frame-range{display:flex;gap:.6rem;grid-column:1/-1}.wt-frame-range label{flex:1}.wt-frame-range input{width:5rem}.wt-import-dialog details{margin:1rem 0}.wt-import-dialog summary{cursor:pointer}.wt-import-dialog footer{justify-content:flex-end;margin-top:1rem}.wt-import-dialog .error{color:#ff9aa9}@media(max-width:600px){.wt-import-options{grid-template-columns:1fr}.wt-preview-legend output{width:100%}.wt-table-picker{max-width:65%}.wt-import-dialog label{flex-wrap:wrap}}
 .wt-table-unavailable{position:absolute;inset:3rem 1rem 1rem;z-index:1;display:grid;place-content:center;text-align:center;background:var(--surface,#171723);border-radius:.5rem;padding:1rem}.wt-table-viewer[data-table-missing] canvas{visibility:hidden}
+
+/* Import controls use the same violet identity as the wavetable viewer. */
+.wavetable-editor .wt-import-dialog {
+  background: var(--synth-scope);
+  border-color: var(--brand);
+  accent-color: var(--brand);
+  color-scheme: light;
+}
+:root[data-theme="dark"] .wavetable-editor .wt-import-dialog { color-scheme: dark; }
+.wavetable-editor .wt-import-dialog h3 { color: var(--synth-1); }
+.wavetable-editor .wt-import-dialog input:not([type=range]):not([type=checkbox]),
+.wavetable-editor .wt-import-dialog select,
+.wavetable-editor .wt-import-dialog button,
+.wavetable-editor .wt-table-picker select {
+  background: var(--surface-accent);
+  color: var(--text);
+  border-color: var(--brand-soft);
+}
+.wavetable-editor .wt-import-dialog :is(input,select,button):focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+.wavetable-editor .wt-import-preview { border-color: var(--brand-soft); }
+.wavetable-editor .wt-import-dialog footer button:last-child {
+  background: var(--brand);
+  color: var(--synth-scope);
+  border-color: var(--brand);
+}
