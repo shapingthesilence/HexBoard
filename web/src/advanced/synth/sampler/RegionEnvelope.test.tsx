@@ -19,7 +19,7 @@ describe("Direct region ADSR editing", () => {
   });
   it("keeps ADSR, precise units, region selection and apply-all visible", () => {
     const html = renderToStaticMarkup(createElement(RegionEnvelope, { zones, index: 0, names: ["Low", "High"], settings: {}, onSelect: () => {}, onChange: () => {} }));
-    for (const name of ["Region ADSR", "Envelope region", "Copy ADSR to all", "Edit all regions", "Region attack ms", "Region sustain percent", "ADSR envelope shape"]) expect(html).toContain(name);
+    for (const name of ["Region ADSR", "Envelope region", "Copy ADSR to all", "Edit all regions", "Region attack ms", "Region sustain percent", "Region · drag corners for time"]) expect(html).toContain(name);
     expect(html).not.toContain("<details");
   });
   it("auditions envelope changes immediately using the already converted PCM", () => {

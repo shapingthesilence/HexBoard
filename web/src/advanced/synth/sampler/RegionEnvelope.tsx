@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Settings, Zone } from "./prepare.mjs";
 import { defaults } from "./encode.mjs";
+import { CurvedEnvelope } from "../CurvedEnvelope.tsx";
 
 export const envelopeKeys = ["attack", "decay", "sustain", "release"] as const;
 type EnvelopeKey = typeof envelopeKeys[number];
@@ -61,16 +62,19 @@ function EnvelopeControl({ name, value, maximum, mixed, onChange }: {
   </div>;
 }
 
-export function RegionEnvelope({ zones, index, names, settings, onSelect, onChange }: {
+export type EnvelopeShapeKey = "attackShape" | "decayShape" | "releaseShape";
+/** Curves are instrument-wide (one per segment); omit onShape where the target has no curves. */
+export function RegionEnvelope({ zones, index, names, settings, onSelect, onChange, onShape }: {
   zones: Zone[]; index: number; names: string[]; settings: Settings;
   onSelect: (index: number) => void;
   onChange: (change: Partial<Zone>, all: boolean, remember: boolean) => void;
+  onShape?: (key: EnvelopeShapeKey, bend: number) => void;
 }) {
-  const [all, setAll] = useState(false), zone = zones[index];
+  const [all, setAll] = useState(false), zone = zones[index], dragging = useRef(false);
   if (!zone) return null;
-  const values = regionEnvelope(zone, settings), sustain = 54 - values.sustain * 44;
-  const attack = 15 + position(values.attack, 10000) * 70, decay = attack + 15 + position(values.decay, 20000) * 70;
-  const release = decay + 50 + 15 + position(values.release, 20000) * 70;
+  const values = regionEnvelope(zone, settings);
+  // One undo step per drag: remember only the first change of each gesture.
+  const change = (patch: Partial<Zone>) => { onChange(patch, all, !dragging.current); dragging.current = true; };
   return <fieldset className="sampler-envelope"><legend>Region ADSR</legend>
     <div className="sampler-envelope-heading">
       <select aria-label="Envelope region" value={index} onChange={event => onSelect(+event.target.value)}>
@@ -79,9 +83,14 @@ export function RegionEnvelope({ zones, index, names, settings, onSelect, onChan
       <label><input type="checkbox" checked={all} onChange={event => setAll(event.target.checked)}/>Edit all regions</label>
       <button disabled={zones.length < 2} onClick={() => onChange(values, true, true)}>Copy ADSR to all</button>
     </div>
-    <svg viewBox={`0 0 ${release + 12} 64`} role="img" aria-label="ADSR envelope shape">
-      <path d={`M 5 54 L ${attack} 10 L ${decay} ${sustain} L ${decay + 50} ${sustain} L ${release} 54`}/>
-    </svg>
+    <div className="sampler-envelope-graph" onPointerDownCapture={() => { dragging.current = false; }}>
+      <CurvedEnvelope label="Region" values={{ delay: (zone.delay ?? 0) / 1000, attack: values.attack / 1000, hold: (zone.hold ?? 0) / 1000, decay: values.decay / 1000, sustain: values.sustain, release: values.release / 1000 }}
+        bends={onShape ? { attack: settings.attackShape ?? 0, decay: settings.decayShape ?? 0, release: settings.releaseShape ?? 0 } : undefined}
+        onTime={(segment, seconds) => change({ [segment]: Math.min(segment === "attack" ? 10000 : 20000, Math.round(seconds * 1000)) })}
+        onSustain={level => change({ sustain: Math.round(level * 1000) / 1000 })}
+        onBend={onShape ? (segment, bend) => onShape(`${segment}Shape` as EnvelopeShapeKey, Math.round(bend * 1000) / 1000) : undefined}/>
+      {onShape && <small>Diamonds bend each segment for every region · double-click to straighten.</small>}
+    </div>
     <div className="sampler-envelope-controls">
       {envelopeKeys.map(key => <EnvelopeControl key={`${index}:${key}`} name={key} value={values[key]} maximum={key === "sustain" ? 100 : key === "attack" ? 10000 : 20000}
         mixed={all && zones.some(z => regionEnvelope(z, settings)[key] !== values[key])}

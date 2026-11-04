@@ -1,3 +1,4 @@
+import { envelopeLevel, rampCurve } from "../envelopeCurve.ts";
 import {motionSettings,motionActive,evaluateMotion,motionEnvelope,keyTime} from "./motion.mjs";
 import {playbackLimits} from './playback.mjs';
 import type { Patch, Recording, Zone, Settings } from "./prepare.mjs";
@@ -354,17 +355,12 @@ export class PatchPreview {
         ((a.loopEnd ?? a.end ?? a.channels[0].length) - start + fade) /
         source.buffer.sampleRate;
     }
+    // Same segment curves as the board's shared envelope (envelopeCurve.ts).
     gain.gain.setValueAtTime(0, now);
     gain.gain.setValueAtTime(0, now + delay);
-    gain.gain.linearRampToValueAtTime(
-      peak,
-      now + delay + Math.max(0.0001, attack),
-    );
-    gain.gain.setValueAtTime(peak, now + delay + attack + hold);
-    gain.gain.linearRampToValueAtTime(
-      peak * sustain,
-      now + delay + attack + hold + Math.max(0.0001, decay),
-    );
+    rampCurve(gain.gain, 0, peak, now + delay, Math.max(0.0001, attack), p.attackShape ?? 0);
+    if (hold > 0) gain.gain.setValueAtTime(peak, now + delay + Math.max(0.0001, attack) + hold);
+    rampCurve(gain.gain, peak, peak * sustain, now + delay + Math.max(0.0001, attack) + hold, Math.max(0.0001, decay), p.decayShape ?? 0);
     const voice: Voice = {
       source,
       readerGain,
@@ -416,23 +412,11 @@ export class PatchPreview {
       hold = (v.zone.hold ?? 0) / 1000,
       decay = (v.zone.decay ?? p.decay ?? 150) / 1000,
       sustain = v.zone.sustain ?? p.sustain ?? 1,
-      t = elapsed - delay,
-      level =
-        t < 0
-          ? 0
-          : t < attack
-            ? t / Math.max(0.0001, attack)
-            : t < attack + hold
-              ? 1
-              : t < attack + hold + decay
-                ? 1 +
-                  ((sustain - 1) * (t - attack - hold)) /
-                    Math.max(0.0001, decay)
-                : sustain;
+      level = envelopeLevel({delay, attack: Math.max(0.0001, attack), hold, decay: Math.max(0.0001, decay), sustain, attackBend: p.attackShape ?? 0, decayBend: p.decayShape ?? 0}, elapsed);
     const now = v.release;
     v.gain.gain.cancelScheduledValues(now);
     v.gain.gain.setValueAtTime(v.peak * level, now);
-    v.gain.gain.linearRampToValueAtTime(0, now + Math.max(0.001, seconds));
+    rampCurve(v.gain.gain, v.peak * level, 0, now, Math.max(0.001, seconds), p.releaseShape ?? 0);
     try {
       v.source.stop(now + Math.max(0.001, seconds) + 0.005);
     } catch {

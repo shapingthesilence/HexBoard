@@ -19,7 +19,8 @@ export function readBank(bytes, options = {}) {
   header.fill(0, 36, 40);
   if (crc32(header) !== u32(36))
     throw Error("Instrument header checksum failed.");
-  if(bytes[106]>=16||bytes[107]>4||bytes.subarray(114,128).some(x=>x))throw Error("Invalid instrument voice reservations.");
+  // 114-119 hold signed envelope bends; -32768 is out of range. 120-127 are reserved.
+  if(bytes[106]>=16||bytes[107]>4||bytes.subarray(120,128).some(x=>x)||[114,116,118].some(at=>u16(at)===0x8000))throw Error("Invalid instrument voice reservations.");
   const a = u16(12),
     l = u16(14),
     z = u16(16),
@@ -141,6 +142,9 @@ export function readBank(bytes, options = {}) {
       releaseCurve: 0.25 + (u16(100) / 65535) * 3.75,
       pedalRelease: u16(102),
       pressureGain: u16(104) / 65535,
+      attackShape: ((u16(114) << 16) >> 16) / 32767,
+      decayShape: ((u16(116) << 16) >> 16) / 32767,
+      releaseShape: ((u16(118) << 16) >> 16) / 32767,
     },
     ...performance,
     preparedSource: bytes,

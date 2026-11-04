@@ -1,3 +1,5 @@
+import {CurvedEnvelope} from './CurvedEnvelope.tsx';
+import {curveBend, curveWord} from './envelopeCurve.ts';
 import {factoryTables} from './wavetable/factory.ts';
 import {WavetableImporter} from './WavetableImporter.tsx';
 import {getTable,listTables,putTable,exportTable,importTable,type TableAsset,type TableRef} from './wavetable/library.ts';
@@ -16,7 +18,7 @@ import {PreviewNote, PreviewContext, PreviewSource, PreviewValues} from './Synth
 import {PerformanceRow} from './PerformanceRow.tsx';
 import {ControllerControls} from './ControllerControls.tsx';
 import {ModulationBudget} from './ModulationBudget.tsx';
-import {ModSourceEditor, modSourceHelp} from './ModSourceEditor.tsx';
+import {ModSourceEditor, modSourceHelp, timeValue} from './ModSourceEditor.tsx';
 import {SynthProgress} from './SynthProgress.tsx';
 import type {SynthProgress as Progress} from './progress.ts';
 import {Knob, ModSourceButton, modulationCursor} from './SynthControls.tsx';
@@ -24,12 +26,12 @@ import {targetingEscape, sourceClickTool} from './modulationTargeting.ts';
 import {RouteChip, RouteMenu, dropDepth, useSourceDrag} from './modulationGestures.tsx';
 import {type FxRack,modulationRate, modulationSeconds} from './schema.ts';
 import {
-  P, S, factoryWavetablePresets, filterNames, modulatable, option, optionValue, parameterCount,
+  P, S, modSettingCount, factoryWavetablePresets, filterNames, modulatable, option, optionValue, parameterCount,
   resonatorNames, tableCrc, routeDepth, routesUsed, sameWavetable, sourceCount, transientNames, warpAmountDescription, warpNames, wavetableEngine,
   wavetableFromUnknown, wavetableParameters, wavetablePreset, wavetableSourceColors, wavetableSourceShort, wavetableSources, withRoute, bipolarSource, type WavetablePreset
 } from './wavetableSchema.ts';
 import {filterOpen, wavetableCapacityUs, wavetableCost, wavetableSourceCost, wavetableRouteLimit, type WavetableStage} from './wavetableBudget.ts';
-import {EnvelopeGraph, FilterCurve, ResonatorPartials, SignalFlow, TableTerrain, UnisonField, WarpScope} from './WavetableVisuals.tsx';
+import {FilterCurve, ResonatorPartials, SignalFlow, TableTerrain, UnisonField, WarpScope} from './WavetableVisuals.tsx';
 import './PhysicalSynthEditor.css';
 import './SynthIdentity.css';
 import './WavetableSynthEditor.css';
@@ -147,7 +149,7 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
   };
   const setModSetting = (bank: number, id: number, value: number) => {
     retainedDraft.current = true; setPreset(x => ({...x, mod: x.mod.map((m, b) => b === bank ? m.map((v, i) => i === id ? value : v) : m) as [number[], number[]]}));
-    queue(`m${bank}:${id}`, () => client!.editWavetable(parameterCount + bank * 16 + id, value));
+    queue(`m${bank}:${id}`, () => client!.editWavetable(parameterCount + bank * modSettingCount + id, value));
   };
   const setRoute = (destination: number, from: number, depth: number) => {
     const result = withRoute(preset, destination, from, depth);
@@ -296,7 +298,12 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
           <div className="knob-bank">{control(P.Cutoff)}{control(P.Resonance)}{control(P.KeyTrack)}{control(P.FilterEnvelope, 'Env 1 amount')}</div>
         </>, filterBypassed ? 'Fully open · bypassed to save DSP.' : 'Per voice, stereo. Envelope 1 moves the cutoff by Env 1 amount.')}
         {stage('amp', 'Amp', true, <>
-          <EnvelopeGraph values={[p[P.AmpAttack], p[P.AmpDecay], p[P.AmpSustain], p[P.AmpRelease]]} disabled={busy || tool !== 'value'} onChange={(i, v) => setParameter(P.AmpAttack + i, v)}/>
+          <CurvedEnvelope label="Amp" disabled={busy || tool !== 'value'}
+            values={{attack: modulationSeconds(p[P.AmpAttack]), decay: modulationSeconds(p[P.AmpDecay]), sustain: p[P.AmpSustain] / 65535, release: modulationSeconds(p[P.AmpRelease])}}
+            bends={{attack: curveBend(p[P.AmpAttackCurve]), decay: curveBend(p[P.AmpDecayCurve]), release: curveBend(p[P.AmpReleaseCurve])}}
+            onTime={(segment, seconds) => setParameter(segment === 'attack' ? P.AmpAttack : segment === 'decay' ? P.AmpDecay : P.AmpRelease, timeValue(seconds))}
+            onSustain={v => setParameter(P.AmpSustain, Math.round(v * 65535))}
+            onBend={(segment, bend) => setParameter(segment === 'attack' ? P.AmpAttackCurve : segment === 'decay' ? P.AmpDecayCurve : P.AmpReleaseCurve, curveWord(bend))}/>
           <div className="knob-bank">{control(P.AmpAttack)}{control(P.AmpDecay)}{control(P.AmpSustain)}{control(P.AmpRelease)}</div>
         </>)}
         {stage('output', 'Output', true, <>

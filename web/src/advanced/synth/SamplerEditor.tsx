@@ -1070,7 +1070,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
             onChange={(change, all, remember) => {
               const current = patchRef.current;
               edit({ ...current, zones: changeRegionEnvelope(current.zones ?? [], zone ? zones.indexOf(zone) : -1, change, all) }, remember);
-            }}/>
+            }} onShape={classic ? undefined : (key, bend) => global(key, bend)}/>
             <fieldset className="sampler-region-card">
               <legend>Region{zone && sample ? ` · ${sample.name}` : ""}</legend>
               {zone ? (

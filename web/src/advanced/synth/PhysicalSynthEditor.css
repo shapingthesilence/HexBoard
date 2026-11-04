@@ -462,3 +462,5 @@
 .physical-editor[data-source-preview] .physical-control[data-source-route="no"] { opacity:.4; }
 .physical-editor .physical-control[data-source-route="yes"] .knob-face { box-shadow:0 0 0 2px var(--highlight-color), 0 0 10px var(--highlight-color); }
 @media (prefers-reduced-motion: reduce) { .physical-editor .physical-control[data-mod-target] { transition:none; } }
+/* Shared curved envelope inside the source editor follows the source color. */
+.mod-source-editor .curved-envelope { --envelope-color: var(--modulation-color, var(--brand)); margin: 2px 0 6px; }

@@ -89,12 +89,17 @@ export function effectDescription(id:number,index:number,value:number) {
 export function modulationRouteCount(routes:number[],source:number){return routes.filter((v,i)=>i%2===source&&v!==0).length;}
 export function canAssignModulation(routes:number[],id:number,source:number){const copy=[...routes];copy[id*2+source]=copy[id*2+source]||1;return modulationUsage({routes:Array(99).fill(0),tiltRoutes:Array(66).fill(0),modulation:{routes:copy}}).fits;}
 export interface ModulationSources { settings:number[]; routes:number[] }
-export const defaultModulation = ():ModulationSources => ({settings:[14000,30000,42000,34000,0,0,32768,0,30000,0,65535,0,0,0,0,0],routes:Array(66).fill(0)});
+// 18-word Modulators layout: words 6/16/17 are attack/decay/release curves (32768 straight).
+export const modulationSettingCount=18;
+export const defaultModulation = ():ModulationSources => ({settings:[14000,30000,42000,34000,0,0,32768,0,30000,0,65535,0,0,0,0,0,32768,32768],routes:Array(66).fill(0)});
 export function modulationSeconds(v:number){return v===0?0:.001*Math.exp(9.903488*v/65535);}
 export function modulationRate(v:number){return .05*Math.exp(5.991465*v/65535);}
 export function validateModulation(value:unknown):ModulationSources {
-  const m=value as ModulationSources;
-  if(!m||!Array.isArray(m.settings)||m.settings.length!==16||m.settings.some(v=>!Number.isInteger(v)||v<0||v>65535)||[7,10,14].some(i=>m.settings[i]!==0&&m.settings[i]!==65535)||m.settings[9]%13107!==0||!Array.isArray(m.routes)||m.routes.length!==66||m.routes.some(v=>!Number.isInteger(v)||v<-65536||v>65536)||[8,21,27,31].some(id=>m.routes.slice(id*2,id*2+2).some(Boolean)))throw Error("Invalid envelope / LFO modulation.");
+  const given=value as ModulationSources;
+  // Drafts and files saved before per-segment curves carry 16 words; their one
+  // curve becomes all three segment curves.
+  const m=given&&Array.isArray(given.settings)&&given.settings.length===16?{...given,settings:[...given.settings,given.settings[6],given.settings[6]]}:given;
+  if(!m||!Array.isArray(m.settings)||m.settings.length!==modulationSettingCount||m.settings.some(v=>!Number.isInteger(v)||v<0||v>65535)||[7,10,14].some(i=>m.settings[i]!==0&&m.settings[i]!==65535)||m.settings[9]%13107!==0||!Array.isArray(m.routes)||m.routes.length!==66||m.routes.some(v=>!Number.isInteger(v)||v<-65536||v>65536)||[8,21,27,31].some(id=>m.routes.slice(id*2,id*2+2).some(Boolean)))throw Error("Invalid envelope / LFO modulation.");
   if(!modulationUsage({routes:Array(99).fill(0),tiltRoutes:Array(66).fill(0),modulation:m}).fits)throw Error("Modulation capacity full. Remove a destination before adding another.");
   return {settings:[...m.settings],routes:[...m.routes]};
 }

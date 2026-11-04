@@ -13,7 +13,7 @@ import {wavetableEngine,wavetableSchema,wavetableWords,wavetableFromWords,validW
 import type {SynthProgress} from './progress.ts';
 import type { MidiTransport } from "../../midi/types.ts";
 import { decodePresetSyncFrame, encodeDefaultPresetSyncFrame, encodeU14, encodeU21, decodeU14, decodeU21 } from "../../protocol/index.ts";
-import { physicalPresetFromUnknown, defaultSample, defaultSampleLoop, validateSample, type SampleLoop, type SampleExciter, defaultModulation, validateModulation, type ModulationSources, defaultFx, validateFx, fxSlotCount, fxRouteCount, type FxRack, type PhysicalPreset, type PhysicalVelocityEngine, encodeLogPitchHz } from "./schema.ts";
+import { physicalPresetFromUnknown, modulationSettingCount, defaultSample, defaultSampleLoop, validateSample, type SampleLoop, type SampleExciter, defaultModulation, validateModulation, type ModulationSources, defaultFx, validateFx, fxSlotCount, fxRouteCount, type FxRack, type PhysicalPreset, type PhysicalVelocityEngine, encodeLogPitchHz } from "./schema.ts";
 
 export interface PresetCatalogState {phase:number;action:number;error?:number;awaiting?:boolean;slot:number;medium:0|1|2;progress:number;mask:number;elapsedMs:number;maxSliceUs:number;engine:number;folder:number;capacity:number;folderCapacity:number;heapMin:number}
 export interface DevicePresetFolder {index:number;name:string;mask:number}
@@ -72,8 +72,8 @@ export function decodeFx(payload:number[]): FxRack {
   return validateFx({steps:Array.from({length:16},(_,i)=>decodeU21(payload.slice(fxStepsAt+i*3,fxStepsAt+3+i*3))),order:padded.filter(Boolean),routes:Array.from({length:fxRouteCount},(_,i)=>decodeU21(payload.slice(fxRoutesAt+i*3,fxRoutesAt+3+i*3))-65536),values:Array.from({length:7},(_,i)=>Array.from({length:4},(_,j)=>decodeU21(payload.slice(fxValuesAt+(i*4+j)*3,fxValuesAt+3+(i*4+j)*3))))});
 }
 export function decodeModulation(payload:number[]):ModulationSources {
-  if(payload.length!==247||payload[0]!==17)throw Error("Update Advanced firmware for envelope and LFO sources.");
-  return validateModulation({settings:Array.from({length:16},(_,i)=>decodeU21(payload.slice(1+i*3,4+i*3))),routes:Array.from({length:66},(_,i)=>decodeU21(payload.slice(49+i*3,52+i*3))-65536)});
+  const n=modulationSettingCount;if(payload.length!==1+3*(n+66)||payload[0]!==17)throw Error("Update Advanced firmware for envelope curves.");
+  return validateModulation({settings:Array.from({length:n},(_,i)=>decodeU21(payload.slice(1+i*3,4+i*3))),routes:Array.from({length:66},(_,i)=>decodeU21(payload.slice(1+3*n+i*3,4+3*n+i*3))-65536)});
 }
 export function sampleChecksum(frames:number[]){let crc=0xffffffff;for(const v of frames)for(const byte of [v&255,(v>>8)&255]){crc^=byte;for(let i=0;i<8;i++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}return (crc^0xffffffff)>>>0;}
 interface SampleMeta{loop:SampleLoop;enabled:boolean;gain:number;direct:number;length:number;busy:boolean;crc:number}

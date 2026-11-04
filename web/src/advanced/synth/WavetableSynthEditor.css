@@ -107,3 +107,5 @@
   color: var(--synth-scope);
   border-color: var(--brand);
 }
+/* Shared curved envelopes take the wavetable trace color. */
+.wavetable-editor .curved-envelope { --envelope-color: var(--wt-trace); --envelope-background: var(--wt-scope); --envelope-live: var(--wt-trace-2); }

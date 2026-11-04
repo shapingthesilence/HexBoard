@@ -64,6 +64,10 @@ export interface Settings {
   releaseResponse?: number;
   releaseCurve?: number;
   pedalRelease?: number;
+  /** Amp envelope segment bends, -1..1 (0 straight); shared Modulators curve. */
+  attackShape?: number;
+  decayShape?: number;
+  releaseShape?: number;
 }
 export interface Performance {
   format: "hexboard.performance.v1";

@@ -1,9 +1,6 @@
 import {useLayoutEffect, useMemo, useRef, type KeyboardEvent, type PointerEvent, type ReactNode} from 'react';
 import {animationEase} from '../../animation.ts';
 import {filterResponse} from './FilterResponse.tsx';
-import {envelopePoints} from './ModSourceEditor.tsx';
-import {timeValue} from './ModSourceEditor.tsx';
-import {modulationSeconds} from './schema.ts';
 import {levelBits} from './wavetable/prepare.mjs';
 import {cutoffHz} from './wavetableSchema.ts';
 import {usePreviewAnimation} from './SynthVisualPreview.tsx';
@@ -195,30 +192,6 @@ export function FilterCurve({cutoff, resonance, mode, live, disabled, onChange}:
       line(liveCurve); ctx.strokeStyle = c.trace; ctx.lineWidth = 2; ctx.stroke();
       ctx.fillStyle = c.brand; plotDot(ctx, xOf(cutoff), dbY(filterResponse(cutoff, resonance, 1, mode, cutoffHz(cutoff))), 6); ctx.strokeStyle = c.scope; ctx.stroke();
     }}/>;
-}
-
-/** Amp ADSR with draggable attack, decay/sustain and release handles. */
-export function EnvelopeGraph({values, live, disabled, onChange}: {values: [number, number, number, number]; live?: number; disabled?: boolean; onChange: (index: number, value: number) => void}) {
-  const settings = [values[0], values[1], values[2], values[3], 0, 0, 32768, 0];
-  const points = envelopePoints(settings);
-  const drag = useRef<number | undefined>(undefined);
-  const move = (e: PointerEvent<SVGSVGElement>) => {
-    const id = drag.current; if (id === undefined || disabled) return;
-    const r = e.currentTarget.getBoundingClientRect(), x = (e.clientX - r.left) / r.width * 300, y = (e.clientY - r.top) / r.height * 100;
-    if (id === 2) { onChange(2, Math.round(Math.max(0, Math.min(1, (86 - y) / 72)) * 65535)); return; }
-    const total = Math.max(.02, [0, 1, 3].reduce((a, i) => a + modulationSeconds(settings[i]), .3)), previous = id === 0 ? points[1][0] : id === 1 ? points[3][0] : points[5][0];
-    onChange(id, timeValue(Math.max(0, x - previous) / 280 * total));
-  };
-  const d = `M${points.map(p => p.join(',')).join('L')}`;
-  return <svg className="wt-envelope" viewBox="0 0 300 100" onPointerMove={move} onPointerUp={() => drag.current = undefined} onPointerCancel={() => drag.current = undefined} aria-label="Amp envelope · drag the handles">
-    <path className="wt-scope-grid" d="M10 14H290M10 86H290"/>
-    <path className="wt-env-fill" d={`${d}L${points[points.length - 1][0]},86Z`}/><path className="wt-env-line" d={d}/>
-    {live !== undefined && live > 0 && <line className="wt-env-live" x1={10} x2={290} y1={Math.round((86 - 72 * live) * 10) / 10} y2={Math.round((86 - 72 * live) * 10) / 10}/>}
-    {([[0, 2], [1, 4], [2, 5], [3, 6]] as const).map(([id, index]) => <circle key={id} className="wt-env-handle" cx={points[index][0]} cy={points[index][1]} r={6} role="slider" tabIndex={disabled ? -1 : 0}
-      aria-label={`Amp ${['attack', 'decay', 'sustain', 'release'][id]}`} aria-valuemin={0} aria-valuemax={65535} aria-valuenow={values[id]}
-      onPointerDown={e => { if (disabled) return; drag.current = id; (e.currentTarget.ownerSVGElement as SVGSVGElement).setPointerCapture(e.pointerId); }}
-      onKeyDown={e => { if (!disabled) keyStep(e, values[id], v => onChange(id, v)); }}/>)}
-  </svg>;
 }
 
 export interface FlowStage {id: string; label: string; active: boolean; cost: number; note?: string}

@@ -1,18 +1,21 @@
+import {curveBend, curveWord} from './envelopeCurve.ts';
 import {defaultFx,validateFx,type FxRack,modulationSeconds} from './schema.ts';
 import {fxRoutePatch} from './fxRouting.ts';
 // Wavetable patch: mirrors Advanced src/synth/wavetable_patch.h. Normalized U16
 // parameters, two envelope/LFO banks in the Physical Strings layout and sparse
 // source -> parameter routes, carried on the generic engine transport.
-export const wavetableEngine = 7, wavetableSchema = 3;  // 3: table identity and unison controls
+export const wavetableEngine = 7, wavetableSchema = 4;  // 4: per-segment envelope curves
 export const P = {
   Frame: 0, FrameSpread: 1, Unison: 2, Detune: 3, Width: 4, WarpMode: 5, WarpAmount: 6, WarpBias: 7, Brightness: 8,
   Noise: 9, Transient: 10, TransientShape: 11, Sub: 12, SubOctave: 13, SubShape: 14,
   Cutoff: 15, Resonance: 16, FilterMode: 17, KeyTrack: 18, FilterEnvelope: 19,
   AmpAttack: 20, AmpDecay: 21, AmpSustain: 22, AmpRelease: 23,
   Resonator: 24, ResonatorMix: 25, ResonatorTune: 26, ResonatorDecay: 27,
-  Level: 28, Classic: 29, EdgeBlend: 30, PhaseMode: 31, TableLow: 32, TableHigh: 33
+  Level: 28, Classic: 29, EdgeBlend: 30, PhaseMode: 31, TableLow: 32, TableHigh: 33,
+  // Amp envelope segment curves: 32768 is a straight line (envelopeCurve.ts).
+  AmpAttackCurve: 34, AmpDecayCurve: 35, AmpReleaseCurve: 36
 } as const;
-export const parameterCount = 34, modSettingCount = 16, routeCount = 16;
+export const parameterCount = 37, modSettingCount = 18, routeCount = 16;
 export const editCount = parameterCount + 2 * modSettingCount, wordCount = editCount + 2 * routeCount;
 export const S = {Velocity: 0, Pressure: 1, Release: 2, TiltX: 3, TiltY: 4, Env1: 5, Lfo1: 6, Env2: 7, Lfo2: 8, Joystick: 9, Pedal: 10} as const;
 export const sourceCount = 11;
@@ -37,7 +40,7 @@ export const bipolarSource = (source: number, p?: WavetablePatch) => source === 
 
 export interface WavetableRoute {source: number; destination: number; depth: number}
 export interface WavetablePatch {parameters: number[]; mod: [number[], number[]]; routes: WavetableRoute[]}
-export const wavetableFormat = 'hexboard.wavetable.v3';
+export const wavetableFormat = 'hexboard.wavetable.v4';
 export interface WavetablePreset extends WavetablePatch {format: typeof wavetableFormat; name: string; effects: FxRack; table?: {id:string;name:string}}
 /** New wavetable sounds start with the two-voice Ensemble in the shared FX rack. */
 export const wavetableDefaultFx = (): FxRack => ({...defaultFx(), order: [6]});
@@ -49,8 +52,8 @@ export function validWavetable(p: WavetablePatch): boolean {
   if (!Array.isArray(p.routes) || p.routes.length !== routeCount) return false;
   return p.routes.every(r => Number.isInteger(r.source) && Number.isInteger(r.destination) && Number.isInteger(r.depth) && (r.source === sourceCount ? r.depth === 0 : r.source >= 0 && r.source < sourceCount && modulatable(r.destination, r.source) && r.depth >= -65536 && r.depth <= 65536));
 }
-// Times use StringModulation::seconds: 0 = instant, else 1 ms * e^(9.9 v).
-const defaultMod = [30000, 42000, 32768, 40000, 0, 0, 32768, 0, 26000, 0, 65535, 0, 0, 0, 0, 0];
+// Times use Modulators::seconds: 0 = instant, else 1 ms * e^(9.9 v).
+const defaultMod = [30000, 42000, 32768, 40000, 0, 0, 32768, 0, 26000, 0, 65535, 0, 0, 0, 0, 0, 32768, 32768];
 export function initialWavetable(): WavetablePatch {
   const routes = Array.from({length: routeCount}, unused);
   routes[0] = {source: S.Pressure, destination: P.Frame, depth: 26000};
@@ -61,14 +64,20 @@ export function initialWavetable(): WavetablePatch {
       65535, 6000, 0, 0, 32768,
       10650, 37740, 52428, 37740,
       0, 26000, 0, 40000,
-      46000, 0, 65535, 0, 0, 0],
+      46000, 0, 65535, 0, 0, 0,
+      32768, 32768, 32768],
     mod: [[...defaultMod], [...defaultMod]], routes
   };
 }
 function validTableRef(value:unknown):{id:string;name:string}|undefined {if(value===undefined)return undefined;const v=value as {id?:unknown;name?:unknown};if(!v||typeof v.id!=='string'||!v.id||v.id.length>100||typeof v.name!=='string'||!v.name||v.name.length>80)throw Error('Invalid table reference.');return {id:v.id,name:v.name};}
 export const tableCrc=(p:WavetablePatch)=>(p.parameters[P.TableLow]|p.parameters[P.TableHigh]<<16)>>>0;
+// v3 sounds predate envelope curves: add straight amp curves and bank curve words.
+function upgradeV3(p: Partial<WavetablePreset> | undefined): Partial<WavetablePreset> | undefined {
+  if (!p || (p.format as string) !== 'hexboard.wavetable.v3' || p.parameters?.length !== 34 || !p.mod || p.mod.some(m => m.length !== 16)) return p;
+  return {...p, format: wavetableFormat, parameters: [...p.parameters, 32768, 32768, 32768], mod: p.mod.map(m => [...m, m[6], m[6]]) as [number[], number[]]};
+}
 export function wavetableFromUnknown(value: unknown): WavetablePreset {
-  const p = value as Partial<WavetablePreset> | undefined;
+  const p = upgradeV3(value as Partial<WavetablePreset> | undefined);
   if (!p || typeof p !== 'object' || p.format !== wavetableFormat) throw Error(`This file is not a current wavetable preset. Use ${wavetableFormat}.`);
   if (typeof p.name !== 'string' || !p.name.trim() || p.name.length > 80) throw Error('Give the preset a name.');
   const patch = {parameters: [...(p.parameters ?? [])], mod: [[...(p.mod?.[0] ?? [])], [...(p.mod?.[1] ?? [])]] as [number[], number[]], routes: (p.routes ?? []).map(r => ({...r}))};
@@ -86,7 +95,7 @@ export function wavetableWords(p: WavetablePatch): number[] {
 }
 export function wavetableFromWords(words: number[]): WavetablePatch {
   if (words.length !== wordCount) throw Error('Incomplete wavetable patch.');
-  const patch: WavetablePatch = {parameters: words.slice(0, parameterCount), mod: [words.slice(parameterCount, parameterCount + 16), words.slice(parameterCount + 16, editCount)],
+  const patch: WavetablePatch = {parameters: words.slice(0, parameterCount), mod: [words.slice(parameterCount, parameterCount + modSettingCount), words.slice(parameterCount + modSettingCount, editCount)],
     routes: Array.from({length: routeCount}, (_, i) => { const key = words[editCount + i * 2]; const r = {source: key >> 8, destination: key & 255, depth: words[editCount + 1 + i * 2] - 65536}; return r.source >= sourceCount ? unused() : r; })};
   if (!validWavetable(patch)) throw Error('Invalid wavetable patch from the board.');
   return patch;
@@ -154,7 +163,8 @@ export const wavetableParameters: ParameterInfo[] = [
   {name: 'Edge blend', describe: pct},
   {name: 'Start phase', describe: v => ['Random','Reset','Evenly spread'][option(P.PhaseMode,v)]},
   {name: 'Table identity', describe: v => String(v)},
-  {name: 'Table identity', describe: v => String(v)}
+  {name: 'Table identity', describe: v => String(v)},
+  ...(['Attack', 'Decay', 'Release'] as const).map(name => ({name: `${name} curve`, describe: (v: number) => { const b = curveBend(v); return b === 0 ? 'Straight' : `${b < 0 ? 'Fast' : 'Slow'} ${Math.round(Math.abs(b) * 100)}%`; }}))
 ];
 export function warpAmountDescription(mode: number, v: number) { return mode === 4 ? `×${(1 + 7 * v / 65535).toFixed(2)} sync` : pct(v); }
 
@@ -178,10 +188,10 @@ export const factoryWavetablePresets: WavetablePreset[] = [
     [{source: S.Pressure, destination: P.WarpAmount, depth: 38000}, {source: S.Lfo1, destination: P.WarpAmount, depth: 6000}, {source: S.Velocity, destination: P.Cutoff, depth: 9000}], [{0: 0, 1: 30000, 2: 0, 3: 26000, 8: 33000}]),
   preset('Sync Bass', {[P.Frame]: 44000, [P.Unison]: 0, [P.WarpMode]: o(P.WarpMode, 4), [P.WarpAmount]: 9000, [P.Sub]: 42000, [P.Cutoff]: 38000, [P.Resonance]: 16000, [P.FilterEnvelope]: 52000, [P.KeyTrack]: 30000, [P.AmpAttack]: 0, [P.AmpDecay]: 34000, [P.AmpSustain]: 46000, [P.AmpRelease]: 26000},
     [{source: S.Pressure, destination: P.WarpAmount, depth: 36000}, {source: S.Env1, destination: P.WarpAmount, depth: 14000}], [{0: 0, 1: 31000, 2: 0, 3: 28000}], defaultFx()),
-  preset('Bell Keys', {[P.Frame]: 6000, [P.Unison]: o(P.Unison, 1), [P.Detune]: 9000, [P.Transient]: 30000, [P.TransientShape]: o(P.TransientShape, 1), [P.Resonator]: o(P.Resonator, 2), [P.ResonatorMix]: 34000, [P.ResonatorDecay]: 42000, [P.AmpAttack]: 0, [P.AmpDecay]: 46000, [P.AmpSustain]: 12000, [P.AmpRelease]: 44000},
+  preset('Bell Keys', {[P.AmpDecayCurve]: curveWord(-.5), [P.AmpReleaseCurve]: curveWord(-.4), [P.Frame]: 6000, [P.Unison]: o(P.Unison, 1), [P.Detune]: 9000, [P.Transient]: 30000, [P.TransientShape]: o(P.TransientShape, 1), [P.Resonator]: o(P.Resonator, 2), [P.ResonatorMix]: 34000, [P.ResonatorDecay]: 42000, [P.AmpAttack]: 0, [P.AmpDecay]: 46000, [P.AmpSustain]: 12000, [P.AmpRelease]: 44000},
     [{source: S.Velocity, destination: P.Transient, depth: 24000}, {source: S.Pressure, destination: P.ResonatorDecay, depth: 18000}, {source: S.Pressure, destination: P.Frame, depth: 16000}]),
   preset('Breath Choir', {[P.Frame]: 3000, [P.FrameSpread]: 14000, [P.Unison]: o(P.Unison, 4), [P.Detune]: 20000, [P.Noise]: 15000, [P.Transient]: 20000, [P.TransientShape]: o(P.TransientShape, 2), [P.FilterMode]: o(P.FilterMode, 1), [P.Cutoff]: 41000, [P.Resonance]: 26000, [P.AmpAttack]: 43000, [P.AmpRelease]: 46000},
     [{source: S.Pressure, destination: P.Cutoff, depth: 14000}, {source: S.Lfo1, destination: P.Cutoff, depth: 3500}, {source: S.Pressure, destination: P.Noise, depth: 12000}], [{8: 31000}], ensembleRack(1)),
-  preset('Comb Pluck', {[P.Frame]: 50000, [P.Unison]: 0, [P.Transient]: 38000, [P.Resonator]: o(P.Resonator, 1), [P.ResonatorMix]: 44000, [P.ResonatorDecay]: 34000, [P.Cutoff]: 50000, [P.AmpAttack]: 0, [P.AmpDecay]: 42000, [P.AmpSustain]: 0, [P.AmpRelease]: 36000},
+  preset('Comb Pluck', {[P.AmpDecayCurve]: curveWord(-.5), [P.AmpReleaseCurve]: curveWord(-.4), [P.Frame]: 50000, [P.Unison]: 0, [P.Transient]: 38000, [P.Resonator]: o(P.Resonator, 1), [P.ResonatorMix]: 44000, [P.ResonatorDecay]: 34000, [P.Cutoff]: 50000, [P.AmpAttack]: 0, [P.AmpDecay]: 42000, [P.AmpSustain]: 0, [P.AmpRelease]: 36000},
     [{source: S.Velocity, destination: P.Transient, depth: 20000}, {source: S.Pressure, destination: P.ResonatorDecay, depth: 22000}])
 ];
