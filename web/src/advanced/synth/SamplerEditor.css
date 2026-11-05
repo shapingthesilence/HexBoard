@@ -575,19 +575,8 @@
   gap: 5px;
 }
 .sampler-editor .sampler-envelope-heading input { min-height: 0; }
-.sampler-editor .sampler-envelope svg {
-  width: 100%;
-  height: 54px;
-  display: block;
-  margin: 6px 0;
-}
-.sampler-editor .sampler-envelope path {
-  fill: none;
-  stroke: var(--sample-accent);
-  stroke-width: 2;
-  stroke-linejoin: round;
-  vector-effect: non-scaling-stroke;
-}
+.sampler-editor .sampler-envelope-graph { margin: 6px 0; --envelope-color: var(--sample-accent); }
+.sampler-editor .sampler-envelope-graph small { display: block; margin-top: 3px; }
 .sampler-editor .sampler-envelope-controls {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

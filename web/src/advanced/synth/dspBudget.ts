@@ -1,9 +1,9 @@
 import {fxRoutingUsage} from './fxRouting.ts';
 import {monoEnabled} from './mono.ts';
 import {modulationUsage,routeDepth,type Routing} from './modulationBudget.ts';
-import type {PhysicalPreset,FxRack} from './schema.ts';
+import {fxRouteCount,type PhysicalPreset,type FxRack} from './schema.ts';
 export const dspCapacity=2873,dspDeadline=2902;
-export const effectDspCost=(id:number)=>id===1?60:id===2?220:id===3?40:id===4?200:id===5?200:0;
+export const effectDspCost=(id:number)=>id===1?60:id===2?220:id===3?40:id===4?200:id===5?200:id===6?86:0;
 export function dspUsage(p:PhysicalPreset){
  const mono=monoEnabled(p),routing=modulationUsage(p),fx=fxRoutingUsage(p.effects),bow=p.parameters[21]>32767;
  const enabled=(id:number)=>p.parameters[id]>0||Array.from({length:9},(_,s)=>routeDepth(p,id,s)).some(Boolean);
@@ -14,6 +14,6 @@ export function dspUsage(p:PhysicalPreset){
 export function dspAllows(before:PhysicalPreset,after:PhysicalPreset){const a=dspUsage(before),b=dspUsage(after);return b.fits||(b.targetsValid&&b.units<=a.units&&b.connections<=a.connections);}
 export function routePatch(p:PhysicalPreset,id:number,source:number,value:number):PhysicalPreset{return source<3?{...p,routes:p.routes.map((v,i)=>i===id*3+source?value:v)}:source<5?{...p,tiltRoutes:p.tiltRoutes.map((v,i)=>i===id*2+source-3?value:v)}:source>=7?{...p,controllerRoutes:(p.controllerRoutes??Array(66).fill(0)).map((v,i)=>i===id*2+source-7?value:v)}:{...p,modulation:{...p.modulation,routes:p.modulation.routes.map((v,i)=>i===id*2+source-5?value:v)}};}
 export function dspRouteAllows(p:PhysicalPreset,id:number,source:number,value=1){return dspAllows(p,routePatch(p,id,source,value));}
-export function dspSourceContribution(p:PhysicalPreset,source:number){let next=p;for(let id=0;id<33;++id)next=routePatch(next,id,source,0);const s= [3,4,6,7,8].indexOf(source);if(s>=0)next={...next,effects:{...next.effects,routes:(next.effects.routes??Array(70).fill(0)).map((v,i)=>i%5===s?0:v)}};return dspUsage(p).units-dspUsage(next).units;}
+export function dspSourceContribution(p:PhysicalPreset,source:number){let next=p;for(let id=0;id<33;++id)next=routePatch(next,id,source,0);const s= [3,4,6,7,8].indexOf(source);if(s>=0)next={...next,effects:{...next.effects,routes:(next.effects.routes??Array(fxRouteCount).fill(0)).map((v,i)=>i%5===s?0:v)}};return dspUsage(p).units-dspUsage(next).units;}
 export const parameterPatch=(p:PhysicalPreset,id:number,value:number):PhysicalPreset=>({...p,parameters:p.parameters.map((v,i)=>i===id?value:v)});
 export const rackPatch=(p:PhysicalPreset,effects:FxRack):PhysicalPreset=>({...p,effects});

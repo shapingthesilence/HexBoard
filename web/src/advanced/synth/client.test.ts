@@ -16,11 +16,13 @@ class Transport implements MidiTransport {
   label = "Advanced test";
   listeners = new Set<MidiMessageListener>();
   sent: number[][] = [];
-  samplerBytes=0;samplerReceived=0;badSamplerOffset=false;respond = true;state = 1;sampleLoop:number[]|undefined;sampleReplyLength?:number;catalogReplies?:number[][];
+  tableAudioActive=false;tableCandidate=false;samplerBytes=0;samplerReceived=0;badSamplerOffset=false;respond = true;state = 1;sampleLoop:number[]|undefined;sampleReplyLength?:number;catalogReplies?:number[][];
   modulation=defaultModulation();
   async send(bytes: ArrayLike<number>) {
     this.sent.push(Array.from(bytes));
     const frame = decodePresetSyncFrame(bytes);
+    if(frame.payload[1]===76||frame.payload[1]===77){if(frame.payload[1]===76){if(this.tableAudioActive)throw Error('Audio is still rendering');this.tableCandidate=false;}else{this.tableAudioActive=false;if(this.tableCandidate)throw Error('An incomplete table is still staged');}const reply=frame.payload[1]===77?[17,...frame.payload.slice(2)]:[17,0,0,0,0,0];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x4d,frame.transactionId,reply)))));return;}
+
     if(frame.payload[1]===1)this.state=1;if(frame.payload[1]===2)this.state=0;
     if(frame.payload[1]===64){const reply=[17,...frame.payload.slice(2,4),4,...Array(288).fill(0)];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x48,frame.transactionId,reply)))));return;}
     if(frame.payload[1]===69){const bytes=frame.payload[2]?frame.payload.slice(3):Array(256).fill(0);queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x4a,frame.transactionId,[17,...bytes])))));return;}
@@ -45,7 +47,7 @@ class Transport implements MidiTransport {
     const motionResponse=[17,1,1,...encodeU21(32767),...encodeU21(32767),...(frame.payload[1]===13?frame.payload.slice(2):Array(66).fill(65536).flatMap(encodeU21))];
     if(frame.payload[1]===27)this.sampleLoop=frame.payload.slice(2);
     if(frame.payload[1]>=20){const sample=[17,0,...encodeU21(32768),...encodeU21(this.sampleLoop?1600:0),0,0,0,0,0,0,...encodeU21(65535),...(this.sampleLoop??[0,...encodeU21(0),...encodeU21(0),...encodeU21(0)])];const reply=this.sampleReplyLength===undefined?sample:Array.from({length:this.sampleReplyLength},(_,i)=>sample[i]??0);queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x3b,frame.transactionId,reply)))));return;}
-    const response=frame.payload[1]===11?[17,...frame.payload.slice(2)]:[17,0,0,0,0,0,...defaultFx().values.flat().flatMap(encodeU21),...defaultFx().steps.flatMap(encodeU21),...Array(70).fill(65536).flatMap(encodeU21)];
+    const response=frame.payload[1]===11?[17,...frame.payload.slice(2)]:[17,0,0,0,0,0,0,...defaultFx().values.flat().flatMap(encodeU21),...defaultFx().steps.flatMap(encodeU21),...Array(80).fill(65536).flatMap(encodeU21)];
     if (this.respond) for (const listener of this.listeners) listener(Uint8Array.from(encodeDefaultPresetSyncFrame(modulation?0x39:motion?0x38:fx?0x37:0x35, frame.transactionId, modulation?modResponse:motion?motionResponse:fx?response:[17,this.state,...payload().slice(2)])));
   }
   subscribe(listener: MidiMessageListener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
@@ -107,7 +109,8 @@ describe("Advanced physical editor", () => {
     const fx={...defaultFx(),order:[4,1,2]};
     expect(physicalPresetFromUnknown({...initialPreset,effects:fx}).effects).toEqual(fx);
     expect(()=>validateFx({...fx,order:[1,1]})).toThrow();
-    expect(()=>validateFx({...fx,order:[6]})).toThrow();
+    expect(()=>validateFx({...fx,order:[7]})).toThrow();
+    expect(()=>validateFx({...fx,values:fx.values.map((row,i)=>i===6?[0,0,2,0]:row)})).toThrow(); // Duo or Quad only.
     expect(()=>validateFx({...fx,values:[[65536,0,0,0]]})).toThrow();
     const transport=new Transport(),client=new PhysicalSynthClient(transport);
     const result=await client.effects(fx);expect(result.preset.effects).toEqual(fx);
@@ -339,3 +342,5 @@ it('reveals cached names top to bottom while a folder is still loading, without 
  expect(t.sent.map(p=>decodePresetSyncFrame(p).payload).filter(p=>p[1]===59).map(p=>p.slice(2))).toEqual([encodeU14(2048),encodeU14(2051),encodeU14(2079)]);
  }finally{c.close();}
 });
+
+it('recovers an abandoned table upload when returning to Basic Shapes',async()=>{const transport=new Transport();transport.tableCandidate=true;transport.tableAudioActive=true;const client=new PhysicalSynthClient(transport,undefined,true);try{await client.selectWavetableTable(0);expect(transport.tableCandidate).toBe(false);expect(transport.sent.map(x=>decodePresetSyncFrame(x).payload[1]).slice(-2)).toEqual([76,77]);}finally{client.close();}});

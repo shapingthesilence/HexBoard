@@ -22,7 +22,7 @@ describe('Editable envelope and LFO sources',()=>{
   });
   it('offers compact graphical source editors with accessible controls and advanced sections',()=>{
     const props={settings:defaultModulation().settings,onChange:()=>{},onClose:()=>{},onAssign:()=>{},disabled:false,renderControl:(_id:number,label:string)=>createElement('span',{},label)};
-    const env=renderToStaticMarkup(createElement(ModSourceEditor,{...props,source:5}));expect(env).toContain('Envelope editor');for(const label of ['Attack','Decay','Sustain','Release','Timing &amp; curve','Swell','Assign to controls'])expect(env).toContain(label);
+    const env=renderToStaticMarkup(createElement(ModSourceEditor,{...props,source:5}));expect(env).toContain('Envelope editor');for(const label of ['Attack','Decay','Sustain','Release','Delay, hold &amp; loop','Envelope attack curve','Envelope decay curve','Envelope release curve','Swell','Assign to controls'])expect(env).toContain(label);
     const lfo=renderToStaticMarkup(createElement(ModSourceEditor,{...props,source:6}));for(const label of ['LFO editor','Sine','Random','Restart each note','Free running','Smoothing','Positive only'])expect(lfo).toContain(label);
     const points=envelopePoints(props.settings);expect(points[0]).toEqual([10,86]);expect(points[6][0]).toBeCloseTo(290);expect(lfoWave(0,.25)).toBe(1);expect(lfoWave(4,.75)).toBe(-1);
   });

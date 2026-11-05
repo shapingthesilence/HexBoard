@@ -1,5 +1,9 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { modulationSeconds, modulationRate, physicalSources } from "./schema.ts";
+import { CurvedEnvelope } from "./CurvedEnvelope.tsx";
+import { curveBend, curveWord, linearCurveWord } from "./envelopeCurve.ts";
+/** Curve words in the 18-word Modulators layout (Advanced src/synth/modulators.h). */
+export const curveSettings={attack:6,decay:16,release:17} as const;
 
 /** Plain-language behavior of the touch and tilt sources, shown as a source-button tooltip. */
 export const modSourceHelp=(source:number)=>source===0?"Note-on velocity follows your selected velocity engine. Positive modulation adds more as you strike harder.":source===1?"Continuous key pressure follows the velocity engine’s pressure mode. Route it to a continuous sound control.":source===2?"Note-off velocity acts on release. Useful for damping and release time.":"Signed tilt around your captured neutral position. Tilting either way moves the destination in that direction; negative depth reverses it.";
@@ -15,8 +19,9 @@ export function ModSourceEditor({source,title=physicalSources[source],settings:s
   const root=useRef<HTMLDivElement>(null);const close=useRef(onClose);close.current=onClose;
   useEffect(()=>{const key=(e:KeyboardEvent)=>{if(e.key==="Escape")close.current();};const outside=(e:PointerEvent)=>{if(e.target instanceof Element&&!root.current?.contains(e.target)&&!e.target.closest(".modulation-toolbar"))close.current();};document.addEventListener("keydown",key);document.addEventListener("pointerdown",outside);root.current?.focus();return()=>{document.removeEventListener("keydown",key);document.removeEventListener("pointerdown",outside);};},[source]);
   const points=envelopePoints(s),shape=Math.round(s[9]/13107);
-  const envelope=source===5,lfo=source===6;
-  const quick=(values:Record<number,number>)=>Object.entries(values).forEach(([id,v])=>onChange(Number(id),v));
+  const envelope=source===5,lfo=source===6,curved=s.length>=18;
+  const straight={6:linearCurveWord,16:linearCurveWord,17:linearCurveWord};
+  const quick=(values:Record<number,number|undefined>)=>Object.entries(values).forEach(([id,v])=>{if(v!==undefined)onChange(Number(id),v);});
   const curve=2*s[6]/65535-1;
   const envPath=`M${points[0].join(',')} `+points.slice(1).map(([x,y],i)=>{
     const [px,py]=points[i];return Array.from({length:12},(_,j)=>{const t=(j+1)/12;const f=curve>=0?t+curve*(t*t-t):t-curve*((1-(1-t)*(1-t))-t);return `L${(px+(x-px)*t).toFixed(1)},${(py+(y-py)*f).toFixed(1)}`;}).join(' ');
@@ -31,14 +36,19 @@ export function ModSourceEditor({source,title=physicalSources[source],settings:s
   return <div ref={root} tabIndex={-1} className="mod-source-editor" role="dialog" aria-label={`${title} editor`}>
     <header><strong>{title}</strong><button type="button" aria-label="Close source editor" onClick={onClose}>×</button></header>
     {envelope||lfo ? <>
+      {envelope&&curved?<CurvedEnvelope label="Envelope" disabled={disabled}
+        values={{delay:modulationSeconds(s[4]),attack:modulationSeconds(s[0]),hold:modulationSeconds(s[5]),decay:modulationSeconds(s[1]),sustain:s[2]/65535,release:modulationSeconds(s[3])}}
+        bends={{attack:curveBend(s[6]),decay:curveBend(s[16]),release:curveBend(s[17])}}
+        onTime={(segment,seconds)=>onChange(segment==="attack"?0:segment==="decay"?1:3,timeValue(seconds))} onSustain={v=>onChange(2,Math.round(v*65535))}
+        onBend={(segment,bend)=>onChange(curveSettings[segment],curveWord(bend))}/>:
       <svg className="mod-source-graph" viewBox="0 0 300 100" aria-label={envelope?"Envelope shape · drag the handles":"LFO waveform preview"}>
         <path className="mod-graph-grid" d="M10 14H290M10 50H290M10 86H290"/><path className="mod-graph-wave" d={envelope?envPath:lfoPath}/>
         {envelope&&[[0,2],[1,4],[2,5],[3,6]].map(([id,index])=><circle key={id} cx={points[index][0]} cy={points[index][1]} r="5" className="mod-graph-handle" role="slider" tabIndex={disabled?-1:0} aria-label={`Envelope ${["attack","decay","sustain","release"][id]} handle`} aria-valuemin={0} aria-valuemax={65535} aria-valuenow={s[id]} onKeyDown={e=>{if(!disabled&&["ArrowUp","ArrowRight","ArrowDown","ArrowLeft"].includes(e.key)){e.preventDefault();onChange(id,Math.max(0,Math.min(65535,s[id]+(["ArrowUp","ArrowRight"].includes(e.key)?1:-1)*(e.shiftKey?65:655))));}}} onPointerDown={e=>{if(!disabled)e.currentTarget.setPointerCapture(e.pointerId);}} onPointerMove={e=>move(e,id)} />)}
-      </svg>
+      </svg>}
       {envelope?<>
         <div className="mod-source-knobs">{[[0,"Attack"],[1,"Decay"],[2,"Sustain"],[3,"Release"]].map(([id,label])=><div key={id}>{renderControl(Number(id),String(label))}</div>)}</div>
-        <div className="source-tabs" aria-label="Envelope quick settings"><button disabled={disabled} onClick={()=>quick({0:0,1:30000,2:0,3:26000,4:0,5:0,7:0})}>Pluck</button><button disabled={disabled} onClick={()=>quick({0:42000,1:32000,2:50000,3:45000,4:0,5:0,7:0})}>Swell</button><button disabled={disabled} onClick={()=>quick({0:0,1:0,2:65535,3:0,4:0,5:0,7:0})}>Gate</button></div>
-        <details><summary>Timing & curve</summary><div className="mod-source-knobs">{renderControl(4,"Delay")}{renderControl(5,"Hold")}{renderControl(6,"Curve")}</div><label className="mod-switch"><input type="checkbox" checked={!!s[7]} disabled={disabled} onChange={e=>onChange(7,e.target.checked?65535:0)}/>Loop attack / decay while held</label></details>
+        <div className="source-tabs" aria-label="Envelope quick settings"><button disabled={disabled} onClick={()=>quick({0:0,1:30000,2:0,3:26000,4:0,5:0,7:0,...(curved?{...straight,16:curveWord(-.6),17:curveWord(-.6)}:{})})}>Pluck</button><button disabled={disabled} onClick={()=>quick({0:42000,1:32000,2:50000,3:45000,4:0,5:0,7:0,...(curved?{...straight,6:curveWord(.4)}:{})})}>Swell</button><button disabled={disabled} onClick={()=>quick({0:0,1:0,2:65535,3:0,4:0,5:0,7:0,...(curved?straight:{})})}>Gate</button></div>
+        <details><summary>{curved?"Delay, hold & loop":"Timing & curve"}</summary><div className="mod-source-knobs">{renderControl(4,"Delay")}{renderControl(5,"Hold")}{!curved&&renderControl(6,"Curve")}</div>{curved&&<button type="button" disabled={disabled} onClick={()=>quick(straight)}>Straighten curves</button>}<label className="mod-switch"><input type="checkbox" checked={!!s[7]} disabled={disabled} onChange={e=>onChange(7,e.target.checked?65535:0)}/>Loop attack / decay while held</label></details>
         <small>Per note · releases from its current value. Voice level +100% applies the envelope; other controls add its value.</small>
       </>:<>
         <div className="source-tabs mod-shapes" aria-label="LFO waveform">{shapes.map((name,i)=><button disabled={disabled} key={name} aria-pressed={shape===i} onClick={()=>onChange(9,i*13107)}>{name}</button>)}</div>

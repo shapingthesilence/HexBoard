@@ -125,6 +125,9 @@ export const defaults = {
   releaseResponse: 0.9,
   releaseCurve: 1.5,
   pedalRelease: 150,
+  attackShape: 0,
+  decayShape: 0,
+  releaseShape: 0,
 };
 function settingsFor(input) {
   const s = { ...defaults, ...input };
@@ -149,6 +152,7 @@ function settingsFor(input) {
     s.pedalRelease > 20000 ||
     s.releaseCurve < 0.25 ||
     s.releaseCurve > 4 ||
+    ["attackShape", "decayShape", "releaseShape"].some((k) => s[k] < -1 || s[k] > 1) ||
     ["pressure", "pressureGain", "releaseResponse", "space"].some(
       (k) => s[k] < 0 || s[k] > 1,
     )
@@ -669,6 +673,8 @@ export async function preparePatch(input, onProgress = () => {}) {
   ].forEach((n, i) => u16(96 + i * 2, Math.round(n)));
   bytes[106] = 16 - playback.voices;
   bytes[107] = 4 - playback.tails;
+  // Bytes 114-119: signed envelope bends x32767 (zero is straight).
+  [settings.attackShape, settings.decayShape, settings.releaseShape].forEach((b, i) => u16(114 + i * 2, Math.round(b * 32767) & 0xffff));
   u16(108,Math.round(settings.roomDecay));u16(110,1+Math.round(settings.roomTone*65534));u16(112,1+Math.round(settings.roomWidth*65534));
   let pcmAt = metadata,
     levelIndex = 0,

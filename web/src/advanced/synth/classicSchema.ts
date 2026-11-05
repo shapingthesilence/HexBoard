@@ -13,7 +13,7 @@ export interface ClassicPreset {
     effects: FxRack;
     velocityEngine: 0 | 1 | 2 | 3 | 4;
 }
-export const classicEffects = (engine: number) => engine === 4 ? [1, 3, 4, 5] : [1, 2, 3, 4, 5];
+export const classicEffects = (engine: number) => engine === 4 ? [1, 3, 4, 5, 6] : [1, 2, 3, 4, 5, 6];
 export function initialClassic(engine: 4 | 5): ClassicPreset { return { format: 'hexboard.advanced.v2', engine, name: engine === 4 ? 'Juno Init' : 'DX7 Init', patch: initialAdvanced(engine), effects: defaultFx(), velocityEngine: 4 }; }
 export function classicFromUnknown(value: unknown): ClassicPreset {
     const p = value as ClassicPreset;

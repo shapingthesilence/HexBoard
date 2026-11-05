@@ -1,28 +1,30 @@
 import {describe, expect, it} from 'vitest';
 import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {P, S, effectiveWavetable, factoryWavetablePresets, initialWavetable, option, optionValue, routeKey, routesUsed, sourceCount, validWavetable, wavetableFromUnknown, wavetableFromWords, wavetablePreset, wavetableWords, withRoute, wordCount} from './wavetableSchema.ts';
+import {P, S, effectiveWavetable, factoryWavetablePresets, initialWavetable, option, optionValue, routeKey, routesUsed, sourceCount, validWavetable, wavetableFromUnknown, wavetableFromWords, wavetablePreset, wavetableWords, withRoute, wordCount, editCount, wavetableFormat, wavetableDefaultFx} from './wavetableSchema.ts';
 import {wavetableCapacityUs, wavetableCost, filterOpen} from './wavetableBudget.ts';
+import {defaultFx} from './schema.ts';
+import {fxRoutePatch} from './fxRouting.ts';
 import {frameSpectrum, warp} from './WavetableVisuals.tsx';
 import {AdvancedSynthEditor} from './AdvancedSynthEditor.tsx';
 import {WavetableSynthEditor} from './WavetableSynthEditor.tsx';
 
 describe('wavetable patch', () => {
   it('round-trips the firmware word layout', () => {
-    const patch = initialWavetable(); patch.routes[3] = {source: S.TiltX, destination: P.EnsembleWidth, depth: -20000};
+    const patch = initialWavetable(); patch.routes[3] = {source: S.TiltX, destination: P.Width, depth: -20000};
     const words = wavetableWords(patch);
     expect(words).toHaveLength(wordCount);
-    expect(words[64]).toBe(routeKey(S.Pressure, P.Frame));
-    expect(words[64 + 2 * 15]).toBe(routeKey(sourceCount, 0));
+    expect(words[editCount]).toBe(routeKey(S.Pressure, P.Frame));
+    expect(words[editCount + 2 * 15]).toBe(routeKey(sourceCount, 0));
     expect(wavetableFromWords(words)).toEqual(patch);
   });
   it('matches firmware option rounding and route rules', () => {
-    for (const id of [P.Unison, P.WarpMode, P.Resonator, P.Ensemble]) for (let c = 0; c < 4; ++c) expect(option(id, optionValue(id, c))).toBe(c);
-    const bad = initialWavetable(); bad.routes[2] = {source: S.Velocity, destination: P.EnsembleWidth, depth: 1};
+    for (const id of [P.Unison, P.WarpMode, P.Resonator]) for (let c = 0; c < 4; ++c) expect(option(id, optionValue(id, c))).toBe(c);
+    const bad = initialWavetable(); bad.routes[2] = {source: S.Velocity, destination: P.SubOctave, depth: 1};
     expect(validWavetable(bad)).toBe(false);
     bad.routes[2] = {source: S.Pressure, destination: P.WarpMode, depth: 1};
     expect(validWavetable(bad)).toBe(false);
-    expect(() => wavetableFromUnknown({format: 'hexboard.wavetable.v1', name: 'x', ...bad})).toThrow();
+    expect(() => wavetableFromUnknown({format: wavetableFormat, name: 'x', ...bad})).toThrow();
   });
   it('allocates, edits and clears sparse routes within sixteen', () => {
     let patch = initialWavetable();
@@ -45,13 +47,14 @@ describe('wavetable patch', () => {
 
 describe('wavetable DSP estimate', () => {
   it('reproduces the measured default and combined workloads', () => {
-    expect(wavetableCost(initialWavetable()).us).toBeGreaterThan(850);
-    expect(wavetableCost(initialWavetable()).us).toBeLessThan(950);
+    // November 4 hardware, 200 Hz expression with full bend: default 981 µs, combined 2,674 µs.
+    expect(wavetableCost(initialWavetable()).us).toBeGreaterThan(975);
+    expect(wavetableCost(initialWavetable()).us).toBeLessThan(1060);
     const combined = initialWavetable(); const set = (id: number, v: number) => { combined.parameters[id] = v; };
     set(P.Unison, optionValue(P.Unison, 6)); set(P.FrameSpread, 65535); set(P.WarpMode, optionValue(P.WarpMode, 4)); set(P.Brightness, 40000);
-    set(P.Noise, 20000); set(P.Transient, 20000); set(P.Sub, 20000); set(P.Resonator, optionValue(P.Resonator, 2)); set(P.Ensemble, optionValue(P.Ensemble, 2));
-    const us = wavetableCost(combined).us;
-    expect(us).toBeGreaterThan(2400); expect(us).toBeLessThan(2560); expect(us).toBeLessThan(wavetableCapacityUs);
+    set(P.Noise, 20000); set(P.Transient, 20000); set(P.Sub, 20000); set(P.Resonator, optionValue(P.Resonator, 2));
+    const us = wavetableCost({...combined, effects: wavetableDefaultFx()}).us;
+    expect(us).toBeGreaterThan(2674); expect(us).toBeLessThan(2800); expect(us).toBeLessThan(wavetableCapacityUs);
   });
   it('treats a fully open, unmoving low-pass as bypassed', () => {
     const p = initialWavetable(); p.parameters[P.Resonance] = 0;
@@ -76,7 +79,7 @@ describe('wavetable previews', () => {
     expect(html).toContain('<output aria-live="off"');
     expect(html).toContain('FX rack');expect(html).not.toContain('Motion sources');
     expect(renderToStaticMarkup(createElement(AdvancedSynthEditor, {engines: true}))).toContain('Wavetable');
-    expect(wavetablePreset('x', initialWavetable()).format).toBe('hexboard.wavetable.v1');
+    expect(wavetablePreset('x', initialWavetable()).format).toBe(wavetableFormat);
   });
 });
 
@@ -85,4 +88,41 @@ it('retains the shared effects rack through wavetable preset export and reload',
  const roundtrip=wavetableFromUnknown(JSON.parse(JSON.stringify(p)));
  expect(roundtrip.effects).toEqual(p.effects);
  expect(wavetableCost(roundtrip).us).toBeGreaterThan(wavetableCost(initialWavetable()).us+700);
+});
+
+it('starts wavetable sounds with the rack ensemble and refuses superseded files',()=>{
+ const p=wavetablePreset('Default',initialWavetable());
+ expect(p.effects.order).toEqual([6]);expect(p.effects.values[6]).toEqual([32768,52000,0,32768]);
+ const pad=factoryWavetablePresets.find(f=>f.name==='Glass Pad')!;expect(pad.effects.values[6][2]).toBe(1);expect(pad.effects.routes![15*5]).toBe(20000);
+ expect(factoryWavetablePresets.find(f=>f.name==='Sync Bass')!.effects.order).toEqual([]);
+ expect(()=>wavetableFromUnknown({...JSON.parse(JSON.stringify(p)),format:'hexboard.wavetable.v1'})).toThrow();
+});
+
+it('pins the estimate the board enforces (Advanced wavetable_budget_test.cpp)',()=>{
+ const full=()=>{let e=defaultFx();e.order=[1,2,3,4,5,6];e.values[6][2]=1;for(const [id,source,depth] of [[0,3,3000],[20,6,12000],[13,7,10000],[4,8,5000],[25,3,9000]])e=fxRoutePatch(e,id,source,depth);return e;};
+ const with_=(values:[number,number][])=>{const p=initialWavetable();for(const [id,v] of values)p.parameters[id]=v;return p;};
+ const dense=with_([[P.Unison,optionValue(P.Unison,4)],[P.Brightness,34000],[P.WarpMode,optionValue(P.WarpMode,1)],[P.WarpAmount,24000],[P.Noise,12000],[P.Transient,12000],[P.Sub,24000],[P.Cutoff,45000],[P.Resonance,20000]]);
+ const worst=with_([[P.Unison,optionValue(P.Unison,6)],[P.Brightness,40000],[P.WarpMode,optionValue(P.WarpMode,4)],[P.Noise,1],[P.Transient,1],[P.Sub,1],[P.Resonator,optionValue(P.Resonator,1)],[P.Resonance,1]]);
+ expect([wavetableCost({...initialWavetable(),effects:defaultFx()}).us,wavetableCost({...initialWavetable(),effects:wavetableDefaultFx()}).us,wavetableCost({...initialWavetable(),effects:full()}).us,wavetableCost({...dense,effects:full()}).us,wavetableCost({...worst,effects:full()}).us]).toEqual([982,1068,1803,2747,3429]);
+ // Second oscillator: saw phase-modulating, and a heard sine.
+ const pm={...dense,parameters:dense.parameters.map((v,i)=>i===P.Osc2Shape?optionValue(P.Osc2Shape,2):i===P.PhaseMod?30000:v)},heard={...dense,parameters:dense.parameters.map((v,i)=>i===P.Osc2Level?20000:v)};
+ expect([wavetableCost({...pm,effects:full()}).us,wavetableCost({...heard,effects:full()}).us]).toEqual([2933,2827]);
+});
+
+describe('pitch, mono and second oscillator', () => {
+  it('snaps coarse bases to semitones while routes stay continuous', async () => {
+    const {coarseValue, coarseSemitones, modulatable, wavetablePreset} = await import('./wavetableSchema.ts');
+    expect(coarseSemitones(coarseValue(12))).toBeCloseTo(12, 3);  // 16-bit steps: within 0.05 cents.
+    expect(coarseValue(0)).toBe(32768);
+    for (const id of [P.Coarse, P.Fine, P.SubCoarse, P.SubFine, P.Osc2Level, P.Osc2Coarse, P.Osc2Fine, P.PhaseMod]) expect(modulatable(id)).toBe(true);
+    expect(modulatable(P.Osc2Shape)).toBe(false);
+    const sound = {...wavetablePreset('Mono', initialWavetable()), mono: {flags: 2, glideMs: 120}};
+    expect(wavetableFromUnknown(JSON.parse(JSON.stringify(sound))).mono).toEqual({flags: 2, glideMs: 120});
+  });
+  it('places Osc 2 after the oscillator with pitch controls', () => {
+    const html = renderToStaticMarkup(createElement(WavetableSynthEditor, {}));
+    expect(html.indexOf('wt-stage-osc2')).toBeGreaterThan(html.indexOf('wt-stage-oscillator'));
+    expect(html.indexOf('wt-stage-osc2')).toBeLessThan(html.indexOf('wt-stage-warp'));
+    for (const label of ['Osc 2 shape', 'Phase mod', 'Coarse', 'Fine', 'Voice mode']) expect(html).toContain(label);
+  });
 });

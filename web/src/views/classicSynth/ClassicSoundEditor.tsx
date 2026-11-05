@@ -48,7 +48,7 @@ export function ClassicKnob({ label, value, min, max, format, onChange, routes, 
   const text = format(value);
   return <div className="physical-control" data-lit={lit ? true : undefined} style={lit ? { "--lit": lit } as CSSProperties : undefined}>
     <strong>{label}</strong>
-    <div className="knob-wrap"><Knob label={label} value={value} min={min} max={max} step={1} valueText={text} routes={routes}
+    <div className="knob-wrap"><Knob label={label} value={value} min={min} max={max} keyStep={1} valueText={text} routes={routes}
       onChange={(next) => { const stepped = Math.max(min, Math.min(max, Math.round(next))); if (stepped !== value) onChange(stepped); }}/></div>
     <output>{text}</output>
   </div>;

@@ -48,24 +48,33 @@ export const velocityEngines = [
 ] as const;
 export type PhysicalVelocityEngine = typeof velocityEngines[number]["id"];
 export const fxSourceIds=[3,4,6,7,8];
-export const fxTargetIds=[0,1,4,5,6,8,9,10,12,13,14,20,21,22];
-export const fxRow=(id:number)=>id===5?5:id-1;
+// Mirrors Advanced src/synth/fx_rack.h: effects 1-4 use rows 0-3, row 4 is
+// Body EQ, Filter (5) row 5 and Ensemble (6) row 6.
+export const fxTargetIds=[0,1,4,5,6,8,9,10,12,13,14,20,21,22,24,25];
+export const fxSlotCount=6,fxRouteCount=fxTargetIds.length*5;
+export const fxRow=(id:number)=>id>=5?id:id-1;
 export interface FxRack { order: number[]; values: number[][]; steps:number[]; routes?:number[] }
-export const defaultFx = (): FxRack => ({order:[],routes:Array(70).fill(0),steps:Array.from({length:16},(_,i)=>i%2?0:65535),values:[[20000,16000,0,0],[24000,45000,30000,0],[26214,35000,6000,47],[18000,22000,18000,0],[0,32768,32768,18000],[65535,0,65535,0]]});
+export const defaultFx = (): FxRack => ({order:[],routes:Array(fxRouteCount).fill(0),steps:Array.from({length:16},(_,i)=>i%2?0:65535),values:[[20000,16000,0,0],[24000,45000,30000,0],[26214,35000,6000,47],[18000,22000,18000,0],[0,32768,32768,18000],[65535,0,65535,0],ensembleDefaults()]});
+// Mix 50%, width, voices (0: Duo, 1: Quad) and rate ×1.
+export const ensembleDefaults=()=>[32768,52000,0,32768];
 export const effectTypes = [
   {id:1,name:"Distortion",controls:["Drive","Mix"]},
   {id:2,name:"Reverb",controls:["Mix","Size","Damping"]},
   {id:3,name:"Volume Steps",controls:["Tempo","Depth","Smoothing"]},
   {id:4,name:"Chorus",controls:["Mix","Rate","Depth"]},
-  {id:5,name:"Filter",controls:["Cutoff","Resonance","Mix"]}
-];
+  {id:5,name:"Filter",controls:["Cutoff","Resonance","Mix"]},
+  {id:6,name:"Ensemble",controls:["Mix","Width","Rate"],params:[0,1,3]}
+] as {id:number;name:string;controls:string[];params?:number[]}[];
+export const ensembleVoices=["Duo","Quad"] as const;
 export function validateFx(value: unknown): FxRack {
   const f=value as FxRack;
-  if(!f || !Array.isArray(f.order) || f.order.length>5 || new Set(f.order).size!==f.order.length || f.order.some(id=>!Number.isInteger(id)||id<1||id>5) || !Array.isArray(f.values) || ![5,6].includes(f.values.length) || f.values.some(row=>!Array.isArray(row)||row.length!==4||row.some(v=>!Number.isInteger(v)||v<0||v>65535)))throw Error("Invalid effect rack.");
+  if(!f || !Array.isArray(f.order) || f.order.length>fxSlotCount || new Set(f.order).size!==f.order.length || f.order.some(id=>!Number.isInteger(id)||id<1||id>fxSlotCount) || !Array.isArray(f.values) || ![5,6,7].includes(f.values.length) || f.values.some(row=>!Array.isArray(row)||row.length!==4||row.some(v=>!Number.isInteger(v)||v<0||v>65535)))throw Error("Invalid effect rack.");
   const steps=f.steps??defaultFx().steps;if(!Array.isArray(steps)||steps.length!==16||steps.some(v=>!Number.isInteger(v)||v<0||v>65535))throw Error("Invalid volume steps.");
-  const values=f.values.map(row=>[...row]);if(values.length===5)values.push([65535,0,65535,0]);
-  if(values[5][3]>2)throw Error("Invalid filter mode.");
-  const routes=f.routes??Array(70).fill(0);if(!Array.isArray(routes)||routes.length!==70||routes.some(v=>!Number.isInteger(v)||v<-65536||v>65536)||fxTargetIds.some((_,t)=>routes.slice(t*5,t*5+5).filter(Boolean).length>4))throw Error("Invalid global FX modulation.");
+  // Earlier racks gain a bypass-neutral filter and default ensemble; new
+  // targets are appended, so earlier routes keep their positions.
+  const values=f.values.map(row=>[...row]);if(values.length===5)values.push([65535,0,65535,0]);if(values.length===6)values.push(ensembleDefaults());
+  if(values[5][3]>2)throw Error("Invalid filter mode.");if(values[6][2]>1)throw Error("Invalid ensemble voices.");
+  const given=f.routes??[];const routes=given.length===70?[...given,...Array(fxRouteCount-70).fill(0)]:f.routes??Array(fxRouteCount).fill(0);if(!Array.isArray(routes)||routes.length!==fxRouteCount||routes.some(v=>!Number.isInteger(v)||v<-65536||v>65536)||fxTargetIds.some((_,t)=>routes.slice(t*5,t*5+5).filter(Boolean).length>4))throw Error("Invalid global FX modulation.");
   return {order:[...f.order],values,steps:[...steps],routes:[...routes]};
 }
 export function effectDescription(id:number,index:number,value:number) {
@@ -73,18 +82,24 @@ export function effectDescription(id:number,index:number,value:number) {
   if(id===1 && index===0)return `${(1+15*v).toFixed(1)}×`;
   if(id===3&&index===0)return `${Math.round(40+200*v)} BPM`;
   if(id===4 && index===1)return `${(.1+2.9*v).toFixed(2)} Hz`;
+  if(id===6 && index===3)return `×${(2**(2*(v-.5))).toFixed(2)}`;
   if(id===5 && index===0){const hz=20*2**(9.813781*v);return hz>=1000?`${(hz/1000).toFixed(1)} kHz`:`${Math.round(hz)} Hz`;}
   return `${Math.round(v*100)}%`;
 }
 export function modulationRouteCount(routes:number[],source:number){return routes.filter((v,i)=>i%2===source&&v!==0).length;}
 export function canAssignModulation(routes:number[],id:number,source:number){const copy=[...routes];copy[id*2+source]=copy[id*2+source]||1;return modulationUsage({routes:Array(99).fill(0),tiltRoutes:Array(66).fill(0),modulation:{routes:copy}}).fits;}
 export interface ModulationSources { settings:number[]; routes:number[] }
-export const defaultModulation = ():ModulationSources => ({settings:[14000,30000,42000,34000,0,0,32768,0,30000,0,65535,0,0,0,0,0],routes:Array(66).fill(0)});
+// 18-word Modulators layout: words 6/16/17 are attack/decay/release curves (32768 straight).
+export const modulationSettingCount=18;
+export const defaultModulation = ():ModulationSources => ({settings:[14000,30000,42000,34000,0,0,32768,0,30000,0,65535,0,0,0,0,0,32768,32768],routes:Array(66).fill(0)});
 export function modulationSeconds(v:number){return v===0?0:.001*Math.exp(9.903488*v/65535);}
 export function modulationRate(v:number){return .05*Math.exp(5.991465*v/65535);}
 export function validateModulation(value:unknown):ModulationSources {
-  const m=value as ModulationSources;
-  if(!m||!Array.isArray(m.settings)||m.settings.length!==16||m.settings.some(v=>!Number.isInteger(v)||v<0||v>65535)||[7,10,14].some(i=>m.settings[i]!==0&&m.settings[i]!==65535)||m.settings[9]%13107!==0||!Array.isArray(m.routes)||m.routes.length!==66||m.routes.some(v=>!Number.isInteger(v)||v<-65536||v>65536)||[8,21,27,31].some(id=>m.routes.slice(id*2,id*2+2).some(Boolean)))throw Error("Invalid envelope / LFO modulation.");
+  const given=value as ModulationSources;
+  // Drafts and files saved before per-segment curves carry 16 words; their one
+  // curve becomes all three segment curves.
+  const m=given&&Array.isArray(given.settings)&&given.settings.length===16?{...given,settings:[...given.settings,given.settings[6],given.settings[6]]}:given;
+  if(!m||!Array.isArray(m.settings)||m.settings.length!==modulationSettingCount||m.settings.some(v=>!Number.isInteger(v)||v<0||v>65535)||[7,10,14].some(i=>m.settings[i]!==0&&m.settings[i]!==65535)||m.settings[9]%13107!==0||!Array.isArray(m.routes)||m.routes.length!==66||m.routes.some(v=>!Number.isInteger(v)||v<-65536||v>65536)||[8,21,27,31].some(id=>m.routes.slice(id*2,id*2+2).some(Boolean)))throw Error("Invalid envelope / LFO modulation.");
   if(!modulationUsage({routes:Array(99).fill(0),tiltRoutes:Array(66).fill(0),modulation:m}).fits)throw Error("Modulation capacity full. Remove a destination before adding another.");
   return {settings:[...m.settings],routes:[...m.routes]};
 }

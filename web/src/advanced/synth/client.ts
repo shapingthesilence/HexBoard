@@ -13,7 +13,7 @@ import {wavetableEngine,wavetableSchema,wavetableWords,wavetableFromWords,validW
 import type {SynthProgress} from './progress.ts';
 import type { MidiTransport } from "../../midi/types.ts";
 import { decodePresetSyncFrame, encodeDefaultPresetSyncFrame, encodeU14, encodeU21, decodeU14, decodeU21 } from "../../protocol/index.ts";
-import { physicalPresetFromUnknown, defaultSample, defaultSampleLoop, validateSample, type SampleLoop, type SampleExciter, defaultModulation, validateModulation, type ModulationSources, defaultFx, validateFx, type FxRack, type PhysicalPreset, type PhysicalVelocityEngine, encodeLogPitchHz } from "./schema.ts";
+import { physicalPresetFromUnknown, modulationSettingCount, defaultSample, defaultSampleLoop, validateSample, type SampleLoop, type SampleExciter, defaultModulation, validateModulation, type ModulationSources, defaultFx, validateFx, fxSlotCount, fxRouteCount, type FxRack, type PhysicalPreset, type PhysicalVelocityEngine, encodeLogPitchHz } from "./schema.ts";
 
 export interface PresetCatalogState {phase:number;action:number;error?:number;awaiting?:boolean;slot:number;medium:0|1|2;progress:number;mask:number;elapsedMs:number;maxSliceUs:number;engine:number;folder:number;capacity:number;folderCapacity:number;heapMin:number}
 export interface DevicePresetFolder {index:number;name:string;mask:number}
@@ -63,15 +63,17 @@ export function decodePhysicalExpression(p: number[]): PhysicalExpression {
     throw Error("Invalid expression response.");
   return { key: key === 16383 ? null : key, held: Boolean(p[3]), velocity: p[4], pressure, release: p[8] };
 }
+// Order bytes, then values, volume steps and global routes as 3-byte U21.
+const fxValuesAt=1+fxSlotCount,fxStepsAt=fxValuesAt+7*4*3,fxRoutesAt=fxStepsAt+16*3,fxBytes=fxRoutesAt+fxRouteCount*3;
 export function decodeFx(payload:number[]): FxRack {
-  if(payload.length!==336||payload[0]!==17)throw Error("Unsupported FX response. Update Advanced firmware.");
-  const padded=payload.slice(1,6), end=padded.indexOf(0);
+  if(payload.length!==fxBytes||payload[0]!==17)throw Error("Unsupported FX response. Update Advanced firmware.");
+  const padded=payload.slice(1,fxValuesAt), end=padded.indexOf(0);
   if(end>=0 && padded.slice(end).some(id=>id!==0))throw Error("Invalid effect order.");
-  return validateFx({steps:Array.from({length:16},(_,i)=>decodeU21(payload.slice(78+i*3,81+i*3))),order:padded.filter(Boolean),routes:Array.from({length:70},(_,i)=>decodeU21(payload.slice(126+i*3,129+i*3))-65536),values:Array.from({length:6},(_,i)=>Array.from({length:4},(_,j)=>decodeU21(payload.slice(6+(i*4+j)*3,9+(i*4+j)*3))))});
+  return validateFx({steps:Array.from({length:16},(_,i)=>decodeU21(payload.slice(fxStepsAt+i*3,fxStepsAt+3+i*3))),order:padded.filter(Boolean),routes:Array.from({length:fxRouteCount},(_,i)=>decodeU21(payload.slice(fxRoutesAt+i*3,fxRoutesAt+3+i*3))-65536),values:Array.from({length:7},(_,i)=>Array.from({length:4},(_,j)=>decodeU21(payload.slice(fxValuesAt+(i*4+j)*3,fxValuesAt+3+(i*4+j)*3))))});
 }
 export function decodeModulation(payload:number[]):ModulationSources {
-  if(payload.length!==247||payload[0]!==17)throw Error("Update Advanced firmware for envelope and LFO sources.");
-  return validateModulation({settings:Array.from({length:16},(_,i)=>decodeU21(payload.slice(1+i*3,4+i*3))),routes:Array.from({length:66},(_,i)=>decodeU21(payload.slice(49+i*3,52+i*3))-65536)});
+  const n=modulationSettingCount;if(payload.length!==1+3*(n+66)||payload[0]!==17)throw Error("Update Advanced firmware for envelope curves.");
+  return validateModulation({settings:Array.from({length:n},(_,i)=>decodeU21(payload.slice(1+i*3,4+i*3))),routes:Array.from({length:66},(_,i)=>decodeU21(payload.slice(1+3*n+i*3,4+3*n+i*3))-65536)});
 }
 export function sampleChecksum(frames:number[]){let crc=0xffffffff;for(const v of frames)for(const byte of [v&255,(v>>8)&255]){crc^=byte;for(let i=0;i<8;i++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}return (crc^0xffffffff)>>>0;}
 interface SampleMeta{loop:SampleLoop;enabled:boolean;gain:number;direct:number;length:number;busy:boolean;crc:number}
@@ -197,7 +199,7 @@ export class PhysicalSynthClient {
   private async waitSample(){this.onProgress?.({label:"Preparing synth…"});for(let i=0;i<300;i++){if(!(await this.request<SampleMeta>(20)).busy)return;await new Promise(r=>setTimeout(r,20));}throw Error("Sample transfer did not finish.");}
   async previewSample(){if(!this.sample.frames.length)throw Error("Import a sample first.");this.onProgress?.({label:"Preparing preview…"});try{await this.request<SampleMeta>(24,[1,...encodeU21(this.sample.gain),...encodeU21(this.sample.direct)]);this.sample.enabled=true;const state=await this.request(0);if(state.state==="stopped")await this.start();await this.waitSample();if(this.previewNeedsStartup){this.onProgress?.({label:"Preparing audio…"});await new Promise(resolve=>setTimeout(resolve,2000));this.previewNeedsStartup=false;}await this.request<SampleMeta>(25);return await this.request(0);}finally{this.onProgress?.();}}
   async readEffects(){return validateFx(await this.request<FxRack>(10));}
-  async effects(fx:FxRack) { const f=validateFx(fx);await this.request<FxRack>(11,[...f.order,...Array(5-f.order.length).fill(0),...f.values.flat().flatMap(encodeU21),...f.steps.flatMap(encodeU21),...f.routes!.flatMap(v=>encodeU21(v+65536))]);return this.request(0); }
+  async effects(fx:FxRack) { const f=validateFx(fx);await this.request<FxRack>(11,[...f.order,...Array(fxSlotCount-f.order.length).fill(0),...f.values.flat().flatMap(encodeU21),...f.steps.flatMap(encodeU21),...f.routes!.flatMap(v=>encodeU21(v+65536))]);return this.request(0); }
   async expression() {const e=await this.request<PhysicalExpression>(8);this.motion=await this.request<MotionState>(12);return {...e,tiltX:this.motion.tiltX,tiltY:this.motion.tiltY,motionValid:this.motion.valid,motionDetected:this.motion.detected};}
   async zeroMotion(){this.motion=await this.request<MotionState>(15);return this.motion;}
   async tiltRoute(id:number,axis:number,depth:number){this.motion=await this.request<MotionState>(14,[id,axis,...encodeU21(depth+65536)]);return this.request(0);}
@@ -249,6 +251,18 @@ export class PhysicalSynthClient {
     await this.retryAdvanced(30,[wavetableEngine]);
     for(let at=0;at<words.length;at+=64)await this.request(31,[...encodeU21(at),Math.min(64,words.length-at),...words.slice(at,at+64).flatMap(encodeU21)]);
     await this.request(32);
+  }
+  async selectWavetableTable(crc:number,bytes?:Uint8Array,progress?:(done:number,total:number)=>void){
+    await this.stopAndWait();
+    const select=async()=>{const selected=await this.request<number>(77,u32(crc));if(selected!==crc)throw Error('The board selected a different table.');};
+    // Select quiesces audio even if an abandoned candidate prevents selection.
+    // Abort only afterward: main's stopped state can retain an idle renderer.
+    try{await select();return;}catch{}
+    await this.request(76);
+    try{await select();return;}catch{}
+    if(!bytes)throw Error('This table is not in the browser library. Import its WAV or a sound containing it.');
+    const {crc32,validateAsset}=await import('./wavetable/prepare.mjs');if(validateAsset(bytes)!==crc)throw Error('The table does not match this sound.');
+    try {await this.request(73,[...u32(bytes.length),...u32(crc32(bytes))]);for(let at=0;at<bytes.length;at+=176){const chunk=bytes.subarray(at,at+176);const end=await this.request<number>(74,[...u32(at),...encodeU14(chunk.length),...Array.from(chunk).flatMap(b=>[b>>7,b&127])]);if(end!==at+chunk.length)throw Error('Table transfer offset mismatch.');progress?.(end,bytes.length);}if(await this.request<number>(75)!==crc)throw Error('The board received a different table.');}catch(error){try{await this.request(76);}catch{}throw error;}
   }
   editWavetable(index:number,value:number){return this.retryAdvanced(34,[...encodeU21(index),...encodeU21(value),wavetableEngine]);}
   routeWavetable(index:number,source:number,destination:number,depth:number){return this.retryAdvanced(35,[...encodeU21(index),...encodeU21(source*256+destination),...encodeU21(depth+65536),wavetableEngine]);}
@@ -320,7 +334,7 @@ export class PhysicalSynthClient {
     if(this.advanced)await retry(()=>this.request(53,Array(66).fill(65536).flatMap(encodeU21)));
     // A staged save never touches the device's sample: the live sound keeps it.
     if(withSample){await this.request<SampleMeta>(24,[0,...encodeU21(p.sample.gain),...encodeU21(p.sample.direct)]);this.sample={...this.sample,enabled:false};}
-    const neutralFx={...p.effects,order:[],routes:Array(70).fill(0),values:p.effects.values.map((row,i)=>i===4?row.map((v,j)=>j===0?0:v):row)};
+    const neutralFx={...p.effects,order:[],routes:Array(fxRouteCount).fill(0),values:p.effects.values.map((row,i)=>i===4?row.map((v,j)=>j===0?0:v):row)};
     await retry(()=>this.effects(neutralFx));
     await retry(()=>this.setModulation({...p.modulation,routes:Array(66).fill(0)}));
     await retry(()=>this.request<MotionState>(13,Array(66).fill(65536).flatMap(encodeU21)));
@@ -358,6 +372,8 @@ export class PhysicalSynthClient {
             const p=frame.payload;if(p.length<27||p.length>29||p[0]!==17||p[1]!==2||p[2]>3||p[3]>8||decodeU14(p.slice(4,6))>=3072||p[6]>2||p[7]>100||![2,4,5].includes(p[19])||p[20]>=32||decodeU14(p.slice(21,23))!==3072||p[23]!==32)throw Error('Update Advanced firmware for the folder preset library.');const mask=p.slice(8,13).reduce((a,b)=>a*128+b,0);if(mask>0xffffffff)throw Error('Invalid preset folder mask.');finish(undefined,{phase:p[2],action:p[3],slot:decodeU14(p.slice(4,6)),medium:p[6],progress:p[7],mask,elapsedMs:decodeU21(p.slice(13,16)),maxSliceUs:decodeU21(p.slice(16,19)),engine:p[19],folder:p[20],capacity:3072,folderCapacity:32,heapMin:decodeU21(p.slice(24,27)),error:p.length>27?p[27]:0,awaiting:p[28]===1} as T);
           } else if(operation===59&&frame.message===0x44){
             const p=frame.payload;if(p.length!==259||p[0]!==17||p[1]!==data[0]||p[2]!==data[1])throw Error('Invalid preset label.');const bytes=Uint8Array.from({length:128},(_,i)=>{if(p[3+i*2]>1)throw Error('Invalid preset label byte.');return (p[3+i*2]<<7)|p[4+i*2];});const text=(offset:number,n:number)=>{const b=bytes.slice(offset,offset+n),end=b.indexOf(0);return new TextDecoder('utf-8',{fatal:true}).decode(b.slice(0,end<0?n:end));};if(![2,3,4,5].includes(bytes[8])||bytes[9]>1)throw Error('Invalid preset engine.');finish(undefined,{engine:bytes[8],favorite:!!bytes[9],name:text(12,76),folder:text(88,40)} as T);
+          } else if(operation>=73&&operation<=77&&frame.message===0x4d){
+            const p=frame.payload;if(p.length!==6||p[0]!==17||p[1]>15)throw Error('Invalid table transfer acknowledgement.');finish(undefined,p.slice(1).reduce((n,b)=>n*128+b,0) as T);
           } else if(operation===71&&frame.message===0x4c){
             const p=frame.payload;if(p.length!==2||p[0]!==17||p[1]>1)throw Error('Update Advanced firmware to save without loading.');finish(undefined,{staged:p[1]===1} as T);
           } else if(operation===70&&frame.message===0x4b){

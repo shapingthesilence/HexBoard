@@ -1,0 +1,16 @@
+import {readFile,writeFile,mkdir,readdir} from 'node:fs/promises';
+import {resolve,dirname,basename,relative} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {createHash} from 'node:crypto';
+import {wavetableSources,buildWaveformSourceMap} from './factory-wavetable-sources.mjs';
+import {prepareTable,decodeTable} from '../src/advanced/synth/wavetable/prepare.mjs';
+const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..'),output=resolve(root,'web/public/advanced-wavetables');await mkdir(output,{recursive:true});
+function anchorWav(frames){const size=512,out=new Uint8Array(44+frames.length*size*4),v=new DataView(out.buffer),text=(at,s)=>[...s].forEach((c,i)=>out[at+i]=c.charCodeAt(0));text(0,'RIFF');v.setUint32(4,out.length-8,true);text(8,'WAVEfmt ');v.setUint32(16,16,true);v.setUint16(20,3,true);v.setUint16(22,1,true);v.setUint32(24,44100,true);v.setUint32(28,176400,true);v.setUint16(32,4,true);v.setUint16(34,32,true);text(36,'data');v.setUint32(40,out.length-44,true);for(let f=0;f<frames.length;f++)for(let i=0;i<size;i++)v.setFloat32(44+(f*size+i)*4,(frames[f][i]-128)/128,true);return out;}
+const source=await readFile(resolve(root,'src/firmware/synth/BuiltinWavetables.cpp'),'utf8'),anchors=buildWaveformSourceMap(source,wavetableSources),rows=[];
+async function add(name,bytes,path,group='HexBoard Classic',options={},sourcePrecision){const prepared=prepareTable(bytes,options),decoded=decodeTable(bytes,options),slug=name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');await writeFile(resolve(output,slug+'.hwt'),prepared.bytes);await writeFile(resolve(output,slug+'.wav'),bytes);rows.push({id:'factory:'+slug,name,group,crc:prepared.crc,file:slug,source:path,sourceSha256:createHash('sha256').update(bytes).digest('hex'),sourcePrecision:sourcePrecision??'original WAV',sourceFrames:decoded.frames,sourceFrameSize:decoded.frameSize,options});}
+for(const d of wavetableSources){if(d.name==='Basic Shapes')continue;if(d.kind==='wav')await add(d.name,new Uint8Array(await readFile(resolve(root,d.path))),d.path);else await add(d.name,anchorWav(d.waveforms.map(w=>anchors.get(w))),'src/firmware/synth/BuiltinWavetables.cpp','HexBoard Classic',{frameSize:512},'8-bit original anchor samples; blended before final quantization');}
+await add('NotPiano',new Uint8Array(await readFile(resolve(root,'src/Default Wavetables/NotPiano.wav'))),'src/Default Wavetables/NotPiano.wav');
+// Preserve the higher-precision individual source cycles as their own tables.
+async function visit(dir){for(const entry of await readdir(dir,{withFileTypes:true})){const path=resolve(dir,entry.name);if(entry.isDirectory())await visit(path);else if(/\.wav$/i.test(entry.name)){const bytes=new Uint8Array(await readFile(path)),d=decodeTable(bytes);if(d.frames===1)await add(basename(entry.name,'.wav'),bytes,relative(root,path),'Classic source cycles');}}}
+await visit(resolve(root,'src/Default Wavetables/Matthew Parker Wavetables'));
+rows.sort((a,b)=>a.group.localeCompare(b.group)||a.name.localeCompare(b.name));await writeFile(resolve(root,'web/src/advanced/synth/wavetable/factory.json'),JSON.stringify(rows,null,2)+'\n');console.log(`Prepared ${rows.length} Advanced default tables from original Classic sources.`);
