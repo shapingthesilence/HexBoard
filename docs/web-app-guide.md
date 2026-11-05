@@ -754,7 +754,9 @@ In the synth editor, you can manage synth presets and user wavetables. Presets
 can be saved on the computer, uploaded to HexBoard, downloaded from HexBoard,
 exported/imported as JSON, edited, erased, and organized into folders.
 Use **Presets** and **Wavetables** inside the **Synth Library** panel to switch
-between the two libraries. `New sound` starts a preset. Opening a preset restores its draft, if
+between the two libraries. Click the star on a sound to favorite it (HexBoard
+sounds need a connection); **★ Favorites** then lists starred sounds from every
+folder, and the sound open in the editor is highlighted. `New sound` starts a preset. Opening a preset restores its draft, if
 one exists. Name, folder, and favorite controls share the top bar with
 **Save to Browser** and **Save to HexBoard**. Choose **New folder…** from the
 top Folder menu to create a browser folder and select it for the current draft.
@@ -763,25 +765,41 @@ The sound’s more-actions menu contains export, `Load current HexBoard sound`,
 and `Discard draft`; `Other drafts` resumes unfinished sounds. Connecting does
 not replace your open sound. Previewing or saving to HexBoard requires a connection.
 
-Playback spans the editor above the oscillator and volume envelope, which sit
-side by side on wider laptops. Find `Vibrato speed` in the oscillator section.
-Mod wheel and LFO controls form the next row, followed by the two modulation
-envelopes. Narrower windows stack these groups. All sound controls remain
-visible on one scrollable page.
-The wavetable graph follows the selected frame. If the preview is unavailable
-and the required wavetable is on the connected HexBoard, choose **Copy wavetable
-from HexBoard** beside the message to add it to Browser Wavetables and restore
-the preview. The volume envelope graph
-shows the shape of the sound, with compressed time spacing to keep short stages
-visible. Slider values appear beside their labels with times, rates, and
-percentages. Scroll the page to reach the lower groups; save actions stay at the
-top of the editor while scrolling.
+The editor uses the same violet Wavetable look as the Advanced editor. Playback
+sits on top; `Arpeggiator rate`, `Arpeggiator direction`, `Note length` and
+`Tempo` appear only in the two arp modes, and `Portamento` only in the two mono
+modes. Below it are the **Oscillator**, **Volume envelope** and **Drive**
+panels, with **Motion sources** (Mod wheel, LFO, Mod envelope 1 and 2) in a
+column beside them. Narrower windows stack the groups. All sound controls stay
+visible on one scrollable page; save actions stay at the top while scrolling.
+Settings are knobs: drag up or down, or focus one and use the arrow keys. Each
+knob steps through the same values the instrument stores, and its reading shows
+the time, rate or percentage.
+
+The oscillator draws all 16 frames of the selected wavetable. Drag the stack up
+or down, or use `Wavetable position`, to choose the played frame. Beside it,
+the played frame is drawn with any routed Wave folding, Pulse width or Poly warp
+at full amount, in the source's color. Frames that a source sweeps through are
+colored in the stack. A row of chips lists the oscillator targets and each
+route's full effect: Pitch reaches ±24 semitones at 100%. If the preview is
+unavailable and the required wavetable is on the connected HexBoard, choose
+**Copy wavetable from HexBoard** to add it to Browser Wavetables and restore
+the pictures.
+
+Drag the volume envelope's handles to set attack, hold, decay with sustain, and
+release; stages are straight lines as on the instrument, with compressed time
+spacing so short stages stay visible. Drive shapes the mix of every playing
+note after the volume envelope: its picture shows the instrument's soft clip
+and the played frame through it, and each step (Warm, Edge, Dirty) raises the
+level going into that clip. Each motion source shows its shape and its target,
+amount and settings. Click a source's name to light up the knobs and chips it
+moves; routed knobs also show a ring in that source's color.
 Choose `Off` as a modulation target to bypass it while keeping its settings.
 After Poly warp, the Mod wheel target menu offers the five volume-envelope
 parameters. Wheel depth raises the saved value toward 4 seconds (times) or
-100% (Sustain) with positive Mod wheel amount. The amount slider ranges from
+100% (Sustain) with positive Mod wheel amount. Amount knobs range from
 −100% to +100%; negative amounts reverse oscillator modulation and lower
-volume-envelope values toward zero. All envelope time sliders include
+volume-envelope values toward zero. All envelope time knobs include
 3 ms between 0 and 5 ms; previously saved times retain their meaning.
 Both arp modes expose `Note length` (1–100% of a step). `Poly arpeggiator`
 plays one note per step with overlapping release tails; the regular arpeggiator

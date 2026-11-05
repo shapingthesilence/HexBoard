@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { deterministicObjectId, objectIdToHex } from "../catalogs/index.ts";
-import { loadComputerWavetables, wheelAmountByteToPercent, wheelAmountPercentToByte, filterLibraryPresets, mergePresetBatch, presetsFromUnknown } from "./SynthPresetLibrary.tsx";
+import { favoritesFilter, loadComputerWavetables, wheelAmountByteToPercent, wheelAmountPercentToByte, filterLibraryPresets, mergePresetBatch, presetsFromUnknown } from "./SynthPresetLibrary.tsx";
 
 function presetRecord(id: string, name: string, folderPath: string) {
   return {
@@ -59,6 +59,12 @@ describe("synth preset library filtering", () => {
       "Soft Voice"
     ]);
     expect(filterLibraryPresets(presets, "Pads", "lead")).toEqual([]);
+  });
+
+  it("shows starred sounds from every folder under Favorites", () => {
+    const starred = presets.map((preset) => ({ ...preset, favorite: preset.name !== "Soft Voice" }));
+    expect(filterLibraryPresets(starred, favoritesFilter, "").map((preset) => preset.name)).toEqual(["Warm Pad", "Bright Lead"]);
+    expect(filterLibraryPresets(starred, favoritesFilter, "bright").map((preset) => preset.name)).toEqual(["Bright Lead"]);
   });
 });
 

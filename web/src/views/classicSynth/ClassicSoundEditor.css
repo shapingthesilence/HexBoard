@@ -1,0 +1,77 @@
+/* HexBoard Classic wavetable editor. It shares the Advanced Wavetable surface
+   (.physical-editor.wavetable-editor) and adds Classic's four motion-source colors. */
+.classic-sound { --classic-wheel: #c97f1c; --classic-lfo: #2386c2; --classic-env1: #2f9a5a; --classic-env2: #d43d6f; display: grid; gap: 10px; }
+:root[data-theme="dark"] .classic-sound { --classic-wheel: #f2b45e; --classic-lfo: #6cc4f2; --classic-env1: #6fd39a; --classic-env2: #ff8fb0; }
+.classic-sound[data-synth-off] .wt-stages { opacity: .6; }
+
+.classic-choice { display: grid; gap: 2px; min-width: 0; font-size: 10px; color: var(--text-soft); }
+.classic-choice select { min-width: 0; }
+
+.classic-playback { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.classic-playback .classic-choice { flex: 0 1 190px; }
+.classic-playback .panel-note { margin: 0; }
+.classic-playback .physical-control { width: 72px; }
+
+.wavetable-editor .classic-stages .wt-stage { grid-column: span 3; }
+.wavetable-editor .classic-stages .classic-oscillator { grid-column: span 6; }
+.classic-table-row { display: flex; flex-wrap: wrap; align-items: end; gap: 6px 10px; }
+.classic-table-row .field { flex: 1 1 240px; display: grid; gap: 2px; font-size: 10px; color: var(--text-soft); }
+.classic-table-row select { width: 100%; }
+.classic-pictures { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 8px; }
+.classic-stack, .classic-scope, .classic-drive, .classic-envelope { display: block; width: 100%; height: auto; border-radius: 8px; background: var(--synth-scope); touch-action: none; }
+.classic-stack { cursor: grab; }
+.classic-stack, .classic-envelope { user-select: none; -webkit-user-select: none; }
+.classic-stack:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+.classic-envelope .classic-env-grid { stroke: var(--border); stroke-dasharray: 3 3; }
+.classic-envelope .classic-env-fill { fill: var(--synth-1); opacity: .14; }
+.classic-envelope .classic-env-line { fill: none; stroke: var(--synth-1); stroke-width: 2.4; stroke-linejoin: round; }
+.classic-envelope .classic-env-keyup { stroke: var(--text-soft); stroke-dasharray: 2 3; opacity: .6; }
+.classic-envelope .classic-env-axis { fill: var(--text-soft); font-size: 10px; }
+.classic-envelope .classic-env-handle { fill: var(--brand); stroke: var(--synth-scope); stroke-width: 2; cursor: grab; }
+.classic-envelope .classic-env-handle:focus-visible { outline: none; stroke: var(--text); }
+
+/* A knob or target that the highlighted source moves. */
+.physical-editor .classic-sound .physical-control[data-lit] .physical-knob { filter: drop-shadow(0 0 5px var(--lit)); }
+.classic-targets { display: flex; flex-wrap: wrap; gap: 4px; }
+.classic-target { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text-soft); font-size: 10px; }
+.classic-target i { width: 7px; height: 7px; border-radius: 50%; }
+.classic-target em { font-style: normal; font-variant-numeric: tabular-nums; }
+.classic-target[data-live] { color: var(--text); border-color: var(--border-strong); }
+.classic-target[data-lit] { box-shadow: 0 0 0 2px var(--lit); }
+
+/* Motion sources */
+.wavetable-editor .classic-sources { gap: 6px; }
+.classic-side-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .09em; color: var(--text-soft); }
+.classic-source { display: grid; gap: 6px; padding: 8px 9px; border: 1px solid var(--border); border-left: 3px solid var(--source); border-radius: 8px; background: var(--surface); }
+.classic-source[data-focused] { border-color: var(--source); box-shadow: 0 0 0 3px color-mix(in srgb, var(--source) 18%, transparent); }
+/* Outranks the dark theme's pressed-button fill: the card border shows the highlight. */
+:root .physical-editor .classic-sources button.classic-source-head, :root .physical-editor .classic-sources button.classic-source-head:is(:hover, [aria-pressed]) { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 6px; align-items: baseline; min-height: 0; padding: 0; border: 0; background: none; color: var(--text); text-align: left; }
+.classic-source-head b { font-size: 11px; }
+.classic-source-head span { font-size: 10px; color: var(--text-soft); text-align: right; }
+.classic-source[data-active] .classic-source-head span { color: var(--source); font-weight: 600; }
+.classic-source-head small { grid-column: 1 / -1; }
+.classic-source .classic-choice { grid-template-columns: 48px minmax(0, 1fr); align-items: center; gap: 6px; }
+.classic-source-picture { display: block; width: 100%; height: auto; border-radius: 6px; background: var(--synth-scope); }
+.classic-source-picture path, .classic-source-picture circle { fill: none; stroke: var(--source); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.classic-source-picture circle { fill: var(--source); }
+.classic-source-picture .classic-source-axis { stroke: var(--border); stroke-width: 1; }
+.classic-source-picture text { fill: var(--text-soft); font-size: 9px; }
+.classic-source:not([data-active]) .classic-source-picture { opacity: .45; }
+.physical-editor .classic-source .knob-bank { justify-content: flex-start; }
+.physical-editor .classic-source .physical-control { width: 54px; }
+.physical-editor .classic-source .physical-control > strong { height: 16px; }
+/* Compact knobs keep the FX rack's proportions. */
+.physical-editor :is(.classic-source, .classic-playback, .auditionPanel) .physical-knob { width: 46px; height: 46px; margin: 1px auto 0; }
+.physical-editor :is(.classic-source, .classic-playback, .auditionPanel) .knob-face { inset: 9px; }
+.physical-editor :is(.classic-source, .classic-playback, .auditionPanel) .knob-pointer::before { height: 7px; }
+
+@media (max-width: 1100px) {
+  .wavetable-editor .classic-sources { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .classic-side-title { grid-column: 1 / -1; }
+}
+@media (max-width: 720px) {
+  .wavetable-editor .classic-stages .wt-stage, .wavetable-editor .classic-stages .classic-oscillator { grid-column: auto; }
+  .classic-pictures { grid-template-columns: minmax(0, 1fr); }
+  .wavetable-editor .classic-sources { grid-template-columns: minmax(0, 1fr); }
+}

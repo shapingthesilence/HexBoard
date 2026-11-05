@@ -2194,6 +2194,22 @@ textarea {
   flex: 0 0 auto;
 }
 
+.synthLibraryPanel .presetFavorite {
+  flex: 0 0 auto;
+  width: 1.6rem;
+  min-height: 1.6rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 0.95rem;
+}
+
+.synthLibraryPanel .presetFavorite[aria-pressed="true"] {
+  background: transparent;
+  color: var(--sampler-2);
+}
+
 .presetOverflowMenu summary {
   display: grid;
   place-items: center;
@@ -2655,13 +2671,6 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .otherDraftsDisclosure > .row { margin-top: 8px; }
 
 .operationStatus { color: var(--text-soft); font-size: .8rem; overflow-wrap: anywhere; }
-.soundVisual { margin: 0; min-width: 0; border-radius: 8px; padding: 8px 12px; background: var(--surface-muted); }
-.soundVisual figcaption { font-size: .75rem; color: var(--text-soft); }
-.soundVisual svg { display: block; width: 100%; height: 90px; overflow: visible; }
-.soundVisual polyline { fill: none; stroke: var(--brand); stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-.soundVisual .graphAxis { fill: none; stroke: var(--border-strong); stroke-dasharray: 3 4; }
-.soundVisual text { fill: var(--text-soft); font-size: 9px; }
-.modulationSection { display: grid; border-top: 1px solid var(--border); padding-top: 10px; }
 .protocolDebugPanel { padding: 8px 14px; background: transparent; border: 0; }
 .presetOverflowActions button { text-align: left; }
 @media (max-width: 1180px) and (min-width: 761px) {
@@ -2957,19 +2966,13 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .libraryPrimaryActions { gap: 6px; }
 .libraryPrimaryActions button { font-size: .8rem; padding-inline: 8px; }
 .synthLibraryPanel > h3 { font-size: 1rem; }
-.synthVoiceSections, .synthModulationSections { display: grid; gap: 12px; min-width: 0; align-items: start; }
 .synthMainPanel .editorSection { gap: 10px; min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .synthMainPanel .editorSection > h3 { margin: 0; padding: 0 0 8px; font-size: .95rem; line-height: 1.3; }
 .synthMainPanel .editorGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; }
-.synthMainPanel .synthPlaybackSection .editorGrid { grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); }
 .synthMainPanel .field > span { color: var(--text); }
-.synthRangeHeading { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
-.synthRangeValue { flex-shrink: 0; color: var(--brand); font-size: .8rem; font-weight: 650; font-variant-numeric: tabular-nums; }
-.synthMainPanel .rangeField input { margin: 0; min-height: 28px; accent-color: var(--brand); }
 @media (max-width: 440px) {
   .synthMainPanel .editorGrid { grid-template-columns: minmax(0, 1fr); }
 }
-.soundVisual svg { height: 72px; }
 .auditionPanel { gap: 8px; padding: 10px; }
 .auditionPanel .muted { font-size: .8rem; }
 .auditionPanel > .row > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
@@ -3019,12 +3022,6 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .courseAssignmentPanel { padding: 12px; border-radius: var(--radius-lg); }
 .courseAuthorWorkspace { gap: 12px; }
 .courseLibraryDialog { padding: 16px; border-radius: var(--radius-lg); }
-@media (min-width: 1200px) {
-  .synthVoiceSections { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .synthModulationSections { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .synthModulationSections .editorGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .synthVoiceSections .editorGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
 @media (max-width: 760px) {
   .synthEditor, .layoutEditorWorkspace { grid-template-columns: minmax(0, 1fr); }
   .tabs { width: 100%; justify-content: flex-start; flex-wrap: wrap; overflow: visible; }

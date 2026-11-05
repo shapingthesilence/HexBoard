@@ -1,7 +1,8 @@
 /* Engine identities. Every Advanced editor shares the .physical-editor surface;
    an engine class picks its colors from the app-wide engine pairs in styles.css.
    --synth-1/--synth-2 draw titles, traces and highlights, --synth-scope backs
-   pictures, and --synth-on fills pressed buttons in dark mode. */
+   pictures, and --synth-on fills pressed buttons in dark mode. .wavetable-identity
+   lends the Wavetable colors to panels outside that surface (the Classic library). */
 .physical-editor {
   --synth-1: var(--brand); --synth-2: var(--brand-strong); --synth-scope: var(--surface-muted);
   --synth-on: var(--surface-accent); --synth-on-text: var(--text);
@@ -11,7 +12,7 @@
   --brand: #0b6f8c; --brand-strong: #08566d; --brand-soft: #dcf0f6; --surface-accent: #e2f1f7; --synth-scope: #f1f8fb;
   --synth-on: #c4e7f2; --synth-on-text: #0b2b38;
 }
-.physical-editor.wavetable-editor {
+.physical-editor.wavetable-editor, .wavetable-identity {
   --synth-1: var(--wavetable-1); --synth-2: var(--wavetable-2);
   --brand: #6b45c9; --brand-strong: #5532a8; --brand-soft: #ece6fb; --surface-accent: #efe9fc; --synth-scope: #f6f3fc;
   --synth-on: #ddd0fb; --synth-on-text: #24164a;
@@ -25,7 +26,7 @@
   --brand: #5cc9e6; --brand-strong: #8adcf0; --brand-soft: #16384a; --surface-accent: #284653; --synth-scope: #101b23;
   --synth-on: #cdeef7; --synth-on-text: #0f1f29;
 }
-:root[data-theme="dark"] .physical-editor.wavetable-editor {
+:root[data-theme="dark"] :is(.physical-editor.wavetable-editor, .wavetable-identity) {
   --brand: #a68bff; --brand-strong: #c0aaff; --brand-soft: #2a2148; --surface-accent: #2b2346; --synth-scope: #17131f;
   --synth-on: #e4dbff; --synth-on-text: #1c1530;
 }

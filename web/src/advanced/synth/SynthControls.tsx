@@ -34,11 +34,15 @@ function ringAt(el: Element, x: number, y: number, count: number) {
     for (let slot = 1; slot < count; ++slot) if (Math.abs(d - ringRadius(slot, count)) < Math.abs(d - ringRadius(best, count))) best = slot;
     return best;
 }
-export function Knob({ label, value, min = 0, max = 65535, disabled, onChange, onRelease, baseValue, effectiveValue, routes = [], onRouteDepth, onRouteMenu, alternate }: {
+export function Knob({ label, value, min = 0, max = 65535, step = 0, valueText, disabled, onChange, onRelease, baseValue, effectiveValue, routes = [], onRouteDepth, onRouteMenu, alternate }: {
     label: string;
     value: number;
     min?: number;
     max?: number;
+    /** Smallest keyboard step, for knobs with few positions. */
+    step?: number;
+    /** Spoken value, when the number alone does not say it. */
+    valueText?: string;
     disabled?: boolean;
     onChange: (value: number) => void;
     onRelease?: () => void;
@@ -67,7 +71,7 @@ export function Knob({ label, value, min = 0, max = 65535, disabled, onChange, o
         onRelease?.();
     } };
     const ringRoute = (e: { currentTarget: Element; clientX: number; clientY: number }) => { const slot = ringAt(e.currentTarget, e.clientX, e.clientY, routes.length); return slot === undefined ? undefined : routes[slot]; };
-    return <div className="physical-knob" role="slider" tabIndex={disabled ? -1 : 0} aria-label={label} aria-valuemin={min} aria-valuemax={max} aria-valuenow={value} aria-disabled={disabled}
+    return <div className="physical-knob" role="slider" tabIndex={disabled ? -1 : 0} aria-label={label} aria-valuemin={min} aria-valuemax={max} aria-valuenow={value} aria-valuetext={valueText} aria-disabled={disabled}
       onPointerDown={e => {
         if (disabled || e.button !== 0) return;
         const ring = onRouteDepth ? ringRoute(e) : undefined;
@@ -94,7 +98,7 @@ export function Knob({ label, value, min = 0, max = 65535, disabled, onChange, o
       onContextMenu={e => { const ring = onRouteMenu ? ringRoute(e) : undefined; if (ring) { e.preventDefault(); onRouteMenu!(ring.i, e.clientX, e.clientY); } }}
       onKeyDown={e => { if (!disabled && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
         e.preventDefault();
-        change(clamp(e.key === 'Home' ? min : e.key === 'End' ? max : value + (['ArrowUp', 'ArrowRight'].includes(e.key) ? 1 : -1) * (max - min) / (e.shiftKey ? 1000 : 100)));
+        change(clamp(e.key === 'Home' ? min : e.key === 'End' ? max : value + (['ArrowUp', 'ArrowRight'].includes(e.key) ? 1 : -1) * Math.max(step, (max - min) / (e.shiftKey ? 1000 : 100))));
     } }} onKeyUp={finish}>
     <svg className="knob-rings" viewBox={knobRingViewBox} aria-hidden="true">
       {routes.flatMap((r, slot) => modulationRings(r.depth, 26 + slot * (routes.length <= 4 ? 3 : 2), base, r.bipolar ?? (r.i === 3 || r.i === 4 || r.i === 6)).map((arc, side) => {
