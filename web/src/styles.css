@@ -2646,17 +2646,22 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .hexKeyLabel > span { font-size: 13px; line-height: 1.1; }
 .hexKeyLabel > small { font-size: 8px; opacity: .85; }
 .hexKey.pivotKey::after { content: "◆"; position: absolute; bottom: 2px; font-size: 8px; color: #ffe49b; text-shadow: 0 1px 2px #000; }
-.degreePicker { display: flex; flex-wrap: wrap; gap: 6px; max-height: 260px; overflow: auto; padding: 4px; }
-.degreePicker button { min-width: 40px; min-height: 40px; border-bottom-width: 4px; opacity: .55; }
-.degreePicker button[aria-pressed="true"] { opacity: 1; background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--brand); }
-.degreePicker button[aria-pressed="true"]::before { content: "✓ "; }
+.degreePicker { display: grid; grid-template-columns: repeat(auto-fill, minmax(42px, 1fr)); gap: 6px; max-height: 320px; overflow-y: auto; padding: 2px; }
+.degreePicker button { position: relative; min-width: 0; min-height: 38px; padding: 0 2px 4px; overflow: hidden; border-style: dashed; background: transparent; color: var(--text-soft); font-size: .85rem; font-variant-numeric: tabular-nums; white-space: nowrap; text-overflow: ellipsis; }
+.degreePicker button::after { content: ""; position: absolute; inset: auto 6px 4px; height: 3px; border-radius: 2px; background: var(--degree-color, var(--border-strong)); opacity: .35; }
+.degreePicker button[aria-pressed="true"] { border-style: solid; border-color: var(--brand); background: var(--brand-soft); color: var(--text); }
+.degreePicker button[aria-pressed="true"]::after { opacity: 1; }
+.degreePicker button[aria-pressed="true"]:disabled { opacity: .8; }
+.itemActionRow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.itemActionRow button { padding-inline: 6px; font-size: .82rem; }
 .noteLabelGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); }
 .noteLabelGrid label { min-width: 0; display: grid; gap: 3px; text-align: center; }
 .noteLabelGrid label > span { font-size: .7rem; color: var(--text-soft); }
 .noteLabelGrid input { width: 100%; min-width: 0; text-align: center; padding: 4px; }
 .noteLabelEditor h3 { margin-bottom: 8px; }
 .pitchAnchorSummary { background: var(--brand-soft); border: 0; font-size: .9rem; padding: 10px; border-radius: 6px; }
-.tuningControlGroup { border: 0; border-top: 1px solid var(--border); border-radius: 0; padding: 12px 0 0; }
+.tuningControlGroup { gap: 10px; margin-top: 4px; border: 0; border-top: 1px solid var(--border); border-radius: 0; padding: 12px 0 0; background: none; }
+.tuningControlGroup legend { float: left; width: 100%; padding: 0; color: var(--text); font-size: .9rem; font-weight: 650; }
 .synthEditor { grid-template-columns: minmax(260px, 310px) minmax(0, 1fr); gap: 18px; }
 .synthMainPanel, .synthLibraryPanel { min-width: 0; }
 .synthLibraryPanel { align-self: start; }
@@ -2977,7 +2982,9 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .auditionPanel .muted { font-size: .8rem; }
 .auditionPanel > .row > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
 .tuningSectionTabs .workflowTab.active { border-bottom-width: 1px; }
-.tuningSectionTabs .libraryTab { margin-right: 12px; }
+.tuningSectionTabs .libraryTab { position: relative; gap: 6px; margin-right: 13px; }
+.tuningSectionTabs .libraryTab::after { content: ""; position: absolute; top: 6px; bottom: 6px; right: -10px; border-right: 1px solid var(--border); }
+.tuningSectionTabs .libraryTab .layoutToolbarIcon { width: 16px; height: 16px; }
 .geometryStudioHeader { position: static; padding: 8px 12px; gap: 6px 12px; }
 .geometryTitleBlock { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }
 .geometryTitleBlock .geometryStatus { gap: 6px; min-width: 0; }

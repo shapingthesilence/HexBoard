@@ -5,7 +5,7 @@ import { withAdvancedContentMaintenance } from "../advanced/contentMaintenance.t
 import { decodeDeviceGeometryBundle, objectReferenceIdHex } from "../catalogs/deviceGeometry.ts";
 import { sameContent, useEditorDrafts } from "../editor/drafts.ts";
 import { resolveLayoutKey } from "../catalogs/layoutKey.ts";
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FocusEvent, type InputHTMLAttributes, type KeyboardEvent, type MouseEvent, type PointerEvent, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type FocusEvent, type InputHTMLAttributes, type KeyboardEvent, type MouseEvent, type PointerEvent, type RefObject } from "react";
 import {
   clampScaleDegreeColor,
   ButtonMapField,
@@ -3066,7 +3066,10 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       onPointerDownCapture={(event) => commitIncludedDegreesIfLeaving(event.target)}
     >
       <nav className="workflowTabs sectionTabs tuningSectionTabs" aria-label="Tuning editing workflow">
-        <button className="workflowTab libraryTab" type="button" aria-haspopup="dialog" onClick={() => setLibraryOpen(true)}>Library</button>
+        <button className="workflowTab libraryTab" type="button" aria-haspopup="dialog" onClick={() => setLibraryOpen(true)}>
+          <svg aria-hidden="true" className="layoutToolbarIcon" viewBox="0 0 24 24"><path d="M4 5h5v14H4zM10 5h4v14h-4zM15.5 6.2l3.8-1 3.2 12.6-3.8 1z" /></svg>
+          Library
+        </button>
         {geometryWorkspaceTabs.map((tab) => (
           <button
             aria-current={activeWorkspaceTab === tab.key ? "step" : undefined}
@@ -3208,15 +3211,16 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                   ))}
                 </select>
               </label>
-              <div className="row">
+              <div className="itemActionRow">
                 <button
                   disabled={activeBundle.layouts.length >= GeometryLayoutScaleMaxCount}
                   title={`Up to ${GeometryLayoutScaleMaxCount} layouts per tuning`}
                   type="button"
                   onClick={addNewLayout}
-                >New layout</button>
-                <button type="button" onClick={() => openBundleItemOrderDialog("layout")}>Reorder</button>
-                <button className="warning" type="button" onClick={deleteActiveLayout}>Delete layout</button>
+                  aria-label="New layout"
+                >New</button>
+                <button aria-label="Reorder layouts" type="button" onClick={() => openBundleItemOrderDialog("layout")}>Reorder</button>
+                <button aria-label="Delete layout" className="warning" type="button" onClick={deleteActiveLayout}>Delete</button>
               </div>
               <label className="field">
                 <span>Layout name</span>
@@ -3287,15 +3291,16 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                   ))}
                 </select>
               </label>
-              <div className="row">
+              <div className="itemActionRow">
                 <button
                   disabled={activeBundle.scales.length >= GeometryLayoutScaleMaxCount}
                   title={`Up to ${GeometryLayoutScaleMaxCount} scales per tuning`}
                   type="button"
                   onClick={addNewScale}
-                >New scale</button>
-                <button type="button" onClick={() => openBundleItemOrderDialog("scale")}>Reorder</button>
-                <button className="warning" disabled={activeScaleIsAllNotes} type="button" onClick={deleteActiveScale}>Delete scale</button>
+                  aria-label="New scale"
+                >New</button>
+                <button aria-label="Reorder scales" type="button" onClick={() => openBundleItemOrderDialog("scale")}>Reorder</button>
+                <button aria-label="Delete scale" className="warning" disabled={activeScaleIsAllNotes} type="button" onClick={deleteActiveScale}>Delete</button>
               </div>
               <label className="field">
                 <span>Scale name</span>
@@ -3311,7 +3316,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                   const included = activeScaleIsAllNotes || activeScale.includedDegrees.includes(degree);
                   return <button key={degree} type="button" aria-label={`Include ${activeBundle.tuning.keyLabels[degree] ?? degree}, degree ${degree}`} aria-pressed={included}
                     disabled={activeScaleIsAllNotes || (included && activeScale.includedDegrees.length === 1)}
-                    style={{ borderBottomColor: colorToCss(activeBundle.palette.degreeColors[degree] ?? createDefaultDegreeColors(tuningCycleLength(activeBundle.tuning))[degree]) }}
+                    style={{ "--degree-color": colorToCss(activeBundle.palette.degreeColors[degree] ?? createDefaultDegreeColors(tuningCycleLength(activeBundle.tuning))[degree]) } as CSSProperties}
                     onClick={() => updateActiveScale(scale => ({ ...scale, includedDegrees: included ? scale.includedDegrees.filter(value => value !== degree) : [...scale.includedDegrees, degree].sort((a,b) => a-b) }))}>
                     {activeBundle.tuning.keyLabels[degree] ?? degree}
                   </button>;
