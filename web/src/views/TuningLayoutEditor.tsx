@@ -3821,10 +3821,10 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 <h2 id="tuningLibraryTitle">Tuning library</h2>
               </div>
               <div className="row">
-                <button type="button" onClick={() => setLibraryOpen(false)}>Close library</button>
                 <button className="primary" type="button" onClick={addNewBundle}>New tuning</button>
                 <button type="button" onClick={() => bundleInputRef.current?.click()}>Import Files</button>
                 <button disabled={!connected || syncBusy} type="button" onClick={() => void refreshHexBoardGeometryLibrary()}>Refresh HexBoard</button>
+                <button className="dialogCloseButton" type="button" aria-label="Close library" title="Close library" onClick={() => setLibraryOpen(false)}>×</button>
               </div>
             </div>
             <div className="libraryUtilityBar">

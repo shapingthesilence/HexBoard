@@ -2992,6 +2992,9 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .tuningLibraryDialog::backdrop { background: rgb(0 0 0 / 35%); }
 .tuningLibraryContent { min-width: 0; }
 .tuningLibraryDialog .libraryToolbar { flex-wrap: wrap; }
+.tuningLibraryDialog .libraryToolbar { align-items: center; }
+.dialogCloseButton { display: inline-grid; place-items: center; width: 36px; min-height: 36px; margin-left: 6px; padding: 0; border-color: transparent; background: transparent; color: var(--text-soft); font-size: 1.5rem; font-weight: 400; line-height: 1; }
+.dialogCloseButton:hover { color: var(--text); }
 @media (max-width: 760px) {
   .tuningLibraryDialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); padding: 12px; }
 }

@@ -639,8 +639,8 @@ In the tuning/layout editor, you can create EDO tunings, equal-step tunings,
 Scala `.scl` imports, vector layouts, scales, custom scale-degree colors, and
 per-button pitch, color, direct-MIDI, or chord overrides. Choose a tuning in
 `Library` to open the tuning library over the editor. Choose a bundle to close
-the library and edit it, or use **Close library** or Escape to return to the
-current bundle. Switch freely between `Tuning`, `Layout`, and `Scale & color`.
+the library and edit it, or use the **×** button at the top right or Escape to
+return to the current bundle. Switch freely between `Tuning`, `Layout`, and `Scale & color`.
 Open **Name & folder** to rename or move the tuning. The board shows your changes
 as you edit. The whole board fits the available window height. The button editor
 appears below the preview and opens without shrinking it; scroll the page to edit
