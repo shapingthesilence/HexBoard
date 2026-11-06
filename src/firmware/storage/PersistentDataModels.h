@@ -24,7 +24,11 @@ enum class SettingKey : uint8_t {
 
 constexpr uint8_t NUM_SETTINGS = static_cast<uint8_t>(SettingKey::NumSettings);
 
-constexpr uint8_t SYNTH_PRESET_MAX_COUNT = 128;
+// Synth presets are listed from an on-flash index (SynthPresetCatalog.h); only
+// distinct folder paths and the open browser folder are held in RAM.
+constexpr uint16_t SYNTH_PRESET_MAX_COUNT = 512;
+constexpr uint8_t SYNTH_PRESET_FOLDER_MAX_COUNT = 32;
+constexpr uint8_t SYNTH_PRESET_FOLDER_MAX_PRESETS = 64;
 constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 12;
 constexpr uint8_t SYNTH_PRESET_SCHEMA_VERSION = 9;
 constexpr uint8_t SYNTH_WAVETABLE_FILE_VERSION = 1;
@@ -58,6 +62,8 @@ constexpr char GEOMETRY_BUNDLE_FILE_EXTENSION[] = ".hgb";
 constexpr char DEFAULT_GEOMETRY_REFERENCE_FILE_PATH[] = "/default_geometry.dat";
 constexpr uint8_t DEFAULT_GEOMETRY_REFERENCE_VERSION = 1;
 constexpr size_t SYNTH_PRESET_NAME_LENGTH = 32;
+// Board browser name buffer (23 characters + NUL). Files keep 32-byte names.
+constexpr size_t SYNTH_PRESET_MENU_NAME_LENGTH = 24;
 constexpr size_t SYNTH_PRESET_FOLDER_LENGTH = 48;
 constexpr size_t SYNTH_PRESET_MENU_LABEL_LENGTH = 64;
 constexpr size_t SYNTH_PRESET_OBJECT_ID_LENGTH = 16;
@@ -256,16 +262,6 @@ private:
   size_t count_ = 0;
 };
 
-struct SynthPresetIndexEntry {
-  uint8_t valid = 0;
-  uint8_t favorite = 0;
-  uint8_t objectId[SYNTH_PRESET_OBJECT_ID_LENGTH] = {};
-  char name[SYNTH_PRESET_NAME_LENGTH] = {};
-  char folderPath[SYNTH_PRESET_FOLDER_LENGTH] = {};
-};
-
-using SynthPresetCatalog = FixedCatalog<SynthPresetIndexEntry, SYNTH_PRESET_MAX_COUNT>;
-
 struct SynthWavetableFileHeader {
   char magic[3];     // "SYW"
   uint8_t version;
@@ -382,7 +378,6 @@ extern SynthProfileReference synthProfileReferences[PROFILE_COUNT];
 extern uint8_t* settings;
 extern uint8_t activeProfileIndex;
 extern uint8_t defaultProfileIndex;
-extern SynthPresetCatalog synthPresets;
 extern SynthWavetableCatalog synthWavetables;
 extern GeometryBundleCatalog geometryBundles;
 extern uint16_t geometryCatalogObjectCount;

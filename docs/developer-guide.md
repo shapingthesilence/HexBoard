@@ -318,12 +318,29 @@ Persistent stores:
 | --- | --- | --- |
 | `/settings.dat` | `Settings.cpp` | 9 non-synth profiles plus synth references; 10-second dirty save; identical data skipped |
 | `/.synth_profile_<0..8>.hsp` | `SynthPresetStorage.cpp` | hidden copy-on-write profile drafts; identical patch CRCs skipped |
-| `/presets/*.hsp` | `SynthPresetStorage.cpp` | HSP v11; up to 128 atomic files |
+| `/presets/*.hsp` | `SynthPresetCatalog.cpp` | HSP v12; up to 512 atomic files, 32 folders, 64 presets per folder |
+| `/synth_preset_index.dat` | `SynthPresetCatalog.cpp` | HPI v1 listing index; see below |
 | `/synth_wavetables.dat`, `/wt_*.wtb` | `SynthWavetableStorage.cpp` | up to 32 entries; base or six mip levels |
 | `/geometry/*.hgb` | `PresetSyncGeometry.cpp` | HGB v3/schema 2; up to 64 atomic bundles |
 | `/geometry_order.dat` | `PresetSyncGeometry.cpp` | small HGO v1 ordering override |
 | `/default_geometry.dat` | factory image | selected factory tuning reference |
 | `/Sequences` | `SequencerStorage.cpp` | optional `.hbseq` files and `.current` |
+
+The synth preset index (`storage/SynthPresetIndexCodec.h`) holds each preset's
+object id, name, folder slot and flags in handle order, plus the distinct folder
+paths. RAM keeps only that folder table and the browser's open folder (at most
+64 presets and 24 subfolders, copied on entry), so scrolling never reads flash
+and RAM does not grow with the library. Listings, lookups and folder loads are
+one sequential index read. Boot validates the index CRC and compares its stored
+count and order-independent hash of canonical `/presets` file names with a
+directory listing; it never writes. A missing, invalid or stale index leaves
+the catalog in directory-scan mode, where handles are positions among canonical
+file names. The preset browser and preset sync rebuild the index on first use,
+once per boot if that fails; saves and deletes always retry. Each save writes the
+preset file, then rewrites the index through a temporary file. If the index
+edit fails after the preset file changed, the index is removed so later reads
+scan the files. Folder and capacity limits are checked before the preset file is
+written. The factory generator writes the same index.
 
 Geometry bundles contain a tuning root and linked layouts, scales, color maps,
 and explicit maps. Limits are 255 records and 262,144 bytes per bundle, 16,384

@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import struct
 import subprocess
+import sys
 import tempfile
 import unittest
 import zlib
@@ -79,6 +80,36 @@ int main(int argc, char** argv) {
             data[3] = 11
             malformed.write_bytes(data)
             self.assertNotEqual(subprocess.run([str(reader), str(malformed)]).returncode, 0)
+
+    def test_factory_index_matches_firmware_decoder_and_preset_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            checker = work / 'index_checker'
+            flags = ['-std=c++17']
+            if sys.platform == 'darwin':
+                sdk = subprocess.check_output(['xcrun', '--show-sdk-path'], text=True).strip()
+                flags += ['-isystem', str(Path(sdk) / 'usr/include/c++/v1')]
+            subprocess.run(['c++', *flags, str(ROOT / 'tests/synth_preset_index_test.cpp'),
+                            '-o', str(checker)], check=True)
+            output = work / 'filesystem'
+            with contextlib.redirect_stdout(io.StringIO()):
+                factory.build_library(ROOT / 'factory-library', output)
+            records = sorted((output / 'presets').glob('*.hsp'))
+            result = subprocess.run([str(checker), str(output / 'synth_preset_index.dat'),
+                                     *(path.name for path in records)],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            listed = {tuple(line.split('\t')) for line in result.stdout.splitlines()}
+            expected = {(path.parent.relative_to(ROOT / 'factory-library/presets').as_posix(), path.stem)
+                        for path in (ROOT / 'factory-library/presets').rglob('*.json')}
+            self.assertEqual(listed, expected)
+
+    def test_factory_rejects_overfull_preset_folder(self):
+        entries = [(bytes([1, index]) + bytes(14), f'Preset {index}', 'Pads', False, Path('Pads'))
+                   for index in range(factory.SYNTH_PRESET_FOLDER_MAX_PRESETS + 1)]
+        with self.assertRaises(factory.LibraryError):
+            factory.build_preset_index(Path('presets'), entries)
+        factory.build_preset_index(Path('presets'), entries[:-1])
 
 
 if __name__ == '__main__':

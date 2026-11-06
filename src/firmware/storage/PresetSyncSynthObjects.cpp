@@ -845,32 +845,24 @@ size_t presetSyncMaxRawObjectBytesForType(uint8_t objectType) {
   }
 }
 
-int findSynthPresetByObjectId(const uint8_t* objectId) {
-  for (size_t i = 0; i < synthPresets.size(); ++i) {
-    if (synthPresets[i].valid && memcmp(synthPresets[i].objectId, objectId, SYNTH_PRESET_OBJECT_ID_LENGTH) == 0) {
-      return static_cast<int>(i);
-    }
-  }
-  return -1;
-}
-
+// Returns a catalog handle, SYNTH_PRESET_CATALOG_NEW_HANDLE, or -1.
 int chooseSynthPresetWriteSlot(uint16_t handle, const SynthPresetSlot& preset) {
-  if (handle != PRESET_SYNC_NEW_OBJECT_HANDLE && handle < synthPresets.size()) {
-    if (synthPresets[handle].valid
-        && memcmp(synthPresets[handle].objectId,
-                  preset.objectId,
-                  SYNTH_PRESET_OBJECT_ID_LENGTH) == 0) {
+  ensureSynthPresetCatalogIndexed(false);
+  if (handle != PRESET_SYNC_NEW_OBJECT_HANDLE && handle < synthPresetCatalogHandleLimit()) {
+    SynthPresetCatalogEntry entry;
+    if (readSynthPresetCatalogEntry(handle, entry)
+        && memcmp(entry.objectId, preset.objectId, SYNTH_PRESET_OBJECT_ID_LENGTH) == 0) {
       return handle;
     }
     sendToLog("Synth preset write handle does not match its object id.");
     return -1;
   }
-  int existing = findSynthPresetByObjectId(preset.objectId);
-  if (existing >= 0) {
+  uint16_t existing = 0;
+  if (findSynthPresetCatalogHandle(preset.objectId, existing)) {
     return existing;
   }
-  if (synthPresets.size() < SYNTH_PRESET_MAX_COUNT) {
-    return static_cast<int>(synthPresets.size());
+  if (synthPresetCatalogCount() < SYNTH_PRESET_MAX_COUNT) {
+    return SYNTH_PRESET_CATALOG_NEW_HANDLE;
   }
   return -1;
 }

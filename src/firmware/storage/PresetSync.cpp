@@ -135,6 +135,7 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
   uint8_t pageSize = requestedPageSize == 0 ? 4 : std::min<uint8_t>(requestedPageSize, 4);
   size_t start = static_cast<size_t>(pageIndex) * pageSize;
   PresetSyncListHandle pageHandles[4] = {};
+  SynthPresetCatalogEntry pageSynthPresets[4];
   uint8_t pageHandleCount = 0;
   size_t matchedCount = 0;
   auto includeHandle = [&](uint8_t matchedObjectType, uint16_t handle) {
@@ -149,16 +150,19 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
       snprintf(normalizedFolderFilter, sizeof(normalizedFolderFilter), "%s", folderFilter);
       normalizeSynthPresetFolderPath(normalizedFolderFilter, sizeof(normalizedFolderFilter));
     }
-    for (size_t i = 0; i < synthPresets.size(); ++i) {
-      if (!synthPresets[i].valid) {
-        continue;
-      }
+    ensureSynthPresetCatalogIndexed(false);
+    auto visit = [&](const SynthPresetCatalogEntry& entry) {
       if (normalizedFolderFilter[0]
-          && strncmp(synthPresets[i].folderPath, normalizedFolderFilter, sizeof(synthPresets[i].folderPath)) != 0) {
-        continue;
+          && strncmp(entry.folderPath, normalizedFolderFilter, sizeof(entry.folderPath)) != 0) {
+        return true;
       }
-      includeHandle(PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET, static_cast<uint16_t>(i));
-    }
+      if (matchedCount >= start && pageHandleCount < pageSize) {
+        pageSynthPresets[pageHandleCount] = entry;
+      }
+      includeHandle(PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET, entry.handle);
+      return true;
+    };
+    visitSynthPresetCatalogWith(visit);
   };
   auto includeSynthWavetable = [&]() {
     char normalizedFolderFilter[SYNTH_WAVETABLE_FOLDER_LENGTH] = {};
@@ -266,7 +270,7 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
       PresetSyncListHandle listHandle = pageHandles[listIndex];
       uint16_t handle = listHandle.handle;
       if (listHandle.objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET) {
-        SynthPresetIndexEntry& preset = synthPresets[handle];
+        const SynthPresetCatalogEntry& preset = pageSynthPresets[listIndex];
         appendRecord(PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET,
                      handle,
                      PRESET_SYNC_RECORD_VALID,
@@ -744,10 +748,7 @@ void presetSyncHandleReadRequest(uint16_t transactionId, const uint8_t* payload,
     presetSyncSendRawObject(transactionId, PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET, handle, 1, 0, buildSynthPresetObjectBody(currentPreset));
     return;
   }
-  if (handle >= synthPresets.size() || !synthPresets[handle].valid) {
-    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING);
-    return;
-  }
+  ensureSynthPresetCatalogIndexed(false);
   SynthPresetSlot preset = {};
   if (!readSynthPresetFromCatalog(handle, preset)) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING);
@@ -1164,7 +1165,9 @@ void presetSyncHandleDelete(uint16_t transactionId, const uint8_t* payload, size
   uint16_t handle = presetSyncDecodeU14(payload + 1);
   uint8_t deleteFlags = payload[3];
   if (objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET) {
-    if (handle >= synthPresets.size() || !synthPresets[handle].valid) {
+    ensureSynthPresetCatalogIndexed(false);
+    SynthPresetCatalogEntry existing;
+    if (!readSynthPresetCatalogEntry(handle, existing)) {
       presetSyncSendNack(transactionId, PRESET_SYNC_MSG_DELETE_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING);
       return;
     }

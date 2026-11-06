@@ -35,7 +35,6 @@ uint8_t* settings = settingsProfiles[DEFAULT_PROFILE_INDEX];
 uint8_t activeProfileIndex = DEFAULT_PROFILE_INDEX;
 uint8_t defaultProfileIndex = DEFAULT_PROFILE_INDEX;
 
-SynthPresetCatalog synthPresets;
 SynthWavetableCatalog synthWavetables;
 GeometryBundleCatalog geometryBundles;
 uint16_t geometryCatalogObjectCount = 0;

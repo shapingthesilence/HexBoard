@@ -44,7 +44,10 @@ def source_setting_keys() -> tuple[str, ...]:
 
 PROFILE_COUNT = source_integer_constant("PROFILE_COUNT")
 CURRENT_SETTINGS_VERSION = source_integer_constant("CURRENT_SETTINGS_VERSION")
-SYNTH_PRESET_MAX_COUNT = 128
+SYNTH_PRESET_MAX_COUNT = source_integer_constant("SYNTH_PRESET_MAX_COUNT")
+SYNTH_PRESET_FOLDER_MAX_COUNT = source_integer_constant("SYNTH_PRESET_FOLDER_MAX_COUNT")
+SYNTH_PRESET_FOLDER_MAX_PRESETS = source_integer_constant("SYNTH_PRESET_FOLDER_MAX_PRESETS")
+SYNTH_PRESET_INDEX_PATH = "synth_preset_index.dat"
 SYNTH_WAVETABLE_MAX_COUNT = 32
 GEOMETRY_FACTORY_BUNDLE_MAX_COUNT = 64
 GEOMETRY_BUNDLE_RECORD_MAX_COUNT = 255
@@ -785,6 +788,7 @@ def build_presets(root: Path, output: Path, config: dict,
     selected_name = config.get("selectedPreset")
     seen_ids: set[bytes] = set()
     seen_names: set[str] = set()
+    index_entries: list[tuple[bytes, str, str, bool, Path]] = []
     for path in paths:
         slot, key, object_id, values, wavetable = parse_preset(path, root, wavetable_references)
         if object_id in seen_ids:
@@ -799,9 +803,46 @@ def build_presets(root: Path, output: Path, config: dict,
         (preset_output / f"{object_id.hex().upper()}.hsp").write_bytes(header + slot)
         seen_ids.add(object_id)
         seen_names.add(key)
+        name = slot[18:50].split(b"\0", 1)[0].decode("utf-8")
+        folder = slot[50:98].split(b"\0", 1)[0].decode("utf-8")
+        index_entries.append((object_id, name, folder, slot[1] != 0, path))
     if selected_id is None or selected_values is None or selected_wavetable is None:
         raise fail(root, "selection", f"selectedPreset {selected_name!r} was not found")
+    (output / SYNTH_PRESET_INDEX_PATH).write_bytes(build_preset_index(root, index_entries))
     return selected_id, selected_values, selected_wavetable
+
+
+def preset_index_id_hash(object_id: bytes) -> int:
+    value = 2166136261
+    for byte in object_id:
+        value = ((value ^ byte) * 16777619) & 0xFFFFFFFF
+    return value
+
+
+def build_preset_index(root: Path,
+                       entries: list[tuple[bytes, str, str, bool, Path]]) -> bytes:
+    """Encode the HPI1 index described in SynthPresetIndexCodec.h."""
+    folders: list[str] = []
+    per_folder: dict[str, int] = {}
+    records = b""
+    for object_id, name, folder, favorite, path in entries:
+        if folder not in folders:
+            if len(folders) >= SYNTH_PRESET_FOLDER_MAX_COUNT:
+                raise fail(path, "presets",
+                           f"more than {SYNTH_PRESET_FOLDER_MAX_COUNT} preset folders")
+            folders.append(folder)
+        per_folder[folder] = per_folder.get(folder, 0) + 1
+        if per_folder[folder] > SYNTH_PRESET_FOLDER_MAX_PRESETS:
+            raise fail(path, "presets",
+                       f"folder {folder!r} has more than {SYNTH_PRESET_FOLDER_MAX_PRESETS} presets")
+        records += (object_id + encoded_text(name, path, "name", 32)
+                    + bytes([folders.index(folder), 1 if favorite else 0]) + bytes(2))
+    folder_table = b"".join(encoded_text(folder, root, "folder", 48) for folder in folders)
+    directory_hash = sum(preset_index_id_hash(entry[0]) for entry in entries) & 0xFFFFFFFF
+    header = struct.pack("<3sBHBBHHI", b"HPI", 1, len(entries), len(folders), 0,
+                         len(entries), 0, directory_hash)
+    checksum = zlib.crc32(records + folder_table + header)
+    return header + struct.pack("<I", checksum) + records + folder_table
 
 
 def build_settings(config_path: Path, output: Path, config: dict,
