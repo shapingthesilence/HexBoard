@@ -21,7 +21,8 @@
 .classic-table-row { display: flex; flex-wrap: wrap; align-items: end; gap: 6px 10px; }
 .classic-table-row .field { flex: 1 1 240px; display: grid; gap: 2px; font-size: 10px; color: var(--text-soft); }
 .classic-table-row select { width: 100%; }
-.classic-pictures { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 8px; }
+/* Columns in the plots' 600:400 width ratio give both pictures the same height. */
+.classic-pictures { display: grid; grid-template-columns: minmax(0, 600fr) minmax(0, 400fr); gap: 8px; }
 .classic-stack, .classic-scope, .classic-drive, .classic-envelope { display: block; width: 100%; height: auto; border-radius: 8px; background: var(--synth-scope); touch-action: none; }
 .classic-stack { cursor: grab; }
 .classic-stack, .classic-envelope { user-select: none; -webkit-user-select: none; }

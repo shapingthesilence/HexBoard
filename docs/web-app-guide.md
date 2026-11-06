@@ -781,8 +781,8 @@ the time, rate or percentage.
 The oscillator draws all 16 frames of the selected wavetable. Drag the stack up
 or down, or use `Wavetable position`, to choose the set frame. Beside it is the
 cycle being played. While the browser preview sounds a note, both pictures
-follow the newest voice live: the stack's highlighted cycle moves to the frame
-modulation has reached, and the cycle shows any Wave folding, Pulse width or
+follow the newest voice live: the stack highlights the frame modulation has
+reached, unbent, and the cycle beside it adds any Wave folding, Pulse width or
 Poly warp it is getting. When nothing plays, both show the set frame. A row of
 chips lists the oscillator targets and each route's full effect: Pitch reaches
 ±24 semitones at 100%. If the preview is
