@@ -206,8 +206,18 @@ class Envelope {
   }
 }
 
+// Voices take a serial number on each trigger so the newest one can be shown live.
+let triggerSerial = 0;
+// About 30 voice-shape reports a second while notes sound.
+const SHAPE_REPORT_HZ = 30;
+
 class Voice {
   constructor() {
+    this.serial = 0;
+    this.shapePosition = 0;
+    this.shapeFold = 0;
+    this.shapeDuty = 0;
+    this.shapePoly = 0;
     this.phase = 0;
     this.frequency = 0;
     this.targetFrequency = 0;
@@ -300,6 +310,7 @@ class Voice {
     this.velocity = clamp(velocity, 0, 1);
     this.active = true;
     this.age += 1;
+    this.serial = ++triggerSerial;
   }
 
   release() {
@@ -403,6 +414,10 @@ class Voice {
     const phase = warpPhase(this.phase, foldWarp, dutyWarp, polyWarp);
 
     const position = clamp(values.SynthWavetablePosition + wavetablePosition, 0, 127);
+    this.shapePosition = position;
+    this.shapeFold = foldWarp;
+    this.shapeDuty = dutyWarp;
+    this.shapePoly = polyWarp;
     const sample = processor.readWavetable(phase, position, frequency);
     return {
       sample: sample * envLevel * this.velocity * fadeGain,
@@ -440,6 +455,8 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
     this.currentVibratoSample = 0;
     this.activeWavetable = null;
     this.voiceAge = 0;
+    this.shapeSamplesUntilReport = 0;
+    this.shapeReported = false;
 
     this.port.onmessage = (event) => {
       const message = event.data;
@@ -812,7 +829,25 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
       left[index] = sample;
       right[index] = sample;
     }
+    this.reportVoiceShape(left.length);
     return true;
+  }
+
+  // The editor draws the newest sounding voice's cycle: its table position and phase bends.
+  reportVoiceShape(samples) {
+    this.shapeSamplesUntilReport -= samples;
+    if (this.shapeSamplesUntilReport > 0) return;
+    this.shapeSamplesUntilReport = Math.round(sampleRate / SHAPE_REPORT_HZ);
+    let newest = null;
+    for (const voice of this.voices) if (voice.active && (!newest || voice.serial > newest.serial)) newest = voice;
+    if (!newest) {
+      if (this.shapeReported) this.port.postMessage({ type: "voiceShape", active: false });
+      this.shapeReported = false;
+      return;
+    }
+    this.shapeReported = true;
+    this.port.postMessage({ type: "voiceShape", active: true, position: newest.shapePosition,
+      fold: newest.shapeFold, duty: newest.shapeDuty, poly: newest.shapePoly });
   }
 }
 

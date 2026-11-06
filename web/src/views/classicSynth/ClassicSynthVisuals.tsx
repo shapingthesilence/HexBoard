@@ -1,20 +1,12 @@
-import { useCallback, useMemo, useRef, type KeyboardEvent, type PointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import type { SynthVoiceShape, SynthVoiceShapeListener } from "../../audio/synthPreview.ts";
 import { CanvasPlot, plotDot, type PlotColors } from "../../advanced/synth/CanvasPlot.tsx";
 import { SYNTH_WAVETABLE_FRAME_COUNT, SYNTH_WAVETABLE_SAMPLE_COUNT } from "../../catalogs/index.ts";
-import { driveInputGain, driveTransfer, envelopeTimeIndex, envelopeTimeLabel, envelopeTimeMs, envelopePositionCount, envelopeTimePosition, warpPhase } from "./classicSynthModel.ts";
+import { driveInputGain, driveTransfer, envelopeTimeIndex, envelopeTimeLabel, envelopeTimeMs, envelopePositionCount, envelopeTimePosition, ModTarget, warpPhase } from "./classicSynthModel.ts";
 
 const lastFrame = SYNTH_WAVETABLE_FRAME_COUNT - 1;
 
-/** Frames modulation sweeps through, drawn in its source color. */
-export interface FrameRange { color: string; from: number; to: number }
-/** A phase bend at its full routed amount (−1…1). */
-export interface FrameBend { color: string; target: number; amount: number; label: string }
 
-/** Canvas strokes cannot read CSS variables, so resolve `var(--token)` against the canvas. */
-function canvasColor(canvas: HTMLCanvasElement, color: string): string {
-  const token = /^var\((--[\w-]+)\)$/.exec(color)?.[1];
-  return token ? getComputedStyle(canvas).getPropertyValue(token).trim() || "#888" : color;
-}
 
 /** One frame of the table's base (unfiltered) samples, −1…1, read with linear interpolation. */
 function frameSample(samples: Uint8Array, frame: number, phase: number): number {
@@ -44,30 +36,30 @@ const frameStep = (e: KeyboardEvent, frame: number, onFrame: (frame: number) => 
   onFrame(e.key === "Home" ? 0 : e.key === "End" ? lastFrame : Math.max(0, Math.min(lastFrame, frame + (delta ?? 0))));
 };
 
-/** The table's 16 frames as a receding stack; drag up and down to pick the played frame. */
-export function WavetableStack({ samples, name, frame, ranges, onFrame }: { samples?: Uint8Array; name: string; frame: number; ranges: readonly FrameRange[]; onFrame: (frame: number) => void }) {
+/** The table's 16 frames as a receding stack; drag up and down to pick the set frame.
+ * While the browser preview plays, the newest voice's cycle glides through the stack. */
+export function WavetableStack({ samples, name, frame, live, onFrame }: { samples?: Uint8Array; name: string; frame: number; live: SynthVoiceShape | null; onFrame: (frame: number) => void }) {
   const waves = useMemo(() => samples && Array.from({ length: SYNTH_WAVETABLE_FRAME_COUNT }, (_, f) => frameWave(samples, f, 96)), [samples]);
-  const rangeKey = ranges.map((r) => `${r.color}|${r.from}|${r.to}`).join("\n");
+  const playing = useMemo(() => samples && live ? { at: framePosition(live.position), cycle: liveCycle(samples, live, 96) } : undefined, [samples, live]);
   const paint = useCallback((ctx: CanvasRenderingContext2D, c: PlotColors) => {
     if (!waves) { unavailable(ctx, c, 300, 120); return; }
-    const colored = rangeKey ? rangeKey.split("\n").map((entry) => { const [color, from, to] = entry.split("|"); return { color: canvasColor(ctx.canvas, color), from: Number(from), to: Number(to) }; }) : [];
     ctx.lineJoin = ctx.lineCap = "round";
     for (let f = lastFrame; f >= 0; --f) {
       const x = 36 + f * 12, y = 186 - f * 10;
       trace(ctx, waves[f], x, y, 380, 30); ctx.lineTo(x + 380, y + 34); ctx.lineTo(x, y + 34); ctx.closePath();
       ctx.fillStyle = c.scope; ctx.globalAlpha = .92; ctx.fill();
-      const range = f === frame ? undefined : colored.find((r) => f >= Math.min(r.from, r.to) && f <= Math.max(r.from, r.to));
-      trace(ctx, waves[f], x, y, 380, 30);
-      ctx.strokeStyle = range?.color ?? c.frame; ctx.lineWidth = range ? 1.5 : 1; ctx.globalAlpha = range ? .95 : .6; ctx.stroke();
+      trace(ctx, waves[f], x, y, 380, 30); ctx.strokeStyle = c.frame; ctx.lineWidth = 1; ctx.globalAlpha = .6; ctx.stroke();
     }
     ctx.globalAlpha = 1;
-    const x = 36 + frame * 12, y = 186 - frame * 10, gradient = ctx.createLinearGradient(x, 0, x + 380, 0);
+    const at = playing?.at ?? frame, x = 36 + at * 12, y = 186 - at * 10, gradient = ctx.createLinearGradient(x, 0, x + 380, 0);
     gradient.addColorStop(0, c.trace); gradient.addColorStop(1, c.accent);
-    trace(ctx, waves[frame], x, y, 380, 30); ctx.strokeStyle = gradient; ctx.lineWidth = 2.6; ctx.stroke();
+    trace(ctx, playing?.cycle ?? waves[frame], x, y, 380, 30); ctx.strokeStyle = gradient; ctx.lineWidth = 2.6; ctx.stroke();
     ctx.strokeStyle = c.edge; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(18, 186); ctx.lineTo(18 + lastFrame * 12, 186 - lastFrame * 10); ctx.stroke();
+    // The set frame keeps its handle; a playing voice shows as a ring where it is now.
     ctx.fillStyle = c.brand; plotDot(ctx, 18 + frame * 12, 186 - frame * 10, 6);
+    if (playing) { ctx.strokeStyle = c.accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(18 + at * 12, 186 - at * 10, 8, 0, 2 * Math.PI); ctx.stroke(); }
     ctx.fillStyle = c.text; ctx.font = `11px ${c.font}`; ctx.fillText(`${name} · frame ${frame + 1} of 16`, 12, 18);
-  }, [waves, frame, rangeKey, name]);
+  }, [waves, frame, playing, name]);
   const fromPointer = (e: PointerEvent<HTMLCanvasElement>) => {
     const r = e.currentTarget.getBoundingClientRect(), y = (e.clientY - r.top) / r.height * 230;
     onFrame(Math.max(0, Math.min(lastFrame, Math.round((171 - y) / 10))));
@@ -79,29 +71,62 @@ export function WavetableStack({ samples, name, frame, ranges, onFrame }: { samp
     onKeyDown={(e) => frameStep(e, frame, onFrame)}/>;
 }
 
-/** The played frame, and how each routed phase bend reshapes it at full amount. */
-export function FrameScope({ samples, frame, bends }: { samples?: Uint8Array; frame: number; bends: readonly FrameBend[] }) {
-  const bendKey = bends.map((b) => `${b.color}|${b.target}|${b.amount}|${b.label}`).join("\n");
+/** Table position (0–127) as frames, snapping the 16 stored positions like the firmware. */
+function framePosition(position: number): number {
+  const frame = position / 127 * lastFrame, nearest = Math.round(frame);
+  return position === Math.round(nearest * 127 / lastFrame) ? nearest : frame;
+}
+/** One cycle as the newest voice renders it: blended frames, then fold, pulse-width and poly bends. */
+function liveCycle(samples: Uint8Array, shape: SynthVoiceShape, points: number): Float32Array {
+  const frames = framePosition(shape.position), a = Math.floor(frames), b = Math.min(lastFrame, a + 1), mix = frames - a;
+  const cycle = new Float32Array(points + 1);
+  for (let i = 0; i <= points; ++i) {
+    let phase = i / points;
+    phase = warpPhase(ModTarget.WaveFolding, phase, shape.fold / 127);
+    phase = warpPhase(ModTarget.PulseWidth, phase, shape.duty / 127);
+    phase = warpPhase(ModTarget.PolyWarp, phase, shape.poly / 127);
+    cycle[i] = frameSample(samples, a, phase) * (1 - mix) + frameSample(samples, b, phase) * mix;
+  }
+  return cycle;
+}
+// Redraw for audible changes only, not every reported fraction.
+const settledShape = (shape: SynthVoiceShape | null) => shape && {
+  position: Math.round(shape.position * 4) / 4, fold: Math.round(shape.fold), duty: Math.round(shape.duty), poly: Math.round(shape.poly)
+};
+
+/** Follows the newest browser-preview voice, settled to audible changes; null while nothing plays. */
+export function useLiveVoiceShape(subscribe?: (listener: SynthVoiceShapeListener) => () => void): SynthVoiceShape | null {
+  const [live, setLive] = useState<SynthVoiceShape | null>(null);
+  useEffect(() => {
+    if (!subscribe) return undefined;
+    let last = "null";
+    const stop = subscribe((shape) => {
+      const settled = settledShape(shape), key = JSON.stringify(settled);
+      if (key !== last) { last = key; setLive(settled); }
+    });
+    return () => { stop(); setLive(null); };
+  }, [subscribe]);
+  return live;
+}
+
+/** The cycle the newest browser-preview voice is playing now; the set frame while nothing plays. */
+export function LiveCycleView({ samples, position, live }: { samples?: Uint8Array; position: number; live: SynthVoiceShape | null }) {
+  const shape = live ?? { position, fold: 0, duty: 0, poly: 0 };
+  const cycle = useMemo(() => samples && liveCycle(samples, shape, 180), [samples, shape.position, shape.fold, shape.duty, shape.poly]);
+  const frame = framePosition(shape.position) + 1;
+  const label = `${live ? "Playing" : "Set"} · frame ${Number.isInteger(frame) ? frame : frame.toFixed(1)}`;
+  const bends = live ? [["Fold", live.fold], ["Pulse", live.duty], ["Poly", live.poly]].filter(([, v]) => v !== 0).map(([n, v]) => `${n} ${Math.round(Number(v) / 127 * 100)}%`).join(" · ") : "";
   const paint = useCallback((ctx: CanvasRenderingContext2D, c: PlotColors) => {
-    if (!samples) { unavailable(ctx, c, 180, 115); return; }
+    if (!cycle) { unavailable(ctx, c, 180, 115); return; }
     const mid = 122, height = 82;
     ctx.lineJoin = ctx.lineCap = "round";
     ctx.strokeStyle = c.border; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(10, mid); ctx.lineTo(350, mid); ctx.stroke(); ctx.setLineDash([]);
-    const list = bendKey ? bendKey.split("\n").map((entry) => { const [color, target, amount, label] = entry.split("|"); return { color: canvasColor(ctx.canvas, color), target: Number(target), amount: Number(amount), label }; }) : [];
-    for (const bend of list) {
-      trace(ctx, frameWave(samples, frame, 180, (phase) => warpPhase(bend.target, phase, bend.amount)), 10, mid, 340, height);
-      ctx.strokeStyle = bend.color; ctx.lineWidth = 1.6; ctx.globalAlpha = .85; ctx.stroke(); ctx.globalAlpha = 1;
-    }
     const gradient = ctx.createLinearGradient(10, 0, 350, 0); gradient.addColorStop(0, c.trace); gradient.addColorStop(1, c.accent);
-    trace(ctx, frameWave(samples, frame, 180), 10, mid, 340, height); ctx.strokeStyle = gradient; ctx.lineWidth = 2.4; ctx.stroke();
-    ctx.font = `11px ${c.font}`; ctx.fillStyle = c.text; ctx.fillText(`Frame ${frame + 1}`, 12, 18);
-    ctx.textAlign = "right";
-    if (!list.length) ctx.fillText("No phase bends routed", 350, 18);
-    list.forEach((bend, i) => { ctx.fillStyle = bend.color; ctx.fillText(bend.label, 350, 18 + i * 14); });
-    ctx.textAlign = "left";
-  }, [samples, frame, bendKey]);
-  return <CanvasPlot className="classic-scope" width={360} height={230} paint={paint} role="img"
-    aria-label={`Frame ${frame + 1}${bends.length ? `, reshaped by ${bends.map((b) => b.label).join(", ")}` : ""}`}/>;
+    trace(ctx, cycle, 10, mid, 340, height); ctx.strokeStyle = gradient; ctx.lineWidth = 2.4; ctx.stroke();
+    ctx.font = `11px ${c.font}`; ctx.fillStyle = c.text; ctx.fillText(label, 12, 18);
+    ctx.textAlign = "right"; ctx.fillText(bends || (live ? "" : "Play a note to see it live"), 350, 18); ctx.textAlign = "left";
+  }, [cycle, label, bends, live]);
+  return <CanvasPlot className="classic-scope" width={360} height={230} paint={paint} role="img" aria-label={`${label}${bends ? `, ${bends}` : ""}`}/>;
 }
 
 /** Output drive: the board's transfer curve, and the played frame through it at full level. */

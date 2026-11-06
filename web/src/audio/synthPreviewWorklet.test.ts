@@ -3,10 +3,10 @@ import source from "./synth-preview-worklet.js?raw";
 import { createBasicShapesSamples, createFactorySynthWavetables } from "../catalogs/factoryWavetables.ts";
 
 // Run the shipped worklet itself with an AudioWorklet host stub.
-function engine(values: Record<string, number> = {}, rate = 48000, samples = createBasicShapesSamples()) {
+function engine(values: Record<string, number> = {}, rate = 48000, samples = createBasicShapesSamples(), posted: unknown[] = []) {
   let Constructor: any;
   new Function("AudioWorkletProcessor", "registerProcessor", "sampleRate", source)(
-    class { port = {}; }, (_name: string, ctor: any) => { Constructor = ctor; }, rate
+    class { port = { postMessage: (message: unknown) => posted.push(message) }; }, (_name: string, ctor: any) => { Constructor = ctor; }, rate
   );
   const processor = new Constructor();
   processor.setPatch({ wavetableSamples: samples, values: {
@@ -30,6 +30,25 @@ function crossings(samples: Float32Array) {
 }
 
 describe("firmware synth audition", () => {
+  it("reports the newest voice's table position and phase bends, then goes quiet", () => {
+    const posted: any[] = [];
+    const synth = engine({ PlaybackMode: 3, SynthWavetablePosition: 34, EffectEnvelopeTarget: 0, EffectEnvelopeAmount: 254,
+      EffectEnvelopeAttackIndex: 0, EffectEnvelopeSustainLevel: 127, EffectEnvelopeDecayIndex: 0, EffectEnvelopeHoldIndex: 0, EffectEnvelopeReleaseIndex: 0 }, 48000, createBasicShapesSamples(), posted);
+    synth.noteOn(60, 1);
+    synth.noteOn(64, 1);
+    render(synth, 2048);
+    const shape = posted.filter(m => m.type === "voiceShape").at(-1);
+    expect(shape).toMatchObject({ active: true, position: 34, duty: 0, poly: 0 });
+    expect(shape.fold).toBeCloseTo(127, 0);
+    expect(posted.filter(m => m.type === "voiceShape").length).toBeLessThanOrEqual(2048 / (48000 / 30) + 1);
+    synth.allNotesOff();
+    render(synth, 48000);
+    expect(posted.at(-1)).toEqual({ type: "voiceShape", active: false });
+    const count = posted.length;
+    render(synth, 48000);
+    expect(posted.length).toBe(count);
+  });
+
   it("renders a bent MIDI note and retunes it without restarting its envelope", () => {
     const synth = engine();
     synth.noteOn(69, 1, "midi:1:69", 12);

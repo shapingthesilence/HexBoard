@@ -180,7 +180,8 @@
 .physical-editor .material-buttons { margin: 0; align-content: center; align-items: center; }
 .physical-editor .material-caption { color: var(--muted); font-size: 10px; }
 .physical-editor .knob-routes { height: 24px; min-height: 24px; overflow-y: auto; align-content: start; width: 100%; }
-.physical-editor .physical-control > strong { height: 24px; white-space: normal; display: flex; align-items: center; justify-content: center; }
+/* Labels sit on the knob; route rings stay inside the knob box, so they cannot meet the text. */
+.physical-editor .physical-control > strong { height: 24px; white-space: normal; display: flex; align-items: flex-end; justify-content: center; line-height: 1.15; }
 .physical-editor .physical-control output { height: 14px; white-space: nowrap; }
 .physical-editor[data-modulating] .physical-control[data-modulatable="true"] .physical-knob { cursor: var(--modulation-cursor); }
 .physical-editor .modulation-toolbar small { min-height: 30px; display: flex; align-items: center; }

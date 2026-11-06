@@ -770,18 +770,22 @@ sits on top; `Arpeggiator rate`, `Arpeggiator direction`, `Note length` and
 `Tempo` appear only in the two arp modes, and `Portamento` only in the two mono
 modes. Below it are the **Oscillator**, **Volume envelope** and **Drive**
 panels, with **Motion sources** (Mod wheel, LFO, Mod envelope 1 and 2) in a
-column beside them. Narrower windows stack the groups. All sound controls stay
+column beside them. Narrower windows stack the groups. Synth mode lists the
+playing modes only; a sound saved with `Off` shows it until you pick another
+mode. Arp and mono settings appear in the same row without changing its height. All sound controls stay
 visible on one scrollable page; save actions stay at the top while scrolling.
 Settings are knobs: drag up or down, or focus one and use the arrow keys. Each
 knob steps through the same values the instrument stores, and its reading shows
 the time, rate or percentage.
 
 The oscillator draws all 16 frames of the selected wavetable. Drag the stack up
-or down, or use `Wavetable position`, to choose the played frame. Beside it,
-the played frame is drawn with any routed Wave folding, Pulse width or Poly warp
-at full amount, in the source's color. Frames that a source sweeps through are
-colored in the stack. A row of chips lists the oscillator targets and each
-route's full effect: Pitch reaches ±24 semitones at 100%. If the preview is
+or down, or use `Wavetable position`, to choose the set frame. Beside it is the
+cycle being played. While the browser preview sounds a note, both pictures
+follow the newest voice live: the stack's highlighted cycle moves to the frame
+modulation has reached, and the cycle shows any Wave folding, Pulse width or
+Poly warp it is getting. When nothing plays, both show the set frame. A row of
+chips lists the oscillator targets and each route's full effect: Pitch reaches
+±24 semitones at 100%. If the preview is
 unavailable and the required wavetable is on the connected HexBoard, choose
 **Copy wavetable from HexBoard** to add it to Browser Wavetables and restore
 the pictures.

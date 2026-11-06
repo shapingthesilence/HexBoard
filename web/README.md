@@ -354,7 +354,11 @@ Wave folding / Pulse width / Poly warp phase bends mirror the Classic firmware
 (`applySynthDrive` in `SynthAudioTransport.cpp` and the phase-warp functions in
 `SynthModulationCache.cpp`); `classicSynthModel.test.ts` checks them against
 fixed-point transcriptions, so update all three together. Its pictures draw the
-selected wavetable's own samples on `CanvasPlot` and have no clock.
+selected wavetable's own samples on `CanvasPlot` and have no clock of their own.
+While the browser preview sounds, its worklet reports the newest voice's table
+position and phase-warp amounts about 30 times a second (`voiceShape`, one final
+`active: false` when silent); the editor redraws only when those settle to a new
+value.
 
 Keep React and React DOM on matching versions, at least 19.3.1. Development
 performance tracks must release emitted timing records rather than accumulating

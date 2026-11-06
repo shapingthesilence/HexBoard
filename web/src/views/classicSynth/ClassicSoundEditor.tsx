@@ -8,7 +8,8 @@ import {
   wheelAmountByteToPercent, wheelAmountPercentToByte, wheelTargetOptions,
   type EditableSynthValueKey, type EditableSynthValues
 } from "./classicSynthModel.ts";
-import { DriveView, EnvelopeEditor, EnvelopeShape, FrameScope, LfoShape, WavetableStack, WheelPosition, type EnvelopeValues, type FrameBend, type FrameRange } from "./ClassicSynthVisuals.tsx";
+import { DriveView, EnvelopeEditor, EnvelopeShape, LfoShape, LiveCycleView, useLiveVoiceShape, WavetableStack, WheelPosition, type EnvelopeValues } from "./ClassicSynthVisuals.tsx";
+import type { SynthVoiceShapeListener } from "../../audio/synthPreview.ts";
 import "../../advanced/synth/PhysicalSynthEditor.css";
 import "../../advanced/synth/WavetableSynthEditor.css";
 import "../../advanced/synth/SynthIdentity.css";
@@ -37,6 +38,9 @@ function routeEffect(target: number, percent: number, lfo: boolean): string {
   return lfo ? `±${text.replace(/^[+−]/, "")}` : text;
 }
 const oscillatorTargets = [ModTarget.Vibrato, ModTarget.Pitch, ModTarget.WaveFolding, ModTarget.PulseWidth, ModTarget.PolyWarp] as const;
+// Off silences the synth rather than shaping a sound, so patches pick a playing mode.
+// A sound saved with Off still shows it until another mode is chosen.
+const patchModes = playbackOptions.filter((option) => option.value !== 0);
 const percent127 = (value: number) => `${Math.round(value / 127 * 100)}%`;
 
 interface KnobProps {
@@ -71,10 +75,12 @@ export interface ClassicSoundEditorProps {
   missingSamples?: ReactNode;
   /** Current mod wheel position, 0–127. */
   modWheel: number;
+  /** Follows the browser preview's newest voice, for the live pictures. */
+  subscribeVoiceShape?: (listener: SynthVoiceShapeListener) => () => void;
 }
 
 /** HexBoard Classic wavetable sound: oscillator, volume envelope, output drive and four motion sources. */
-export function ClassicSoundEditor({ values: v, onChange, wavetableName, samples, wavetablePicker, missingSamples, modWheel }: ClassicSoundEditorProps) {
+export function ClassicSoundEditor({ values: v, onChange, wavetableName, samples, wavetablePicker, missingSamples, modWheel, subscribeVoiceShape }: ClassicSoundEditorProps) {
   const [focus, setFocus] = useState<SourceKey>();
   const base = useMemo(() => samples && synthWavetableBaseSamples(samples), [samples]);
   const routes: Route[] = sourceDefinitions.map((source) => ({ source, target: v[source.target], percent: source.toPercent(v[source.amount]) }))
@@ -86,13 +92,7 @@ export function ClassicSoundEditor({ values: v, onChange, wavetableName, samples
   const rings = (target: number): KnobRoute[] => routesTo(target).map((route, i) => ({ label: route.source.name, i, depth: route.percent / 100 * 65536, bipolar: route.source.key === "lfo", color: route.source.color }));
 
   const frame = wavetablePositionByteToFrame(v.SynthWavetablePosition) - 1;
-  const ranges: FrameRange[] = routesTo(ModTarget.WavetablePosition).map(({ source, percent }) => {
-    const reach = Math.round(positionFrames(percent));
-    return source.key === "lfo" ? { color: source.color, from: frame - Math.abs(reach), to: frame + Math.abs(reach) } : { color: source.color, from: frame, to: frame + reach };
-  });
-  const bends: FrameBend[] = [ModTarget.WaveFolding, ModTarget.PulseWidth, ModTarget.PolyWarp].flatMap((target) => routesTo(target).map(({ source, percent }) => ({
-    color: source.color, target, amount: (source.key === "lfo" ? Math.abs(percent) : percent) / 100, label: `${targetLabel(target)} at full ${source.name}`
-  })));
+  const live = useLiveVoiceShape(subscribeVoiceShape);
   const mode = v.PlaybackMode, arp = mode === 2 || mode === 6, mono = mode === 1 || mode === 4;
   const timeKnob = (label: string, key: EditableSynthValueKey, target?: number) => <ClassicKnob key={key} label={label} value={envelopeTimePosition(v[key])} min={0} max={envelopePositionCount - 1}
     format={(position) => envelopeTimeLabel(envelopeTimeIndex(position))} onChange={(position) => onChange(key, envelopeTimeIndex(position))}
@@ -104,7 +104,7 @@ export function ClassicSoundEditor({ values: v, onChange, wavetableName, samples
 
   return <div className="classic-sound" data-synth-off={mode === 0 || undefined}>
     <fieldset className="classic-playback"><legend>Playback</legend>
-      <Choice label="Synth mode" value={mode} options={playbackOptions} onChange={(value) => onChange("PlaybackMode", value)}/>
+      <Choice label="Synth mode" value={mode} options={mode === 0 ? playbackOptions : patchModes} onChange={(value) => onChange("PlaybackMode", value)}/>
       {arp && <>
         <Choice label="Arpeggiator rate" value={v.ArpeggiatorDivision} options={arpDivisionOptions} onChange={(value) => onChange("ArpeggiatorDivision", value)}/>
         <Choice label="Arpeggiator direction" value={v.ArpeggiatorDirection} options={arpDirectionOptions} onChange={(value) => onChange("ArpeggiatorDirection", value)}/>
@@ -112,7 +112,6 @@ export function ClassicSoundEditor({ values: v, onChange, wavetableName, samples
         <ClassicKnob label="Tempo" value={v.SynthBPM} min={1} max={255} format={(value) => `${value} BPM`} onChange={(value) => onChange("SynthBPM", value)}/>
       </>}
       {mono && <ClassicKnob label="Portamento" value={v.SynthPortamentoTimeIndex} min={0} max={19} format={envelopeTimeLabel} onChange={(value) => onChange("SynthPortamentoTimeIndex", value)}/>}
-      {mode === 0 && <p className="panel-note">The synth is off · pick a mode to play it.</p>}
     </fieldset>
 
     <div className="wt-workspace">
@@ -121,8 +120,8 @@ export function ClassicSoundEditor({ values: v, onChange, wavetableName, samples
           <div className="classic-table-row">{wavetablePicker}<small>Drag the table up or down to pick a frame.</small></div>
           {missingSamples}
           <div className="classic-pictures">
-            <WavetableStack samples={base} name={wavetableName} frame={frame} ranges={ranges} onFrame={(next) => onChange("SynthWavetablePosition", wavetableFrameToPositionByte(next + 1))}/>
-            <FrameScope samples={base} frame={frame} bends={bends}/>
+            <WavetableStack samples={base} name={wavetableName} frame={frame} live={live} onFrame={(next) => onChange("SynthWavetablePosition", wavetableFrameToPositionByte(next + 1))}/>
+            <LiveCycleView samples={base} position={v.SynthWavetablePosition} live={live}/>
           </div>
           <div className="knob-bank">
             <ClassicKnob label="Wavetable position" value={frame + 1} min={1} max={16} format={(value) => `${value}/16`} onChange={(value) => onChange("SynthWavetablePosition", wavetableFrameToPositionByte(value))}

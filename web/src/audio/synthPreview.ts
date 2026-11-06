@@ -11,6 +11,15 @@ export interface SynthPreviewPatch {
   values: SynthPreviewValues;
 }
 
+/** The newest sounding voice's cycle: table position (0–127) and Q4 phase-warp amounts (±127). */
+export interface SynthVoiceShape {
+  position: number;
+  fold: number;
+  duty: number;
+  poly: number;
+}
+export type SynthVoiceShapeListener = (shape: SynthVoiceShape | null) => void;
+
 interface PendingNote {
   note: number;
   velocity: number;
@@ -27,6 +36,7 @@ export class SynthPreviewController {
   private pendingNotes: PendingNote[] = [];
   private loading: Promise<void> | null = null;
   private generation = 0;
+  private shapeListeners = new Set<SynthVoiceShapeListener>();
 
   get active(): boolean {
     return this.context !== null && this.context.state !== "closed";
@@ -35,6 +45,12 @@ export class SynthPreviewController {
   // Lessons unlock audio from their Start button before hardware MIDI arrives.
   async start(): Promise<void> {
     await this.ensureStarted();
+  }
+
+  /** Follow the newest sounding voice; null when nothing plays. Returns an unsubscribe. */
+  onVoiceShape(listener: SynthVoiceShapeListener): () => void {
+    this.shapeListeners.add(listener);
+    return () => { this.shapeListeners.delete(listener); };
   }
 
   setPatch(patch: SynthPreviewPatch): void {
@@ -90,6 +106,7 @@ export class SynthPreviewController {
     this.allNotesOff();
     this.node?.disconnect();
     this.node = null;
+    for (const listener of this.shapeListeners) listener(null);
     if (this.context && this.context.state !== "closed") {
       await this.context.close();
     }
@@ -135,6 +152,12 @@ export class SynthPreviewController {
         outputChannelCount: [2]
       });
       node.connect(context.destination);
+      node.port.onmessage = (event: MessageEvent) => {
+        const message = event.data;
+        if (message?.type !== "voiceShape") return;
+        const shape = message.active ? { position: message.position, fold: message.fold, duty: message.duty, poly: message.poly } : null;
+        for (const listener of this.shapeListeners) listener(shape);
+      };
       this.node = node;
       node.port.postMessage({ type: "setVolume", volume: this.volume });
       node.port.postMessage({ type: "setMod", value: this.modValue });

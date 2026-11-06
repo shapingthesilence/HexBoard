@@ -1,6 +1,6 @@
 import {writeStoredText} from "../editor/autosave.ts";
 import { sameContent, useEditorDrafts } from "../editor/drafts.ts";
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import {
   createSynthPresetObject,
   createSynthWavetableObject,
@@ -30,7 +30,7 @@ import {
   type WavetableNormalization
 } from "../catalogs/index.ts";
 import { createBasicShapesSamples } from "../catalogs/factoryWavetables.ts";
-import { SynthPreviewController, type SynthPreviewPatch } from "../audio/synthPreview.ts";
+import { SynthPreviewController, type SynthPreviewPatch, type SynthVoiceShapeListener } from "../audio/synthPreview.ts";
 import { SynthMidiPreview } from "../components/SynthMidiPreview.tsx";
 import { MockMidiTransport } from "../midi/mockTransport.ts";
 import { PresetSyncClient } from "../midi/presetSyncClient.ts";
@@ -1415,6 +1415,9 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     }
     return previewControllerRef.current;
   }
+
+  // Stable for the editor's live pictures; the controller is created lazily and lives as long as this view.
+  const subscribeVoiceShape = useCallback((listener: SynthVoiceShapeListener) => previewController().onVoiceShape(listener), []);
 
   async function startPreviewNote(note: number) {
     try {
@@ -3169,6 +3172,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
           wavetableName={preset.wavetableName}
           samples={previewPatch.wavetableSamples}
           modWheel={previewMod}
+          subscribeVoiceShape={subscribeVoiceShape}
           missingSamples={!previewPatch.wavetableSamples && requiredHexBoardWavetable ? (
             <button type="button" disabled={copyingPreviewWavetable} onClick={() => void copyPreviewWavetableFromHexBoard()}>
               {copyingPreviewWavetable ? "Copying…" : "Copy wavetable from HexBoard"}
