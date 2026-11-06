@@ -130,12 +130,12 @@ void hexboardLoop() {        // run on first core
   u8g2.serviceTransfer();
   serviceSerialDebugMessages();
   bool presetSyncOwnsUi = servicePresetSyncTransfer();
-  bool missingWavetableNoticeOwnsUi =
-    !presetSyncOwnsUi && serviceMissingWavetableNotice();
+  bool displayNoticeOwnsUi =
+    !presetSyncOwnsUi && serviceDisplayNotice();
   refreshVolumeEnvelopeModulation();
   processEnvelopeReleases();
   retryPendingReleases();
-  if (!presetSyncOwnsUi && !missingWavetableNoticeOwnsUi) {
+  if (!presetSyncOwnsUi && !displayNoticeOwnsUi) {
     screenSaver();     // Reduces wear-and-tear on OLED panel
   }
   readHexes();       // Read and store the digital button states of the scanning matrix
@@ -157,7 +157,7 @@ void hexboardLoop() {        // run on first core
     lightUpLEDs();   // refresh LEDs
   }
   u8g2.serviceTransfer();
-  if (!missingWavetableNoticeOwnsUi) {
+  if (!displayNoticeOwnsUi) {
     dealWithRotary();  // deal with menu
   }
   if (delegatedControlState.active) {
@@ -172,14 +172,14 @@ void hexboardLoop() {        // run on first core
   restoreMenuAfterDelegatedControl();
   serviceVirtualListLauncherLabelScroll();
   serviceFlashSaveScreen();
-  missingWavetableNoticeOwnsUi = serviceMissingWavetableNotice();
-  if (!flashSaveScreenVisible && !missingWavetableNoticeOwnsUi && sequencerModeActive()) {
+  displayNoticeOwnsUi = serviceDisplayNotice();
+  if (!flashSaveScreenVisible && !displayNoticeOwnsUi && sequencerModeActive()) {
     drawSequencerModeDisplay();
   }
-  if (!flashSaveScreenVisible && !missingWavetableNoticeOwnsUi) {
+  if (!flashSaveScreenVisible && !displayNoticeOwnsUi) {
     drawCommandWheelOverlay();
   }
-  if (!missingWavetableNoticeOwnsUi) {
+  if (!displayNoticeOwnsUi) {
     drawPlayedNotesOverlay(); // shows the notes of keys pressed on the screen
   }
   u8g2.serviceTransfer();

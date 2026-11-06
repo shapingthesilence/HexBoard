@@ -48,7 +48,7 @@ int main(int argc, char** argv) {
             output = work / 'filesystem'
             with contextlib.redirect_stdout(io.StringIO()):
                 factory.build_library(ROOT / 'factory-library', output)
-            records = sorted((output / 'presets').glob('*.hsp'))
+            records = sorted((output / 'presets').rglob('*.hsp'))
             sources = sorted((ROOT / 'factory-library/presets').rglob('*.json'))
             self.assertEqual(len(records), len(sources))
             self.assertGreater(len(records), 0)
@@ -94,9 +94,9 @@ int main(int argc, char** argv) {
             output = work / 'filesystem'
             with contextlib.redirect_stdout(io.StringIO()):
                 factory.build_library(ROOT / 'factory-library', output)
-            records = sorted((output / 'presets').glob('*.hsp'))
-            result = subprocess.run([str(checker), str(output / 'synth_preset_index.dat'),
-                                     *(path.name for path in records)],
+            records = sorted((output / 'presets').rglob('*.hsp'))
+            result = subprocess.run([str(checker), str(output / 'preset_index'),
+                                     *(path.relative_to(output / 'presets').as_posix() for path in records)],
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             listed = {tuple(line.split('\t')) for line in result.stdout.splitlines()}

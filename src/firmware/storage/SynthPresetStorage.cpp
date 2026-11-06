@@ -667,6 +667,33 @@ void flashSafeSaveSynthWavetables() {
   flashSafeWrite(save_synth_wavetables);
 }
 
+namespace {
+// Board saves explain a refusal on the OLED; Sync reports its own errors.
+void showBoardSaveRefusal(SynthPresetStoreResult result) {
+  sendToLog(synthPresetStoreResultMessage(result));
+  char detail[24] = {};
+  const char* reason = "Storage error";
+  switch (result) {
+    case SynthPresetStoreResult::FolderFull:
+      reason = "Folder is full";
+      snprintf(detail, sizeof(detail), "%u presets per folder", static_cast<unsigned>(SYNTH_PRESET_FOLDER_MAX_PRESETS));
+      break;
+    case SynthPresetStoreResult::LibraryFull:
+      reason = "Library is full";
+      snprintf(detail, sizeof(detail), "%u presets maximum", static_cast<unsigned>(SYNTH_PRESET_MAX_COUNT));
+      break;
+    case SynthPresetStoreResult::TooManyFolders:
+      reason = "Too many folders";
+      snprintf(detail, sizeof(detail), "%u folders maximum", static_cast<unsigned>(SYNTH_PRESET_FOLDER_MAX_COUNT));
+      break;
+    default:
+      showSynthPresetSaveRefusedNotice(reason, "", "See Settings >", "Storage Status");
+      return;
+  }
+  showSynthPresetSaveRefusedNotice(reason, detail, "Free space with", "HexBoard Sync");
+}
+}  // namespace
+
 void saveSynthPresetToSlot(uint16_t presetIndex) {
   SynthPresetSlot preset = {};
   if (!readSynthPresetFromCatalog(presetIndex, preset)) {
@@ -678,7 +705,7 @@ void saveSynthPresetToSlot(uint16_t presetIndex) {
   uint16_t storedHandle = 0;
   SynthPresetStoreResult result = storeSynthPresetInCatalog(presetIndex, preset, storedHandle);
   if (result != SynthPresetStoreResult::Stored) {
-    sendToLog(synthPresetStoreResultMessage(result));
+    showBoardSaveRefusal(result);
     return;
   }
   trackCurrentSynthPreset(storedHandle, preset);
@@ -687,12 +714,12 @@ void saveSynthPresetToSlot(uint16_t presetIndex) {
 
 void saveSynthPresetAsNew(const char* folderPath) {
   if (!ensureSynthPresetCatalogIndexed(true)) {
-    sendToLog(synthPresetStoreResultMessage(SynthPresetStoreResult::StorageError));
+    showBoardSaveRefusal(SynthPresetStoreResult::StorageError);
     return;
   }
   const uint16_t count = synthPresetCatalogCount();
   if (count >= SYNTH_PRESET_MAX_COUNT) {
-    sendToLog(synthPresetStoreResultMessage(SynthPresetStoreResult::LibraryFull));
+    showBoardSaveRefusal(SynthPresetStoreResult::LibraryFull);
     return;
   }
   SynthPresetSlot preset = {};
@@ -705,7 +732,7 @@ void saveSynthPresetAsNew(const char* folderPath) {
   uint16_t salt = count;
   while (findSynthPresetCatalogHandle(preset.objectId, existing)) {
     if (salt - count >= 8) {
-      sendToLog(synthPresetStoreResultMessage(SynthPresetStoreResult::StorageError));
+      showBoardSaveRefusal(SynthPresetStoreResult::StorageError);
       return;
     }
     generateSynthPresetObjectId(preset, ++salt);
@@ -714,7 +741,7 @@ void saveSynthPresetAsNew(const char* folderPath) {
   SynthPresetStoreResult result =
     storeSynthPresetInCatalog(SYNTH_PRESET_CATALOG_NEW_HANDLE, preset, storedHandle);
   if (result != SynthPresetStoreResult::Stored) {
-    sendToLog(synthPresetStoreResultMessage(result));
+    showBoardSaveRefusal(result);
     return;
   }
   trackCurrentSynthPreset(storedHandle, preset);

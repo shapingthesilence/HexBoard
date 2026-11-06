@@ -66,11 +66,11 @@ bool flashSaveScreenClosePending = false;
 uint64_t flashSaveSavedScreenTime = 0;
 uint64_t flashSaveScreenVisibleUntil = 0;
 constexpr uint64_t FLASH_SAVE_SCREEN_MAX_VISIBLE_MICROS = 700000ULL;
-bool missingWavetableNoticeVisible = false;
-bool missingWavetableNoticeWokeDisplayFromSleep = false;
-uint64_t missingWavetableNoticeSavedScreenTime = 0;
-uint64_t missingWavetableNoticeVisibleUntil = 0;
-constexpr uint64_t MISSING_WAVETABLE_NOTICE_MICROS = 2000000ULL;
+bool displayNoticeVisible = false;
+bool displayNoticeWokeDisplayFromSleep = false;
+uint64_t displayNoticeSavedScreenTime = 0;
+uint64_t displayNoticeVisibleUntil = 0;
+constexpr uint64_t DISPLAY_NOTICE_MICROS = 2000000ULL;
 
 constexpr uint8_t VIRTUAL_LIST_LAUNCHER_VISIBLE_CHARS = 19;
 constexpr uint64_t VIRTUAL_LIST_LAUNCHER_SCROLL_START_DELAY_MICROS = 1500000ULL;
@@ -448,18 +448,31 @@ void serviceFlashSaveScreen() {
   }
 }
 
-void showMissingWavetableNotice(const char* wavetableName) {
+// Shows centered lines for two seconds, then restores the previous screen.
+void showDisplayNotice(const DisplayNoticeLine* lines, uint8_t lineCount) {
   dismissFlashSaveScreenForMenuInput();
   dismissCommandWheelOverlay();
-  missingWavetableNoticeWokeDisplayFromSleep = screenSaverOn;
-  missingWavetableNoticeSavedScreenTime = screenTime;
-  missingWavetableNoticeVisibleUntil = readClock() + MISSING_WAVETABLE_NOTICE_MICROS;
+  displayNoticeWokeDisplayFromSleep = screenSaverOn;
+  displayNoticeSavedScreenTime = screenTime;
+  displayNoticeVisibleUntil = readClock() + DISPLAY_NOTICE_MICROS;
   wakeDisplayFromScreensaver();
   noteOverlayVisible = false;
   noteBadgeVisible = false;
   noteOverlayTemporaryWake = false;
   noteOverlayWokeDisplayFromSleep = false;
 
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_6x13_tf);
+  for (uint8_t i = 0; i < lineCount; ++i) {
+    if (lines[i].text && lines[i].text[0]) {
+      drawCenteredDelegatedText(lines[i].text, lines[i].y);
+    }
+  }
+  u8g2.sendBuffer();
+  displayNoticeVisible = true;
+}
+
+void showMissingWavetableNotice(const char* wavetableName) {
   const char* name = wavetableName && wavetableName[0] ? wavetableName : "Unknown";
   size_t nameLength = strnlen(name, SYNTH_WAVETABLE_NAME_LENGTH - 1);
   char firstNameLine[22] = {};
@@ -470,32 +483,40 @@ void showMissingWavetableNotice(const char* wavetableName) {
     snprintf(firstNameLine, sizeof(firstNameLine), "\"%.*s", 18, name);
     snprintf(secondNameLine, sizeof(secondNameLine), "%.*s\"", 13, name + 18);
   }
-
-  u8g2.clearBuffer();
-  u8g2.setFont(u8g2_font_6x13_tf);
-  drawCenteredDelegatedText("Upload wavetable", 17);
-  drawCenteredDelegatedText(firstNameLine, secondNameLine[0] ? 39 : 46);
-  if (secondNameLine[0]) {
-    drawCenteredDelegatedText(secondNameLine, 56);
-  }
-  drawCenteredDelegatedText("with HexBoard Sync", 80);
-  drawCenteredDelegatedText("Using Basic Shapes", 104);
-  u8g2.sendBuffer();
-  missingWavetableNoticeVisible = true;
+  const DisplayNoticeLine lines[] = {
+    {"Upload wavetable", 17},
+    {firstNameLine, static_cast<uint8_t>(secondNameLine[0] ? 39 : 46)},
+    {secondNameLine, 56},
+    {"with HexBoard Sync", 80},
+    {"Using Basic Shapes", 104},
+  };
+  showDisplayNotice(lines, 5);
 }
 
-bool serviceMissingWavetableNotice() {
-  if (!missingWavetableNoticeVisible) {
+void showSynthPresetSaveRefusedNotice(const char* reason, const char* detail,
+                                      const char* advice, const char* adviceDetail) {
+  const DisplayNoticeLine lines[] = {
+    {"Preset not saved", 17},
+    {reason, 46},
+    {detail, 63},
+    {advice, 87},
+    {adviceDetail, 104},
+  };
+  showDisplayNotice(lines, 5);
+}
+
+bool serviceDisplayNotice() {
+  if (!displayNoticeVisible) {
     return false;
   }
-  if (readClock() < missingWavetableNoticeVisibleUntil) {
+  if (readClock() < displayNoticeVisibleUntil) {
     return true;
   }
 
-  missingWavetableNoticeVisible = false;
-  missingWavetableNoticeVisibleUntil = 0;
-  screenTime = missingWavetableNoticeSavedScreenTime;
-  if (missingWavetableNoticeWokeDisplayFromSleep || screenTime > screenSaverTimeout) {
+  displayNoticeVisible = false;
+  displayNoticeVisibleUntil = 0;
+  screenTime = displayNoticeSavedScreenTime;
+  if (displayNoticeWokeDisplayFromSleep || screenTime > screenSaverTimeout) {
     enterDisplayScreensaver();
   } else if (delegatedControlState.active) {
     delegatedControlState.displayDirty = true;
@@ -503,8 +524,8 @@ bool serviceMissingWavetableNotice() {
   } else {
     restoreInteractiveMenuDisplay();
   }
-  missingWavetableNoticeWokeDisplayFromSleep = false;
-  missingWavetableNoticeSavedScreenTime = 0;
+  displayNoticeWokeDisplayFromSleep = false;
+  displayNoticeSavedScreenTime = 0;
   return false;
 }
 

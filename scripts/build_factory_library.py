@@ -47,7 +47,7 @@ CURRENT_SETTINGS_VERSION = source_integer_constant("CURRENT_SETTINGS_VERSION")
 SYNTH_PRESET_MAX_COUNT = source_integer_constant("SYNTH_PRESET_MAX_COUNT")
 SYNTH_PRESET_FOLDER_MAX_COUNT = source_integer_constant("SYNTH_PRESET_FOLDER_MAX_COUNT")
 SYNTH_PRESET_FOLDER_MAX_PRESETS = source_integer_constant("SYNTH_PRESET_FOLDER_MAX_PRESETS")
-SYNTH_PRESET_INDEX_PATH = "synth_preset_index.dat"
+PRESET_INDEX_DIRECTORY = "preset_index"
 SYNTH_WAVETABLE_MAX_COUNT = 32
 GEOMETRY_FACTORY_BUNDLE_MAX_COUNT = 64
 GEOMETRY_BUNDLE_RECORD_MAX_COUNT = 255
@@ -800,7 +800,9 @@ def build_presets(root: Path, output: Path, config: dict,
             selected_values = values
             selected_wavetable = wavetable
         header = struct.pack("<3sBI", b"HSP", SYNTH_PRESET_FILE_VERSION, crc32(slot))
-        (preset_output / f"{object_id.hex().upper()}.hsp").write_bytes(header + slot)
+        bucket = preset_output / object_id.hex().upper()[0]
+        bucket.mkdir(exist_ok=True)
+        (bucket / f"{object_id.hex().upper()}.hsp").write_bytes(header + slot)
         seen_ids.add(object_id)
         seen_names.add(key)
         name = slot[18:50].split(b"\0", 1)[0].decode("utf-8")
@@ -808,41 +810,44 @@ def build_presets(root: Path, output: Path, config: dict,
         index_entries.append((object_id, name, folder, slot[1] != 0, path))
     if selected_id is None or selected_values is None or selected_wavetable is None:
         raise fail(root, "selection", f"selectedPreset {selected_name!r} was not found")
-    (output / SYNTH_PRESET_INDEX_PATH).write_bytes(build_preset_index(root, index_entries))
+    index_output = output / PRESET_INDEX_DIRECTORY
+    index_output.mkdir()
+    for name, data in build_preset_index(root, index_entries).items():
+        (index_output / name).write_bytes(data)
     return selected_id, selected_values, selected_wavetable
 
 
-def preset_index_id_hash(object_id: bytes) -> int:
-    value = 2166136261
-    for byte in object_id:
-        value = ((value ^ byte) * 16777619) & 0xFFFFFFFF
-    return value
+def preset_index_file(magic: bytes, version: int, count: int, slot: int, body: bytes) -> bytes:
+    header = struct.pack("<3sBBBH", magic, version, count, slot, 0)
+    return header + struct.pack("<I", zlib.crc32(body + header)) + body
 
 
 def build_preset_index(root: Path,
-                       entries: list[tuple[bytes, str, str, bool, Path]]) -> bytes:
-    """Encode the HPI1 index described in SynthPresetIndexCodec.h."""
+                       entries: list[tuple[bytes, str, str, bool, Path]]) -> dict[str, bytes]:
+    """Encode the per-folder index described in SynthPresetIndexCodec.h."""
     folders: list[str] = []
-    per_folder: dict[str, int] = {}
-    records = b""
+    records: dict[int, bytes] = {}
     for object_id, name, folder, favorite, path in entries:
         if folder not in folders:
             if len(folders) >= SYNTH_PRESET_FOLDER_MAX_COUNT:
                 raise fail(path, "presets",
                            f"more than {SYNTH_PRESET_FOLDER_MAX_COUNT} preset folders")
             folders.append(folder)
-        per_folder[folder] = per_folder.get(folder, 0) + 1
-        if per_folder[folder] > SYNTH_PRESET_FOLDER_MAX_PRESETS:
+        slot = folders.index(folder)
+        if len(records.get(slot, b"")) // 52 >= SYNTH_PRESET_FOLDER_MAX_PRESETS:
             raise fail(path, "presets",
                        f"folder {folder!r} has more than {SYNTH_PRESET_FOLDER_MAX_PRESETS} presets")
-        records += (object_id + encoded_text(name, path, "name", 32)
-                    + bytes([folders.index(folder), 1 if favorite else 0]) + bytes(2))
-    folder_table = b"".join(encoded_text(folder, root, "folder", 48) for folder in folders)
-    directory_hash = sum(preset_index_id_hash(entry[0]) for entry in entries) & 0xFFFFFFFF
-    header = struct.pack("<3sBHBBHHI", b"HPI", 1, len(entries), len(folders), 0,
-                         len(entries), 0, directory_hash)
-    checksum = zlib.crc32(records + folder_table + header)
-    return header + struct.pack("<I", checksum) + records + folder_table
+        records[slot] = records.get(slot, b"") + (
+            object_id + encoded_text(name, path, "name", 32)
+            + bytes([slot, 1 if favorite else 0]) + bytes(2))
+    files = {
+        f"{slot:02X}.hpi": preset_index_file(b"HPI", 2, len(body) // 52, slot, body)
+        for slot, body in records.items()
+    }
+    table = b"".join(encoded_text(folder, root, "folder", 48) for folder in folders)
+    table += bytes(48 * (SYNTH_PRESET_FOLDER_MAX_COUNT - len(folders)))
+    files["folders.hpf"] = preset_index_file(b"HPF", 1, SYNTH_PRESET_FOLDER_MAX_COUNT, 0, table)
+    return files
 
 
 def build_settings(config_path: Path, output: Path, config: dict,

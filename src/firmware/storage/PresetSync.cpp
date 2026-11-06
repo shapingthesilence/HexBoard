@@ -151,18 +151,22 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
       normalizeSynthPresetFolderPath(normalizedFolderFilter, sizeof(normalizedFolderFilter));
     }
     ensureSynthPresetCatalogIndexed(false);
-    auto visit = [&](const SynthPresetCatalogEntry& entry) {
-      if (normalizedFolderFilter[0]
-          && strncmp(entry.folderPath, normalizedFolderFilter, sizeof(entry.folderPath)) != 0) {
-        return true;
-      }
-      if (matchedCount >= start && pageHandleCount < pageSize) {
+    const char* filter = normalizedFolderFilter[0] ? normalizedFolderFilter : nullptr;
+    // Counts come from the folder table, so a page reads only its own records.
+    const uint16_t total = synthPresetCatalogMatchCount(filter);
+    if (start < matchedCount + total && pageHandleCount < pageSize) {
+      const uint16_t skip = static_cast<uint16_t>(start > matchedCount ? start - matchedCount : 0);
+      auto visit = [&](const SynthPresetCatalogEntry& entry) {
         pageSynthPresets[pageHandleCount] = entry;
-      }
-      includeHandle(PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET, entry.handle);
-      return true;
-    };
-    visitSynthPresetCatalogWith(visit);
+        pageHandles[pageHandleCount++] = { PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET, entry.handle };
+        return pageHandleCount < pageSize;
+      };
+      visitSynthPresetCatalogFrom(filter, skip,
+        [](void* context, const SynthPresetCatalogEntry& entry) {
+          return (*static_cast<decltype(visit)*>(context))(entry);
+        }, &visit);
+    }
+    matchedCount += total;
   };
   auto includeSynthWavetable = [&]() {
     char normalizedFolderFilter[SYNTH_WAVETABLE_FOLDER_LENGTH] = {};

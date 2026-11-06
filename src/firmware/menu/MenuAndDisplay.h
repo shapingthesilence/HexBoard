@@ -12,7 +12,7 @@ extern bool screenSaverOn;
 extern uint64_t screenTime;
 extern const uint64_t screenSaverTimeout;
 extern bool flashSaveScreenVisible;
-extern bool missingWavetableNoticeVisible;
+extern bool displayNoticeVisible;
 extern bool rotaryInvert;
 extern bool commandEncoder;
 extern GEMPage menuPageMain;
@@ -36,8 +36,15 @@ void showFlashSaveScreen();
 void closeFlashSaveScreen();
 void dismissFlashSaveScreenForMenuInput();
 void serviceFlashSaveScreen();
+struct DisplayNoticeLine {
+  const char* text;
+  uint8_t y;
+};
+void showDisplayNotice(const DisplayNoticeLine* lines, uint8_t lineCount);
+void showSynthPresetSaveRefusedNotice(const char* reason, const char* detail,
+                                      const char* advice, const char* adviceDetail);
 void showMissingWavetableNotice(const char* wavetableName);
-bool serviceMissingWavetableNotice();
+bool serviceDisplayNotice();
 void drawCenteredMenuHeaderTitle(const char* title);
 void menuHome();
 void menuSynthOptionsHome();

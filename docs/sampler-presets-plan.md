@@ -22,53 +22,45 @@ One preset library for both engines. A preset is a sound source plus settings:
   restores the original.
 - Preset rows show a small engine icon.
 
-## Done: Preset Index And Folder Loading
+## Done: Preset Index, Folder Loading And Phase 1
 
-- `/synth_preset_index.dat` (HPI v1, `storage/SynthPresetIndexCodec.h`) lists
-  presets in handle order. It is validated at boot and rebuilt on first use if
-  missing or stale. Boot never writes it.
-- RAM keeps only the folder table (32 × 48 bytes) and the open browser folder
-  (64 presets with 24-byte names, 24 subfolders). Static RAM fell by about
-  9.4 KB while capacity rose from 128 to 512 presets.
-- Limits: 512 presets, 32 folder paths, 64 presets per folder. Saves beyond a
-  limit are refused before the preset file is written.
+- Preset files live in 16 subdirectories (`/presets/<first id hex digit>/`).
+  `/preset_index/` holds a 32-slot folder table and one index file per folder
+  (`storage/SynthPresetIndexCodec.h`). Handles are `slot × 256 + position`.
+- RAM keeps only the folder table with counts and the open browser folder
+  (64 presets with 24-byte names, 24 subfolders). Static RAM is about 9.4 KB
+  lower than with the old 128-preset catalog.
+- Limits: 512 presets, 32 folder paths, 64 presets per folder, checked before
+  anything is written. The board shows "Preset not saved" with the reason;
+  Sync checks the same limits and the 23-character name limit before sending.
+- Boot validates the index without listing `/presets`; a pending marker
+  detects interrupted changes. A first-use rebuild also moves files from the
+  old flat layout.
 - Index records reserve engine bits (`kFlagEngineMask`), so the browser can
   show engine icons without opening preset files.
 
-Measured on a Classic board: a full index pass at 512 presets costs about
-17 ms more than at 18, so entering a folder stays around 20 ms worst case and
-scrolling never reads flash. One save with 512 presets took about 1.3 s,
-because each save rewrites the whole 26 KB index (see phase 1.3).
+Measured on a Classic board with 512 presets:
 
-Startup was also slower with a full library: reboot to first sync reply took
-3.6 s with 18 presets and 8.6 s with 512 (one sample each). The likely cause is
-the boot-time directory listing used for the stale-index check (phase 1.1).
+| | One flat directory, one index file | Buckets, per-folder index |
+| --- | --- | --- |
+| Save one preset | 1.0–2.3 s | 0.4–0.6 s |
+| Load presets at boot | 248 ms | 86 ms |
+| Read one folder (board) | about 17 ms (whole index) | about 5 ms |
+| List all presets in Sync | 16 s (with full passes per page) | 7.5 s (USB-bound) |
 
-## Phase 1 — Finish The Library Work
+Whole-board setup takes about 1.9–2.6 s either way. The 8.6 s reboot time
+reported earlier came from the test script's retries while macOS set up MIDI,
+not from the board. The one-time move of 512 flat files took several minutes;
+boards updating from released firmware hold at most 128 presets.
 
-1. **Faster boot with a full library.** Time each boot step at 512 presets.
-   If the `/presets` directory listing dominates, stop listing at boot: record
-   an index generation in a small commit file written after each preset-file
-   change, and compare that instead of the directory hash. Per-folder preset
-   subdirectories (with 1.3) would also shorten each listing.
-2. **Refusal notice on the board.** Saving into a full folder or library is
-   currently only logged. Show a short OLED notice, built like the
-   missing-wavetable notice: "Folder full (64)", "Library full (512)" or
-   "Too many folders (32)".
-3. **Faster saves in large libraries.** Split the index per folder:
-   `/presets/index/<slot>.hpi` plus a small folder table file. A save then
-   rewrites at most 64 records (about 3 KB), and entering a folder reads only
-   that folder's file. Encode sync handles as `folderSlot × 64 + position`
-   (at most 2,048, so they fit u14). Lookups by object id still scan every
-   folder file, which costs the same as today. Measure before and after with
-   the scratch probe described under Verification.
-4. **Sync enforcement.** Limit Classic preset names to 23 characters (24 bytes)
-   and check the folder limits before uploading. Read the capacity from
-   `HELLO_RESP` (already decoded as `synthPresetCount`). Batch imports should
-   report which presets would not fit before any are sent.
-5. **Optional Favorites folder.** The index already stores the favorite flag.
-   A virtual `★ Favorites` row at the root would gather favorites with one
-   index pass, limited to the 64-entry folder buffer.
+## Phase 1 — Remaining
+
+1. **Optional Favorites folder.** The index already stores the favorite flag.
+   A virtual `★ Favorites` row at the root would gather favorites from every
+   folder file, limited to the 64-entry folder buffer.
+2. **Progress during the one-time move.** The rebuild shows only the flash-save
+   screen. A count ("Updating presets 40/128") would reassure users with large
+   libraries.
 
 ## Phase 2 — Sampler Preset Data Model
 
@@ -134,9 +126,9 @@ the boot-time directory listing used for the stale-index check (phase 1.1).
   the Update image, then use a preset-sync probe to compare preset lists and
   bodies before and after, round-trip append/rename/move/delete, test the folder
   and library limits, and time empty filtered listings at 18 and 512 presets.
-- Web: run the web tests and build when Phase 1.4 or Phase 5 lands.
+- Web: run the web tests and build when Phase 5 lands.
 
 ## Open Questions
 
-- Should Favorites (phase 1.5) be part of the first release?
+- Should Favorites (phase 1.1) be part of the first release?
 - Is 64 instruments the right cap, given the factory library's size?

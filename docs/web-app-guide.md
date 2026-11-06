@@ -780,6 +780,12 @@ The sound’s more-actions menu contains export, `Load current HexBoard sound`,
 and `Discard draft`; `Other drafts` resumes unfinished sounds. Connecting does
 not replace your open sound. Previewing or saving to HexBoard requires a connection.
 
+Preset names are limited to 23 characters, the length the HexBoard's preset
+list shows. The HexBoard Library holds up to 512 presets in up to 32 folders,
+with up to 64 presets in each folder. A save, move or batch copy that would
+exceed a limit is stopped before anything is sent, and the status line names
+the full folder or limit. A batch copy that would not fit copies nothing.
+
 The editor uses the same violet Wavetable look as the Advanced editor. Playback
 sits on top; `Arpeggiator rate`, `Arpeggiator direction`, `Note length` and
 `Tempo` appear only in the two arp modes, and `Portamento` only in the two mono

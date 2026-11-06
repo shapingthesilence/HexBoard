@@ -37,6 +37,7 @@ import { PresetSyncClient } from "../midi/presetSyncClient.ts";
 import type { MidiTransport } from "../midi/types.ts";
 import { WebMidiTransport } from "../midi/webMidi.ts";
 import { crc32 } from "../protocol/crc32.ts";
+import { HEXBOARD_PRESET_NAME_MAX_BYTES, hexboardPresetCapacityProblem } from "../catalogs/hexboardPresetCapacity.ts";
 import { SynthWavetableSelector, type ObjectListRecord } from "../protocol/index.ts";
 import { CommonTlv, decodeObjectBody, textFromBytes } from "../protocol/tlv.ts";
 import { FolderControls } from "../components/FolderControls.tsx";
@@ -344,7 +345,7 @@ function normalizeWavetableReference(folderPath: string | undefined, name: strin
 }
 
 function normalizedPresetName(name: string): string {
-  return clampUtf8Bytes(name.trim() || "Untitled", deviceNameMaxBytes);
+  return clampUtf8Bytes(name.trim() || "Untitled", HEXBOARD_PRESET_NAME_MAX_BYTES);
 }
 
 function normalizedWavetableName(name: string): string {
@@ -1758,6 +1759,12 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       return true;
     }
 
+    const capacityProblem = hexboardPresetCapacityProblem(hexboardPresets, [nextPreset]);
+    if (capacityProblem) {
+      setSyncStatus(capacityProblem);
+      return false;
+    }
+
     if (transport instanceof MockMidiTransport || request.preset.deviceHandle === undefined) {
       setHexboardPresets((current) => {
         const withoutConflict = conflict ? removePreset(current, conflict.objectIdHex) : current;
@@ -1939,6 +1946,11 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       return false;
     }
     const normalized = decision.preset;
+    const capacityProblem = hexboardPresetCapacityProblem(hexboardPresets, [normalized]);
+    if (capacityProblem) {
+      setSyncStatus(capacityProblem);
+      return false;
+    }
     try {
       const encodedPreset = encodeEditablePreset(normalized);
       const frames = transport instanceof MockMidiTransport
@@ -2314,6 +2326,17 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       setSyncStatus("Bulk copy canceled");
       return;
     }
+    // A same-named preset is replaced in place, keeping its object id.
+    const planned = sources.map((source) => {
+      if (hexboardPresets.some((candidate) => candidate.objectIdHex === source.objectIdHex)) return source;
+      const sameName = hexboardPresets.find((candidate) => presetSaveKey(candidate) === presetSaveKey(source));
+      return sameName ? { ...source, objectIdHex: sameName.objectIdHex } : source;
+    });
+    const capacityProblem = hexboardPresetCapacityProblem(hexboardPresets, planned);
+    if (capacityProblem) {
+      setSyncStatus(`Nothing copied. ${capacityProblem}`);
+      return;
+    }
 
     setBulkPresetBusy(true);
     let completed = 0;
@@ -2645,7 +2668,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
             folderPath={presetOrganizationRequest.preset.folderPath}
             initialFolderPath={presetOrganizationRequest.initialFolderPath}
             folders={presetOrganizationRequest.space === "computer" ? computerPresetFolders : hexboardPresetFolders}
-            maxNameLength={deviceNameMaxBytes}
+            maxNameLength={HEXBOARD_PRESET_NAME_MAX_BYTES}
             maxFolderLength={deviceFolderMaxBytes}
             normalizeName={normalizedPresetName}
             normalizeFolderPath={normalizeDisplayFolderPath}
@@ -3017,7 +3040,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
           <div className="synthIdentityFields">
             <label className="field">
               <span>Name</span>
-              <input value={preset.name} onChange={(event) => updatePresetName(event.target.value)} />
+              <input value={preset.name} maxLength={HEXBOARD_PRESET_NAME_MAX_BYTES} onChange={(event) => updatePresetName(event.target.value)} />
             </label>
             <label className="field">
               <span>Folder</span>

@@ -63,12 +63,12 @@ This protocol maps to independently replaceable persistent objects:
 - `/geometry/<tuning-object-id>.hgb` stores one complete editable musical-
   geometry bundle: its tuning root plus all layouts, scales, scale color map,
   and explicit button maps that reference that tuning.
-- `/presets/<object-id>.hsp` stores one named synth preset with its folder path
+- `/presets/<first-id-hex-digit>/<object-id>.hsp` stores one named synth preset with its folder path
   and a wavetable name dependency. The wavetable folder is retained as metadata
   for compatibility but is not part of dependency matching.
-- `/synth_preset_index.dat` lists the synth presets in handle order so listing
-  does not open every preset file. It is derived data: firmware rebuilds it from
-  the preset files when it is missing or stale.
+- `/preset_index/` lists the synth presets by folder so listing does not open
+  preset files. It is derived data: firmware rebuilds it from the preset files
+  when it is missing, invalid or was interrupted.
 - `/synth_wavetables.dat` stores the named user wavetable catalog. Each catalog
   entry points to a sample file generated from the wavetable object id.
 
@@ -86,8 +86,9 @@ File headers:
 | `/.synth_profile_<0..8>.hsp` | `HSP` | Synth preset file schema `12` | Hidden full synth patch for a modified profile |
 | `/geometry/*.hgb` | `HGB` | Geometry bundle file schema `3`; object schema `2` | One tuning root and all linked layout/scale/color/map records |
 | `/geometry_order.dat` | `HGO` | Geometry order file schema `1` | Ordered tuning object IDs used by device and web library menus |
-| `/presets/*.hsp` | `HSP` | Synth preset file schema `12` | One named preset, folder, values, and wavetable reference |
-| `/synth_preset_index.dat` | `HPI` | Synth preset index schema `1` | Object id, name, folder and flags per preset handle, plus folder paths |
+| `/presets/<0-F>/*.hsp` | `HSP` | Synth preset file schema `12` | One named preset, folder, values, and wavetable reference |
+| `/preset_index/folders.hpf` | `HPF` | Folder table schema `1` | 32 folder slots |
+| `/preset_index/<slot>.hpi` | `HPI` | Folder index schema `2` | Object id, name and flags of each preset in one folder slot |
 | `/synth_wavetables.dat` | `SYW` | Synth wavetable catalog schema | Named user wavetable objects and sample-file paths |
 
 The current firmware has `/settings.dat`, independent named/foldered synth
@@ -438,7 +439,7 @@ object handle:
 - Proposed profile objects reserve fixed slot indices `0..8`; profile transfer
   is not implemented.
 - For geometry records streamed from `/geometry/*.hgb` and synth presets listed
-  from `/synth_preset_index.dat`, it is a compact handle returned by `OBJECT_LIST_RESP`.
+  from `/preset_index/`, it is a compact handle returned by `OBJECT_LIST_RESP`.
   The handle may change after create/delete/reorder operations.
 - Rescue geometry handles start at `0x2000`, are generated on demand, and are
   listed only when `/geometry` has no usable tuning root.
@@ -1120,10 +1121,12 @@ up to `512` independent fixed-size `.hsp` files in at most `32` distinct folder
 paths, with at most `64` presets in one folder. A save that would exceed a limit
 is refused with `StorageFull`; presets already over the folder limit stay
 listed, and the device browser shows the first `64` of them. Preset metadata is
-listed from `/synth_preset_index.dat`; RAM keeps only folder paths and the
+listed from `/preset_index/`; RAM keeps only folder paths, counts and the
 current loaded preset record. A preset file that fails validation is reported
-and skipped without invalidating the rest of the library. Saving a preset
-appends a handle; deleting one shifts later handles down.
+and skipped without invalidating the rest of the library. Handles are
+`folderSlot × 256 + position`: saving keeps a preset's handle, and deleting or
+moving one shifts later handles in its folder. Hosts should list again after
+those changes.
 
 The user-facing model is a foldered preset library rather than a numbered slot
 bank. The web app presents the foldered library, and the device uses
@@ -1391,7 +1394,7 @@ present the rescue tuning as an editable catalog item.
    when present, the wavetable name and compatibility folder metadata TLVs.
 4. Commit with `apply` changes only the current synth runtime for auditioning
    and marks settings dirty for the normal debounced profile autosave path.
-   Commit with `save` atomically replaces one `/presets/<object-id>.hsp` file.
+   Commit with `save` atomically replaces one synth preset file.
 5. Saving or deleting one synth preset does not rewrite other preset files; it
    rewrites the small preset index.
    Rename and folder-move updates write the same object id to its existing

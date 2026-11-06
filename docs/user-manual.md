@@ -479,7 +479,9 @@ can still show as modified after restart. On
 the device, presets appear in a folder browser; `New Preset` saves into
 the currently open folder. The browser shows the first `23` characters of each
 name. After a firmware-only update, the first time the preset list opens the
-HexBoard briefly shows `Saving to flash.` while it builds its preset index. The supplied presets are organized into `Basses`,
+HexBoard shows `Saving to flash.` while it reorganizes the preset files and
+builds its preset index. With a large library this can take a minute or more;
+leave the HexBoard powered until the menu returns. The supplied presets are organized into `Basses`,
 `Leads`, `Pads`, and `Plucks`. They can be changed or erased like any other
 preset. The web app
 shows folders with preset counts. Search

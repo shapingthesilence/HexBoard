@@ -13,8 +13,8 @@ presets/Pads/Soft String Pad.json -> Pads/Soft String Pad
 ```
 
 The generator writes each source preset as one independently checksummed
-`/presets/<object-id>.hsp` file, plus `/synth_preset_index.dat`, which lists
-them for the device browser. The library holds at most 512 presets in at most
+`/presets/<first-id-hex-digit>/<object-id>.hsp` file, plus the `/preset_index/`
+folder index the device browser lists them from. The library holds at most 512 presets in at most
 32 folders, with at most 64 presets per folder; the build fails beyond those
 limits. Names longer than 23 characters are shortened in the device browser.
 

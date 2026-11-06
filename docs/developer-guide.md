@@ -318,29 +318,38 @@ Persistent stores:
 | --- | --- | --- |
 | `/settings.dat` | `Settings.cpp` | 9 non-synth profiles plus synth references; 10-second dirty save; identical data skipped |
 | `/.synth_profile_<0..8>.hsp` | `SynthPresetStorage.cpp` | hidden copy-on-write profile drafts; identical patch CRCs skipped |
-| `/presets/*.hsp` | `SynthPresetCatalog.cpp` | HSP v12; up to 512 atomic files, 32 folders, 64 presets per folder |
-| `/synth_preset_index.dat` | `SynthPresetCatalog.cpp` | HPI v1 listing index; see below |
+| `/presets/<0-F>/*.hsp` | `SynthPresetCatalog.cpp` | HSP v12; up to 512 atomic files, 32 folders, 64 presets per folder |
+| `/preset_index/` | `SynthPresetCatalog.cpp` | HPF v1 folder table and HPI v2 folder files; see below |
 | `/synth_wavetables.dat`, `/wt_*.wtb` | `SynthWavetableStorage.cpp` | up to 32 entries; base or six mip levels |
 | `/geometry/*.hgb` | `PresetSyncGeometry.cpp` | HGB v3/schema 2; up to 64 atomic bundles |
 | `/geometry_order.dat` | `PresetSyncGeometry.cpp` | small HGO v1 ordering override |
 | `/default_geometry.dat` | factory image | selected factory tuning reference |
 | `/Sequences` | `SequencerStorage.cpp` | optional `.hbseq` files and `.current` |
 
-The synth preset index (`storage/SynthPresetIndexCodec.h`) holds each preset's
-object id, name, folder slot and flags in handle order, plus the distinct folder
-paths. RAM keeps only that folder table and the browser's open folder (at most
-64 presets and 24 subfolders, copied on entry), so scrolling never reads flash
-and RAM does not grow with the library. Listings, lookups and folder loads are
-one sequential index read. Boot validates the index CRC and compares its stored
-count and order-independent hash of canonical `/presets` file names with a
-directory listing; it never writes. A missing, invalid or stale index leaves
-the catalog in directory-scan mode, where handles are positions among canonical
-file names. The preset browser and preset sync rebuild the index on first use,
-once per boot if that fails; saves and deletes always retry. Each save writes the
-preset file, then rewrites the index through a temporary file. If the index
-edit fails after the preset file changed, the index is removed so later reads
-scan the files. Folder and capacity limits are checked before the preset file is
-written. The factory generator writes the same index.
+Preset files are grouped into 16 subdirectories by the first hex digit of
+their object id, because LittleFS lookups and renames slow down as one directory
+grows (about 1 s per save with 512 files in one directory). The index
+(`storage/SynthPresetIndexCodec.h`) has a 32-slot folder table and one file per
+used folder slot holding that folder's object ids, names and flags. Handles are
+`slot × 256 + position`, so saves keep handles and deletes or moves shift only
+later handles in the same folder; slots keep their number while used.
+
+RAM keeps the folder table with per-folder counts (about 1.6 KB) and the
+browser's open folder (at most 64 presets and 24 subfolders, copied on entry).
+Scrolling never reads flash. Entering a folder reads one folder file; subfolders
+come from the table. Sync list pages use the counts to read only their own
+records. Lookups by object id read every folder file.
+
+Boot validates the table and every folder file by CRC and never writes. It does
+not list `/presets`. A `pending` marker is written before any catalog change and
+removed after the index is updated; a marker found at boot, or a missing or
+invalid index, leaves the catalog in directory-scan mode, where handles are
+positions among preset files. The preset browser and preset sync rebuild the
+index on first use, once per boot if that fails; saves and deletes always
+retry. A rebuild also moves preset files from the flat `/presets/*.hsp` layout of
+earlier firmware into buckets and removes the old `/synth_preset_index.dat`.
+Folder and capacity limits are checked before anything is written. The factory
+generator writes the bucketed files and the same index.
 
 Geometry bundles contain a tuning root and linked layouts, scales, color maps,
 and explicit maps. Limits are 255 records and 262,144 bytes per bundle, 16,384

@@ -4,22 +4,24 @@
 #include <cstdint>
 #include <cstring>
 
-// HPI1: the synth preset catalog index. It lets the preset browser and preset
-// sync list presets without opening every preset file, and without keeping
-// the whole catalog in RAM. No Arduino or storage dependencies.
+// Synth preset catalog index. It lets the preset browser and preset sync list
+// presets without opening preset files, and without keeping the whole catalog
+// in RAM. No Arduino or storage dependencies.
 //
-// Layout (little-endian):
-//   header   20 bytes  "HPI", version, record count, folder count,
-//                      directory count, directory hash, CRC
-//   records  count x 52 bytes, in handle order
-//   folders  folderCount x 48 bytes, NUL-padded normalized folder paths
-// The CRC covers records, then folders, then header bytes 0..15.
-// The directory count/hash describe the set of canonical /presets/*.hsp
-// names the index was written for, so boot can detect a stale index from a
-// directory listing alone.
+// /preset_index/folders.hpf  folder table: 32 fixed slots of 48-byte paths
+//                            (an empty path is a free slot)
+// /preset_index/<SS>.hpi     one file per used slot (SS = two hex digits):
+//                            the folder's records in handle order
+// /preset_index/pending      present while a catalog change is in progress
+//
+// Both file kinds are little-endian with a 12-byte header:
+//   0  magic (3)   3  version   4  count   5  slot (folder files) or 0
+//   6  reserved u16 (0)         8  CRC-32
+// The CRC covers everything after the header, then header bytes 0..7.
 namespace SynthPresetIndex {
-constexpr uint8_t kVersion = 1;
-constexpr size_t kHeaderBytes = 20;
+constexpr uint8_t kFolderFileVersion = 2;
+constexpr uint8_t kTableVersion = 1;
+constexpr size_t kHeaderBytes = 12;
 constexpr size_t kRecordBytes = 52;
 constexpr size_t kFolderBytes = 48;
 constexpr size_t kIdBytes = 16;
@@ -48,26 +50,6 @@ inline uint32_t crcUpdate(uint32_t crc, const uint8_t* p, size_t n) {
 }
 inline uint32_t crcFinish(uint32_t crc) { return ~crc; }
 
-inline size_t fileBytes(uint16_t count, uint8_t folderCount) {
-  return kHeaderBytes + static_cast<size_t>(count) * kRecordBytes
-         + static_cast<size_t>(folderCount) * kFolderBytes;
-}
-inline size_t recordOffset(uint16_t handle) { return kHeaderBytes + static_cast<size_t>(handle) * kRecordBytes; }
-inline size_t folderOffset(uint16_t count, uint8_t slot) {
-  return kHeaderBytes + static_cast<size_t>(count) * kRecordBytes + static_cast<size_t>(slot) * kFolderBytes;
-}
-
-// Order-independent hash of one preset file's object id. The directory hash
-// is the 32-bit sum of these values over every canonical preset file name.
-inline uint32_t idHash(const uint8_t* id) {
-  uint32_t hash = 2166136261u;
-  for (size_t i = 0; i < kIdBytes; ++i) {
-    hash ^= id[i];
-    hash *= 16777619u;
-  }
-  return hash;
-}
-
 inline int hexValue(char c) {
   if (c >= '0' && c <= '9') return c - '0';
   if (c >= 'A' && c <= 'F') return c - 'A' + 10;
@@ -92,38 +74,36 @@ inline bool parseCanonicalFileName(const char* name, uint8_t* id) {
   return nonZero;
 }
 
+// Preset files live in 16 subdirectories named by the id's first hex digit,
+// so no directory holds more than a fraction of the library.
+inline char bucketDigit(const uint8_t* id) { return "0123456789ABCDEF"[id[0] >> 4]; }
+
 struct Header {
-  uint16_t count = 0;
-  uint8_t folderCount = 0;
-  uint16_t directoryCount = 0;
-  uint32_t directoryHash = 0;
+  uint8_t count = 0;
+  uint8_t slot = 0;
   uint32_t crc = 0;
 };
 
-inline void encodeHeader(const Header& header, uint8_t* out) {
+inline void encodeHeader(const char* magic, uint8_t version, const Header& header, uint8_t* out) {
   memset(out, 0, kHeaderBytes);
-  out[0] = 'H'; out[1] = 'P'; out[2] = 'I';
-  out[3] = kVersion;
-  put16(out + 4, header.count);
-  out[6] = header.folderCount;
-  put16(out + 8, header.directoryCount);
-  put32(out + 12, header.directoryHash);
-  put32(out + 16, header.crc);
+  memcpy(out, magic, 3);
+  out[3] = version;
+  out[4] = header.count;
+  out[5] = header.slot;
+  put32(out + 8, header.crc);
 }
 
-// Validates structure and bounds. The caller checks the CRC and file size.
-inline bool decodeHeader(const uint8_t* p, Header& header, uint16_t maxCount, uint8_t maxFolders) {
-  if (p[0] != 'H' || p[1] != 'P' || p[2] != 'I' || p[3] != kVersion || p[7] != 0 || u16(p + 10) != 0) {
-    return false;
-  }
-  header.count = u16(p + 4);
-  header.folderCount = p[6];
-  header.directoryCount = u16(p + 8);
-  header.directoryHash = u32(p + 12);
-  header.crc = u32(p + 16);
-  if (header.count > maxCount || header.folderCount > maxFolders) return false;
-  // Every record names a folder, so records require at least one folder.
-  return header.count == 0 || header.folderCount > 0;
+inline bool decodeHeader(const uint8_t* p, const char* magic, uint8_t version, Header& header) {
+  if (memcmp(p, magic, 3) != 0 || p[3] != version || u16(p + 6) != 0) return false;
+  header.count = p[4];
+  header.slot = p[5];
+  header.crc = u32(p + 8);
+  return true;
+}
+
+// CRC of a file whose body has already been hashed into bodyCrc.
+inline uint32_t sealCrc(uint32_t bodyCrc, const uint8_t* header) {
+  return crcFinish(crcUpdate(bodyCrc, header, 8));
 }
 
 struct Record {
@@ -146,7 +126,8 @@ inline bool textIsTerminated(const uint8_t* p, size_t capacity) {
   return memchr(p, 0, capacity) != nullptr;
 }
 
-inline bool decodeRecord(const uint8_t* p, Record& record, uint8_t folderCount) {
+// A record in a folder file must name that file's slot.
+inline bool decodeRecord(const uint8_t* p, Record& record, uint8_t slot) {
   memcpy(record.id, p, kIdBytes);
   bool nonZero = false;
   for (size_t i = 0; i < kIdBytes; ++i) nonZero = nonZero || record.id[i] != 0;
@@ -154,41 +135,61 @@ inline bool decodeRecord(const uint8_t* p, Record& record, uint8_t folderCount) 
   memcpy(record.name, p + kIdBytes, kNameBytes);
   record.folder = p[48];
   record.flags = p[49];
-  return record.folder < folderCount && (record.flags & ~kKnownFlagBits) == 0 && u16(p + 50) == 0;
+  return record.folder == slot && (record.flags & ~kKnownFlagBits) == 0 && u16(p + 50) == 0;
 }
 
+// Folder table entries: an all-zero entry is a free slot.
 inline bool decodeFolder(const uint8_t* p, char* out) {
-  if (!textIsTerminated(p, kFolderBytes) || p[0] == 0) return false;
+  if (!textIsTerminated(p, kFolderBytes)) return false;
+  if (p[0] == 0) {
+    for (size_t i = 1; i < kFolderBytes; ++i) if (p[i] != 0) return false;
+  }
   memcpy(out, p, kFolderBytes);
   return true;
 }
 
 inline void encodeFolder(const char* path, uint8_t* out) {
   memset(out, 0, kFolderBytes);
-  memcpy(out, path, strnlen(path, kFolderBytes - 1));
+  if (path) memcpy(out, path, strnlen(path, kFolderBytes - 1));
 }
 
-// Fixed-capacity table of distinct normalized folder paths.
+// Fixed slots of folder paths. Slots keep their number while used, so
+// handles (slot x capacity + position) only change inside an edited folder.
 template <size_t Capacity>
 struct FolderTable {
   char paths[Capacity][kFolderBytes] = {};
-  uint8_t count = 0;
+  uint8_t counts[Capacity] = {};
 
-  void clear() { count = 0; }
+  void clear() { memset(paths, 0, sizeof(paths)); memset(counts, 0, sizeof(counts)); }
+  bool used(uint8_t slot) const { return slot < Capacity && paths[slot][0] != 0; }
   int find(const char* path) const {
-    for (uint8_t i = 0; i < count; ++i) {
-      if (strncmp(paths[i], path, kFolderBytes) == 0) return i;
+    for (uint8_t i = 0; i < Capacity; ++i) {
+      if (used(i) && strncmp(paths[i], path, kFolderBytes) == 0) return i;
     }
     return -1;
   }
-  // Returns the slot, or -1 when the table is full.
+  int firstFree() const {
+    for (uint8_t i = 0; i < Capacity; ++i) if (!used(i)) return i;
+    return -1;
+  }
   int findOrAdd(const char* path) {
     int existing = find(path);
     if (existing >= 0) return existing;
-    if (count >= Capacity) return -1;
-    memset(paths[count], 0, kFolderBytes);
-    memcpy(paths[count], path, strnlen(path, kFolderBytes - 1));
-    return count++;
+    int slot = firstFree();
+    if (slot < 0) return -1;
+    memset(paths[slot], 0, kFolderBytes);
+    memcpy(paths[slot], path, strnlen(path, kFolderBytes - 1));
+    counts[slot] = 0;
+    return slot;
+  }
+  void release(uint8_t slot) {
+    memset(paths[slot], 0, kFolderBytes);
+    counts[slot] = 0;
+  }
+  uint16_t total() const {
+    uint16_t sum = 0;
+    for (uint8_t i = 0; i < Capacity; ++i) sum = static_cast<uint16_t>(sum + counts[i]);
+    return sum;
   }
 };
 }  // namespace SynthPresetIndex

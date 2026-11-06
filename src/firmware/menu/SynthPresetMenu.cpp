@@ -88,35 +88,34 @@ void rebuildSynthPresetVirtualList() {
   synthPresetMenuSubfolderCount = 0;
   synthPresetMenuHiddenCount = 0;
   bool subfoldersOverflowed = false;
-  auto visit = [&](const SynthPresetCatalogEntry& entry) {
-    if (menuFolderEntryBelongsToCurrentFolder(entry.folderPath, synthPresetMenuCurrentFolder)) {
-      if (synthPresetMenuPresetCount < SYNTH_PRESET_FOLDER_MAX_PRESETS) {
-        SynthPresetMenuPreset& row = synthPresetMenuPresets[synthPresetMenuPresetCount++];
-        row.handle = entry.handle;
-        snprintf(row.name, sizeof(row.name), "%s", entry.name);
-      } else if (synthPresetMenuHiddenCount < 0xFFFFu) {
-        ++synthPresetMenuHiddenCount;
-      }
-      return true;
-    }
+  // Subfolders come from the resident folder table; presets from one folder file.
+  auto addSubfolder = [&](const char* folderPath) {
     char childFolder[SYNTH_PRESET_FOLDER_LENGTH] = {};
-    if (menuFolderImmediateChildPath(entry.folderPath,
-                                     synthPresetMenuCurrentFolder,
-                                     childFolder,
-                                     sizeof(childFolder))
-        && !synthPresetMenuHasSubfolder(childFolder)) {
-      if (synthPresetMenuSubfolderCount < SYNTH_PRESET_MENU_MAX_SUBFOLDERS) {
-        snprintf(synthPresetMenuSubfolders[synthPresetMenuSubfolderCount++],
-                 SYNTH_PRESET_FOLDER_LENGTH,
-                 "%s",
-                 childFolder);
-      } else {
-        subfoldersOverflowed = true;
-      }
+    if (!menuFolderImmediateChildPath(folderPath, synthPresetMenuCurrentFolder, childFolder, sizeof(childFolder))
+        || synthPresetMenuHasSubfolder(childFolder)) {
+      return;
+    }
+    if (synthPresetMenuSubfolderCount < SYNTH_PRESET_MENU_MAX_SUBFOLDERS) {
+      snprintf(synthPresetMenuSubfolders[synthPresetMenuSubfolderCount++],
+               SYNTH_PRESET_FOLDER_LENGTH,
+               "%s",
+               childFolder);
+    } else {
+      subfoldersOverflowed = true;
+    }
+  };
+  visitSynthPresetCatalogFolderPathsWith(addSubfolder);
+  auto addPreset = [&](const SynthPresetCatalogEntry& entry) {
+    if (synthPresetMenuPresetCount < SYNTH_PRESET_FOLDER_MAX_PRESETS) {
+      SynthPresetMenuPreset& row = synthPresetMenuPresets[synthPresetMenuPresetCount++];
+      row.handle = entry.handle;
+      snprintf(row.name, sizeof(row.name), "%s", entry.name);
+    } else if (synthPresetMenuHiddenCount < 0xFFFFu) {
+      ++synthPresetMenuHiddenCount;
     }
     return true;
   };
-  visitSynthPresetCatalogWith(visit);
+  visitSynthPresetCatalogFolderWith(synthPresetMenuCurrentFolder, addPreset);
   if (synthPresetMenuHiddenCount > 0 || subfoldersOverflowed) {
     sendToLog("Synth preset folder " + std::string(synthPresetMenuCurrentFolder)
               + " has more entries than the browser shows.");
