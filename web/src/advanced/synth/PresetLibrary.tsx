@@ -144,9 +144,9 @@ export function PresetLibrary({preset,client,disabled,onLoad,onDeviceLoad,onBusy
     <div className="libraryToolbar">
      <div><span className="eyebrow">{label}</span><h2 id={`sound-library-title-${engine}`}>Preset library</h2></div>
      <div className="row">
-      <button type="button" disabled={working} onClick={close}>Close library</button>
       <button type="button" disabled={working} onClick={()=>files.current?.click()}>Import Files</button>
       <button type="button" disabled={working||!client} onClick={()=>run(()=>library.refresh())}>Refresh HexBoard</button>
+      <button className="dialogCloseButton" type="button" aria-label="Close library" title="Close library" disabled={working} onClick={close}>×</button>
      </div>
     </div>
     <div className="libraryUtilityBar"><span className="muted">Click a sound to load it. The library stays open so you can audition.</span>{working?<span className="muted" role="status">Working…</span>:status}</div>
