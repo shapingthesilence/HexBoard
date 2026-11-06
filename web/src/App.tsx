@@ -108,7 +108,7 @@ export function App() {
               key={view.key}
               className={view.key === activeView ? "active" : ""}
               aria-current={view.key === activeView ? "page" : undefined}
-              onClick={() => navigate(storedLocation(view.key) ?? (view.key === "learn" ? { view: "learn", page: "practice" } : { view: view.key }))}
+              onClick={() => navigate(storedLocation(view.key) ?? (view.key === "learn" ? { view: "learn", page: "course" } : { view: view.key }))}
               type="button"
             >
               {view.label}

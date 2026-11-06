@@ -224,7 +224,8 @@ without downloading anything. Choose **Start on HexBoard** and release all
 hardware keys before starting. When disconnected, an on-screen test is available
 under **Test without a HexBoard**.
 
-Use **Scale practice**, **Courses**, and **Progress** to navigate.
+Use **Scale practice**, **Courses**, and **Progress** to navigate. Learn opens on
+**Courses** the first time, then returns to the section you used last.
 Start/Stop and Hints sit above the key map. Choose a scale to preview its exact
 exercise pitches immediately, including every duplicate key in the selected
 register. Other notes stay dimly colored. **Display & sound** and
@@ -317,15 +318,20 @@ sessions.
 Under **Courses**, start with **1 · First Steps on HexBoard**. The four included
 courses build from a first note to shape translation, rhythmic phrases, and major-scale fluency;
 see [Built-in course paths](#built-in-course-paths) below. Choose a lesson from
-the always-visible **Your course path**, or use **Next lesson** after finishing. Reading pages use
-**Continue**. Course introductions appear before the first lesson.
+the always-visible **Your course path**, or use **Continue** after finishing or on a
+reading page. Course introductions appear before the first lesson and include the
+**Layout** choice; pick the layout set on your HexBoard. You can change it later
+under **Lesson settings**. Exercises are numbered in order; reading pages are not
+numbered.
 Each practice lesson explains what to listen for and what to play.
 **Hear example** is available before starting a run. Untimed board practice
 resumes after the example. Timed lessons wait so you can read the instructions
 and listen at your own pace. Press orange **Start · hints** or yellow
 **Start · no hints** when ready; the metronome then counts in one bar. If
 you listen after finishing a lesson, the completed result remains on screen
-and **Next lesson** stays available.
+and **Continue** stays available. The result appears over the bottom of the key
+map, so finishing a run never moves the keys. Long phrases scroll the note strip
+to keep the current note in view; timed strips show each note's length in beats.
 When HexBoard is connected, **Start Course on HexBoard** opens a board session
 from the introduction, including when the first lesson is a reading page. A
 reading page opened directly has **Start on HexBoard**. In a course session,
@@ -333,12 +339,12 @@ four of the seven side buttons are used, with an unused button between actions:
 
 | Button | Action |
 | --- | --- |
-| 1, blue | Next lesson after finishing, or Continue on a reading page |
+| 1, blue | Continue: next exercise after finishing, or past a reading page |
 | 3, cyan | Hear example |
-| 5, yellow | Start or repeat without hints |
-| 7, orange | Start or repeat with hints |
+| 5, yellow | Start, restart, or repeat without hints |
+| 7, orange | Start, restart, or repeat with hints |
 
-Unavailable actions go dark. Next / Continue lights only when its matching web
+Unavailable actions go dark. Continue lights only when its matching web
 button is available. The compact side-button guide in Learn follows the physical
 stagger and shows the unused buttons as blank spaces. Its labeled buttons are
 clickable and keyboard accessible: use them to hear examples, start/repeat with
@@ -363,8 +369,14 @@ and tuning colors remain visible. **Progress** saves completed attempts, best
 mistake count, and independent completion for each lesson and layout in this
 browser. An **Independent** star means a complete run with zero mistakes and no
 hints or demonstration during that run; it is not a claim of lasting mastery.
+The **Progress** page groups exercises by section, shows a course summary, and
+lists each exercise's result per layout (✓ completed, ★ Independent) with the best
+score and tempo for timed exercises.
 **Export progress** creates a backup; **Restore progress** merges a backup
-without removing newer achievements. No account or device writes are required.
+without removing newer achievements. **Reset course progress** clears every
+result for the selected course on all layouts after you confirm; other courses are
+untouched. Export first if you may want the results back. No account or device
+writes are required.
 
 **Play synth** in Scale practice lets you explore the selected tuning/layout without starting a
 lesson or recording a score. It uses a connected HexBoard when available;
@@ -431,7 +443,7 @@ lesson stays in view as you advance. The outline shows completion for the select
 layout, groups lessons into sections, and distinguishes reading, exploration,
 completed practice, and Independent stars. Reading and unscored exploration do
 not count against the exercise total. Choose any lesson in the path to revisit it;
-**Next lesson** advances after a run. A course introduction offers **Continue** at
+**Continue** advances after a run. A course introduction offers **Continue** at
 the first unfinished exercise when that layout has progress.
 
 On laptop windows at least 1000 pixels wide and 600 pixels tall, course

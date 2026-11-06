@@ -25,7 +25,7 @@ describe("navigation", () => {
     for (const page of ["practice", "course", "progress"] as const) {
       expect(locationPath({ view: "learn", page, courseId: "builtin:first-steps", lessonId: "a/b #é" })).toBe(`#/learn/${page === "course" ? "courses" : page}`);
     }
-    expect(parseLocation("#/learn")).toEqual({ view: "learn", page: "practice" });
+    expect(parseLocation("#/learn")).toEqual({ view: "learn", page: "course" });
   });
   it("rejects detailed, malformed and unknown links", () => {
     for (const path of ["#/menu", "#/unknown", "#/learn/nope", "#/learn/course/id/lesson/note", "#/learn/%ZZ", "#/synth/extra"])
@@ -46,7 +46,7 @@ describe("navigation", () => {
     const { location } = browser();
     saveLocation({ view: "synth" });
     location.hash = "#/learn";
-    expect(initialLocation()).toEqual({ view: "learn", page: "practice" });
+    expect(initialLocation()).toEqual({ view: "learn", page: "course" });
     location.hash = "#/unknown";
     expect(initialLocation()).toEqual({ view: "layouts" });
   });

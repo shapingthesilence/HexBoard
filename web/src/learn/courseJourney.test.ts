@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {courseJourney,completionGuidance,beatLabel} from "./courseJourney.ts";
+import {courseJourney,completionGuidance,beatLabel,beatsText,exerciseNumbers,courseProgressRows,resetCourseProgress} from "./courseJourney.ts";
 import {movementCourse,firstStepsCourse,rhythmCourse} from "./curriculumCourses.ts";
 import {recordCourseRun} from "./beginnerCourse.ts";
 import {courseProgressId,courseLayoutProgressId} from "./courseFiles.ts";
@@ -45,5 +45,46 @@ describe("learner guidance",()=>{
     const html=renderToStaticMarkup(createElement(CourseJourney,{journey:courseJourney(course,layout,{}),currentIndex:0,layoutName:"Wicki-Hayden",disabled:false,onSelect:()=>{}}));
     expect(html).toContain('aria-label="Course lessons"');
     expect(html).toContain(course.lessons.at(-1)!.title);
+  });
+  it("numbers exercises without gaps from reading pages",()=>{
+    const {numbers,total}=exerciseNumbers(firstStepsCourse.lessons);
+    expect(total).toBe(12);
+    expect(numbers.filter(n=>n!==undefined)).toEqual(Array.from({length:12},(_,i)=>i+1));
+    firstStepsCourse.lessons.forEach((lesson,i)=>expect(numbers[i]===undefined).toBe(lesson.kind==="content"));
+    const html=renderToStaticMarkup(createElement(CourseJourney,{journey:courseJourney(firstStepsCourse,"layout",{}),currentIndex:1,layoutName:"Wicki-Hayden",disabled:false,onSelect:()=>{}}));
+    expect(html).toContain(">10<");
+    expect(html).toContain(">12<");
+    expect(html).not.toContain(">14<");
+  });
+  it("labels note lengths in words",()=>{
+    expect(beatsText(1)).toBe("1 beat");
+    expect(beatsText(2)).toBe("2 beats");
+    expect(beatsText(0.5)).toBe("½ beat");
+    expect(beatsText(1.5)).toBe("1 ½ beats");
+  });
+  it("summarizes progress by section and layout",()=>{
+    const course=firstStepsCourse,layouts=course.bundle.layouts.slice(0,2).map(layout=>({id:courseLayoutProgressId(course.bundle,layout),name:layout.name}));
+    let progress=recordCourseRun({},courseProgressId(course,"first-note"),layouts[0].id,0,false);
+    progress=recordCourseRun(progress,courseProgressId(course,"first-note"),layouts[1].id,1,true);
+    progress=recordCourseRun(progress,courseProgressId(course,"homecoming"),layouts[1].id,0,true,undefined,{score:90,bpm:60});
+    const view=courseProgressRows(course,progress,layouts);
+    expect(view.total).toBe(12);
+    expect(view.completed).toBe(2);
+    expect(view.independent).toBe(1);
+    expect(view.sections[0].section).toBe("Meet the board");
+    const first=view.sections[0].rows[0];
+    expect(first.number).toBe(1);
+    expect(first.layouts).toEqual([{name:layouts[0].name,independent:true},{name:layouts[1].name,independent:false}]);
+    const last=view.sections.at(-1)!.rows.at(-1)!;
+    expect(last.number).toBe(12);
+    expect(last).toMatchObject({bestScore:90,bestBpm:60});
+  });
+  it("resets one course without touching others",()=>{
+    let progress=recordCourseRun({},courseProgressId(firstStepsCourse,"first-note"),"a",0,false);
+    progress=recordCourseRun(progress,courseProgressId(firstStepsCourse,"home"),"b",0,true);
+    progress=recordCourseRun(progress,courseProgressId(rhythmCourse,"steady-pulse"),"a",0,false);
+    const reset=resetCourseProgress(progress,firstStepsCourse);
+    expect(Object.keys(reset)).toEqual([courseProgressId(rhythmCourse,"steady-pulse")]);
+    expect(Object.keys(progress)).toHaveLength(3);
   });
 });

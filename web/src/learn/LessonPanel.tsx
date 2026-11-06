@@ -2,6 +2,7 @@ import { useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { builtinCourses } from "./curriculumCourses.ts";
 import type { UserCourse } from "./courseFiles.ts";
 import { clickPlan, countInLabel, type Meter } from "./meterClicks.ts";
+import { exerciseNumbers } from "./courseJourney.ts";
 
 export function LessonStartGuidance({ step = false, meter }: { step?: boolean; meter?: Meter }) {
   return <section className="learnLessonStart" role="status"><h3>Start when ready</h3><p><strong>Orange: hints · Yellow: no hints.</strong>{!step && ` ${countInLabel(clickPlan(meter))}, then play.`}</p></section>;
@@ -17,7 +18,7 @@ export function LessonPanel({ course, children }: { course: UserCourse; children
     return courses.flatMap(item => item.lessons.flatMap((lesson, index) => lesson.kind === "content" ? [] : [
       <div key={`${item.id}:${lesson.id}`} className="learnLessonMeasureCase">
         <div className="learnLessonReading">
-          <header className="learnLessonHeading"><div><span className="learnEyebrow">{lesson.section} · {index + 1} of {item.lessons.length}</span><h2>{lesson.title}</h2></div><span className="learnLessonMode">{lesson.kind === "exploration" ? "Explore · no score" : lesson.timing ? `Goal ${lesson.timing.goalBpm} BPM` : "At your pace"}</span></header>
+          <header className="learnLessonHeading"><div><span className="learnEyebrow">{lesson.section} · Exercise {exerciseNumbers(item.lessons).numbers[index]} of {exerciseNumbers(item.lessons).total}</span><h2>{lesson.title}</h2></div><span className="learnLessonMode">{lesson.kind === "exploration" ? "Explore · no score" : lesson.timing ? `Goal ${lesson.timing.goalBpm} BPM` : "At your pace"}</span></header>
           <section className="learnLessonInstruction"><p>{lesson.instruction}</p></section>
         </div>
       </div>

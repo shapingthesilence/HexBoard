@@ -1,4 +1,4 @@
-import type {CourseLesson, CourseProgress} from "./beginnerCourse.ts";
+import type {CourseLesson, CourseProgress, LessonProgress} from "./beginnerCourse.ts";
 import {courseProgressId, type UserCourse} from "./courseFiles.ts";
 import {canPassTimedLesson} from "./courseFiles.ts";
 
@@ -12,6 +12,50 @@ export function courseJourney(course: UserCourse, layoutProgressId: string, prog
   const total = entries.filter(entry=>entry.assessed).length;
   const next = entries.find(entry=>entry.assessed&&!entry.completed)?.index;
   return {entries,completed,total,next};
+}
+
+/** Exercises are numbered 1..total; reading pages get no number. */
+export function exerciseNumbers(lessons: readonly Pick<CourseLesson,"kind">[]) {
+  let count = 0;
+  const numbers = lessons.map(lesson => lesson.kind === "content" ? undefined : ++count);
+  return { numbers, total: count };
+}
+
+/** Plain-language note length for the exercise strip, e.g. "1 beat", "½ beat". */
+export function beatsText(beats:number):string {
+  return `${beatLabel(beats)} beat${beats > 1 + 1e-9 ? "s" : ""}`;
+}
+
+export interface ProgressRow {
+  lesson: CourseLesson; index: number; number?: number;
+  layouts: { name: string; independent: boolean }[];
+  bestScore?: number; bestBpm?: number;
+}
+/** Scored exercises grouped by section, with results for each known layout. */
+export function courseProgressRows(course: UserCourse, progress: CourseProgress, layouts: readonly { id: string; name: string }[]) {
+  const {numbers} = exerciseNumbers(course.lessons);
+  const rows: ProgressRow[] = course.lessons.flatMap((lesson,index) => {
+    if (lesson.kind === "content" || lesson.kind === "exploration" || lesson.assessment?.graded === false) return [];
+    const saved = progress[courseProgressId(course,lesson.id)] ?? {};
+    const results = layouts.flatMap(layout => saved[layout.id] ? [{name:layout.name,result:saved[layout.id] as LessonProgress}] : []);
+    const scores = results.flatMap(({result}) => result.bestPassingScore === undefined ? [] : [result.bestPassingScore]);
+    const tempos = results.flatMap(({result}) => result.highestPassedBpm === undefined ? [] : [result.highestPassedBpm]);
+    return [{lesson,index,number:numbers[index],layouts:results.map(({name,result})=>({name,independent:result.independent})),
+      ...(scores.length?{bestScore:Math.max(...scores)}:{}),...(tempos.length?{bestBpm:Math.max(...tempos)}:{})}];
+  });
+  const sections = [...new Set(rows.map(row => row.lesson.section))].map(section => ({section, rows: rows.filter(row => row.lesson.section === section)}));
+  return {
+    sections,
+    total: rows.length,
+    completed: rows.filter(row => row.layouts.length).length,
+    independent: rows.filter(row => row.layouts.some(layout => layout.independent)).length,
+  };
+}
+
+/** Remove every saved result for this course's lessons, on all layouts. */
+export function resetCourseProgress(progress: CourseProgress, course: UserCourse): CourseProgress {
+  const ids = new Set(course.lessons.map(lesson => courseProgressId(course, lesson.id)));
+  return Object.fromEntries(Object.entries(progress).filter(([id]) => !ids.has(id)));
 }
 
 export interface PracticeResult {
