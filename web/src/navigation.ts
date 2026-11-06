@@ -14,7 +14,7 @@ export function locationPath(location: AppLocation): string {
   return location.view === "learn" ? `#/learn/${location.page === "course" ? "courses" : location.page}` : `#/${location.view}`;
 }
 export function parseLocation(hash: string): AppLocation | undefined {
-  if (hash === "#/learn") return { view: "learn", page: "practice" };
+  if (hash === "#/learn") return { view: "learn", page: "course" };
   if (hash === "#/learn/practice") return { view: "learn", page: "practice" };
   if (hash === "#/learn/courses") return { view: "learn", page: "course" };
   if (hash === "#/learn/progress") return { view: "learn", page: "progress" };

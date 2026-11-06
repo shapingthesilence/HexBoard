@@ -234,7 +234,8 @@ without downloading anything. Choose **Start on HexBoard** and release all
 hardware keys before starting. When disconnected, an on-screen test is available
 under **Test without a HexBoard**.
 
-Use **Scale practice**, **Courses**, and **Progress** to navigate.
+Use **Scale practice**, **Courses**, and **Progress** to navigate. Learn opens on
+**Courses** the first time, then returns to the section you used last.
 Start/Stop and Hints sit above the key map. Choose a scale to preview its exact
 exercise pitches immediately, including every duplicate key in the selected
 register. Other notes stay dimly colored. **Display & sound** and
@@ -327,15 +328,20 @@ sessions.
 Under **Courses**, start with **1 · First Steps on HexBoard**. The four included
 courses build from a first note to shape translation, rhythmic phrases, and major-scale fluency;
 see [Built-in course paths](#built-in-course-paths) below. Choose a lesson from
-the always-visible **Your course path**, or use **Next lesson** after finishing. Reading pages use
-**Continue**. Course introductions appear before the first lesson.
+the always-visible **Your course path**, or use **Continue** after finishing or on a
+reading page. Course introductions appear before the first lesson and include the
+**Layout** choice; pick the layout set on your HexBoard. You can change it later
+under **Lesson settings**. Exercises are numbered in order; reading pages are not
+numbered.
 Each practice lesson explains what to listen for and what to play.
 **Hear example** is available before starting a run. Untimed board practice
 resumes after the example. Timed lessons wait so you can read the instructions
 and listen at your own pace. Press orange **Start · hints** or yellow
-**Start · no hints** when ready; the metronome then begins a four-click count-in. If
+**Start · no hints** when ready; the metronome then counts in one bar. If
 you listen after finishing a lesson, the completed result remains on screen
-and **Next lesson** stays available.
+and **Continue** stays available. The result appears over the bottom of the key
+map, so finishing a run never moves the keys. Long phrases scroll the note strip
+to keep the current note in view; timed strips show each note's length in beats.
 When HexBoard is connected, **Start Course on HexBoard** opens a board session
 from the introduction, including when the first lesson is a reading page. A
 reading page opened directly has **Start on HexBoard**. In a course session,
@@ -343,12 +349,12 @@ four of the seven side buttons are used, with an unused button between actions:
 
 | Button | Action |
 | --- | --- |
-| 1, blue | Next lesson after finishing, or Continue on a reading page |
+| 1, blue | Continue: next exercise after finishing, or past a reading page |
 | 3, cyan | Hear example |
-| 5, yellow | Start or repeat without hints |
-| 7, orange | Start or repeat with hints |
+| 5, yellow | Start, restart, or repeat without hints |
+| 7, orange | Start, restart, or repeat with hints |
 
-Unavailable actions go dark. Next / Continue lights only when its matching web
+Unavailable actions go dark. Continue lights only when its matching web
 button is available. The compact side-button guide in Learn follows the physical
 stagger and shows the unused buttons as blank spaces. Its labeled buttons are
 clickable and keyboard accessible: use them to hear examples, start/repeat with
@@ -373,8 +379,14 @@ and tuning colors remain visible. **Progress** saves completed attempts, best
 mistake count, and independent completion for each lesson and layout in this
 browser. An **Independent** star means a complete run with zero mistakes and no
 hints or demonstration during that run; it is not a claim of lasting mastery.
+The **Progress** page groups exercises by section, shows a course summary, and
+lists each exercise's result per layout (✓ completed, ★ Independent) with the best
+score and tempo for timed exercises.
 **Export progress** creates a backup; **Restore progress** merges a backup
-without removing newer achievements. No account or device writes are required.
+without removing newer achievements. **Reset course progress** clears every
+result for the selected course on all layouts after you confirm; other courses are
+untouched. Export first if you may want the results back. No account or device
+writes are required.
 
 **Play synth** in Scale practice lets you explore the selected tuning/layout without starting a
 lesson or recording a score. It uses a connected HexBoard when available;
@@ -394,9 +406,9 @@ The included pathway has four courses:
 
 | Course | What you play |
 | --- | --- |
-| **1 · First Steps on HexBoard** | 12 exercises and a welcome page: first notes, Au clair de la lune, octaves, duplicate pitches, and a phrase of Ode to Joy |
+| **1 · First Steps on HexBoard** | 12 exercises and two short pages: first notes, Au clair de la lune, octaves, duplicate pitches, playing with a click, and a phrase of Ode to Joy |
 | **2 · Moving Around an Isomorphic Keyboard** | 17 untimed exercises, an introduction, and free exploration: intervals, duplicate positions, and familiar Au clair / Twinkle phrases moved to another key |
-| **3 · Rhythm Fundamentals** | 24 exercises and three pages: pulse, quarters/eighths, rests, 3/4, syncopation, simultaneous notes, prepared triplets/6/8, and familiar melody phrases |
+| **3 · Rhythm Fundamentals** | 26 exercises and three pages: pulse, quarters/eighths, rests, syncopation, 3/4 with a pickup (Amazing Grace), simultaneous notes, triplets, 6/8 (Row, Row, Row Your Boat), and familiar melody phrases |
 | **4 · Major Scale and Scale-Degree Fluency** | 24 exercises, three pages, and free exploration: scale groups, degrees 1–7, musical patterns, Joy to the World's descending scale, and Twinkle in D major |
 
 Aim for one section in a short visit, then finish with a tune you enjoy.
@@ -422,8 +434,10 @@ metronome and skips rests. **Hear example** uses the goal BPM in Step mode.
 Slower practice receives feedback, but timed completion requires reaching the
 authored goal and passing score. These courses assess attacks, not releases;
 follow written rests and long notes by listening as well as watching the score.
-In 6/8, group eighth notes into two larger pulses; the click still counts quarter
-notes and the count-in remains four clicks.
+The count-in is one bar of the lesson's meter: four clicks in 4/4, three in
+3/4. The first beat of each bar clicks louder. In 6/8 the click ticks every
+eighth note, six per bar, with ONE loudest and FOUR slightly louder; BPM still
+counts quarter notes.
 With hints on, the on-screen hexagon outlines begin shrinking two quarter-note
 beats before each note and reach its key when the note is due.
 
@@ -439,7 +453,7 @@ lesson stays in view as you advance. The outline shows completion for the select
 layout, groups lessons into sections, and distinguishes reading, exploration,
 completed practice, and Independent stars. Reading and unscored exploration do
 not count against the exercise total. Choose any lesson in the path to revisit it;
-**Next lesson** advances after a run. A course introduction offers **Continue** at
+**Continue** advances after a run. A course introduction offers **Continue** at
 the first unfinished exercise when that layout has progress.
 
 On laptop windows at least 1000 pixels wide and 600 pixels tall, course
@@ -553,8 +567,9 @@ must be filled or removed before saving. Each saved practice lesson needs a play
 
 Set a lesson's meter in the compact toolbar above the piano roll. It defaults
 to 4/4 and controls the roll's bar guides; for example, 6/8 contains six eighth
-notes per bar. Tempo always counts quarter notes per minute, and practice keeps
-its four-quarter-note count-in and quarter-note clicks.
+notes per bar. Tempo always counts quarter notes per minute. The meter also sets the practice
+click: a one-bar count-in, a louder first beat in each bar, and eighth-note
+clicks in compound meters such as 6/8.
 
 Clicking or creating a piano-roll note plays a short preview. Dragging to a different pitch previews that pitch; horizontal dragging does not repeatedly retrigger it.
 

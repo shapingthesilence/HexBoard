@@ -2916,6 +2916,9 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .learnAchievementOverlay .learnAchievement { max-width: 440px; margin: 0; padding: 12px 16px; background: var(--surface); box-shadow: 0 4px 18px #0003; }
 .learnAchievementOverlay .learnAchievementBadge { flex-basis: 40px; height: 40px; font-size: 1.5rem; }
 .learnPracticeControls { margin-top: 12px; }
+/* Completion floats over the board so finishing a run never resizes the key map. */
+.learnCompletionOverlay { position: absolute; inset: auto 12px 12px; z-index: 2; display: flex; justify-content: center; }
+.learnCompletionOverlay .learnCompletion { width: min(100%, 720px); margin: 0; background: var(--surface); border: 1px solid var(--brand); box-shadow: 0 6px 24px #0005; }
 @media (max-width: 700px) {
   .learnPracticeWorkspace .learnPracticeHeader { height: 5rem; }
   .learnLessonPane .learnLessonHeading { flex-direction: row; }
@@ -3023,6 +3026,11 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .learnProgressCard > .learnField { max-width: 420px; }
 .learnProgressList { margin: 4px 0; }
 .learnProgressList button { align-items: flex-start; }
+.learnProgressList { display: block; }
+.learnProgressSection { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+.learnProgressSection h4 { grid-column: 1 / -1; margin: 4px 0 0; font-size: .85rem; color: var(--text-soft); }
+.learnProgressSummary { margin: 0; font-size: 1rem; }
+@media (max-width: 700px) { .learnProgressSection { grid-template-columns: 1fr; } }
 .learnProgressList button > span:last-child { text-align: right; }
 .learnWorkspace { grid-template-columns: var(--sidebar-width) minmax(0, 1fr); }
 .learnJourney { margin-inline: -12px; padding-inline: 12px; }
@@ -3093,6 +3101,11 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
   .learnPracticeWorkspace .learnRunStats:empty { display: none; }
   .learnPracticeWorkspace .learnFingering { margin: 4px 0; font-size: .75rem; }
   .learnPracticeControls:empty { display: none; }
+  /* Lessons reserve the feedback and score rows so the board keeps one size. */
+  .learnCourseWorkspace .learnPracticeControls { min-height: 1.9rem; }
+  .learnCourseWorkspace .learnPracticeControls:empty { display: block; }
+  .learnCourseWorkspace .learnPracticeWorkspace .learnRunStats { min-height: 1.2rem; }
+  .learnCourseWorkspace .learnPracticeWorkspace .learnRunStats:empty { display: flex; }
   .learnPracticeControls { flex-shrink: 0; margin-top: 4px; }
   .learnPracticeControls .learnFeedback { margin-top: 0; padding-top: 5px; }
   .learnCompletion { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin-top: 4px; padding: 8px; }
@@ -3143,3 +3156,8 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 :root .auditionKey.blackKey span { color: #dbe1e8; }
 :root .auditionKey.active { background: var(--brand); color: #ffffff; }
 :root .auditionKey.active span { color: #ffffff; }
+.courseIntroLayout { max-width: 380px; margin: 12px 0 16px; }
+.courseIntroLayout p { margin: 4px 0 0; font-size: .8rem; }
+.learnResetConfirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; border-radius: var(--radius-md); background: var(--danger-soft); color: var(--text); }
+.learnResetConfirm p { flex: 1 1 100%; margin: 0; font-size: .85rem; }
+.learnResetConfirm button.danger { background: var(--danger); border-color: var(--danger); color: var(--danger-soft); font-weight: 600; }

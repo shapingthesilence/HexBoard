@@ -29,7 +29,15 @@ describe("practice metronome lifecycle", () => {
     expect(await clock.start(60, 8)).toBe(14150);
     await vi.advanceTimersByTimeAsync(5250);
     expect(oscillators.slice(0, 6).map((node) => node.start.mock.calls[0][0])).toEqual([10.15,11.15,12.15,13.15,14.15,15.15]);
-    expect(oscillators.slice(0, 6).map((node) => node.frequency.value)).toEqual([1100,1100,1100,1100,1500,800]);
+    expect(oscillators.slice(0, 6).map((node) => node.frequency.value)).toEqual([1320,1100,1100,1100,1500,800]);
+    clock.stop();
+  });
+  it("counts in one 6/8 bar of eighth clicks and returns its first downbeat", async () => {
+    const clock = new PracticeMetronome();
+    expect(await clock.start(60, 6, { numerator: 6, denominator: 8 })).toBe(13150);
+    await vi.advanceTimersByTimeAsync(4600);
+    expect(oscillators.slice(0, 8).map((node) => node.start.mock.calls[0][0])).toEqual([10.15,10.65,11.15,11.65,12.15,12.65,13.15,13.65]);
+    expect(oscillators.slice(0, 10).map((node) => node.frequency.value)).toEqual([1320,1100,1100,1100,1100,1100,1500,800,800,900]);
     clock.stop();
   });
   it("cancels scheduled clicks and cannot keep scheduling after stop", async () => {
