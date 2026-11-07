@@ -38,6 +38,8 @@ One preset library for both engines. A preset is a sound source plus settings:
   old flat layout.
 - The board's load list starts with `Favorites`: favorite presets from every
   folder (one pass over the folder files, up to 64 shown).
+- A first-use rebuild shows "Moving presets n / N" and "Indexing presets
+  n / N" on the flash-save screen.
 - Index records reserve engine bits (`kFlagEngineMask`), so the browser can
   show engine icons without opening preset files.
 
@@ -54,12 +56,6 @@ Whole-board setup takes about 1.9–2.6 s either way. The 8.6 s reboot time
 reported earlier came from the test script's retries while macOS set up MIDI,
 not from the board. The one-time move of 512 flat files took several minutes;
 boards updating from released firmware hold at most 128 presets.
-
-## Phase 1 — Remaining
-
-1. **Progress during the one-time move.** The rebuild shows only the flash-save
-   screen. A count ("Updating presets 40/128") would reassure users with large
-   libraries.
 
 ## Phase 2 — Sampler Preset Data Model
 

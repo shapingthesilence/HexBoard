@@ -398,6 +398,25 @@ void showFlashSaveScreen() {
   flashSaveScreenVisible = true;
 }
 
+// Replaces the flash-save screen text with a counted task during long writes.
+void showFlashSaveProgress(const char* task, uint16_t done, uint16_t total) {
+  if (!flashSaveScreenVisible) {
+    showFlashSaveScreen();
+  }
+  flashSaveScreenVisibleUntil = readClock() + FLASH_SAVE_SCREEN_MAX_VISIBLE_MICROS;
+  char count[16] = {};
+  snprintf(count, sizeof(count), "%u / %u", static_cast<unsigned>(done), static_cast<unsigned>(total));
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_7x14B_tf);
+  const char* lines[] = {task, count, "Audio muted."};
+  const uint8_t y[] = {40, 62, 90};
+  for (uint8_t i = 0; i < 3; ++i) {
+    int16_t x = static_cast<int16_t>((128 - u8g2.getStrWidth(lines[i])) / 2);
+    u8g2.drawStr(x > 0 ? x : 0, y[i], lines[i]);
+  }
+  u8g2.sendBufferAndWait();
+}
+
 static void closeFlashSaveScreenNow() {
   if (!flashSaveScreenVisible) {
     return;

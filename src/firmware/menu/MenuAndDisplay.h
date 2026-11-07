@@ -33,6 +33,7 @@ void drawDelegatedControlScreen();
 void restoreMenuAfterDelegatedControl();
 bool servicePresetSyncTransfer();
 void showFlashSaveScreen();
+void showFlashSaveProgress(const char* task, uint16_t done, uint16_t total);
 void closeFlashSaveScreen();
 void dismissFlashSaveScreenForMenuInput();
 void serviceFlashSaveScreen();

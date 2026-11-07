@@ -481,8 +481,8 @@ the currently open folder. In the load list, `Favorites` is always the first
 item. It lists presets marked as favorites in HexBoard Sync from every folder
 (up to `64`); press back to return to the folders. The browser shows the first `23` characters of each
 name. After a firmware-only update, the first time the preset list opens the
-HexBoard shows `Saving to flash.` while it reorganizes the preset files and
-builds its preset index. With a large library this can take a minute or more;
+HexBoard counts `Moving presets` and `Indexing presets` while it reorganizes
+the preset files and builds its preset index. With a large library this can take a minute or more;
 leave the HexBoard powered until the menu returns. The supplied presets are organized into `Basses`,
 `Leads`, `Pads`, and `Plucks`. They can be changed or erased like any other
 preset. The web app

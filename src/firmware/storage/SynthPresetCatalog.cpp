@@ -1,5 +1,6 @@
 #include "../FirmwareModule.h"
 #include "../app/DiagnosticsTiming.h"
+#include "../menu/MenuAndDisplay.h"
 #include "Settings.h"
 #include "StorageHealth.h"
 #include "SynthPresetCatalog.h"
@@ -534,9 +535,40 @@ void recordFromPreset(const SynthPresetSlot& preset, Record& record) {
   record.flags = preset.favorite ? SynthPresetIndex::kFlagFavorite : 0;
 }
 
+// Counts a long rebuild step on the flash-save screen, at most 4 times a second.
+struct RebuildProgress {
+  const char* task;
+  uint16_t total;
+  uint64_t lastDrawn = 0;
+
+  void show(uint16_t done) {
+    const uint64_t now = readClock();
+    if (total > 0 && (lastDrawn == 0 || now - lastDrawn >= 250000ULL || done == total)) {
+      lastDrawn = now;
+      showFlashSaveProgress(task, done, total);
+    }
+  }
+};
+
+uint16_t countLegacyPresetFiles() {
+  uint16_t count = 0;
+  Dir directory = LittleFS.openDir(SYNTH_PRESET_STORAGE_ROOT);
+  while (directory.next()) {
+    uint8_t id[SYNTH_PRESET_OBJECT_ID_LENGTH] = {};
+    String fileName = directory.fileName();
+    if (directory.isFile() && SynthPresetIndex::parseCanonicalFileName(fileName.c_str(), id) && count < 0xFFFFu) {
+      ++count;
+    }
+  }
+  return count;
+}
+
 // Moves flat-layout preset files into buckets, a batch per directory listing.
 bool migrateLegacyPresetFiles() {
   constexpr uint8_t BATCH = 16;
+  RebuildProgress progress{"Moving presets", countLegacyPresetFiles()};
+  uint16_t moved = 0;
+  progress.show(0);
   for (uint16_t round = 0; round < (SYNTH_PRESET_MAX_COUNT / BATCH) + 2; ++round) {
     uint8_t ids[BATCH][SYNTH_PRESET_OBJECT_ID_LENGTH] = {};
     uint8_t found = 0;
@@ -569,6 +601,7 @@ bool migrateLegacyPresetFiles() {
         reportStorageHealthIssue(from, "move failed");
         return false;
       }
+      progress.show(++moved);
     }
   }
   return false;
@@ -601,8 +634,12 @@ bool rebuildIndexFromDirectory() {
   }
   bool ok = true;
   uint16_t total = 0;
+  uint16_t visited = 0;
   bool limitReported = false;
+  RebuildProgress progress{"Indexing presets", countCanonicalPresetFiles()};
+  progress.show(0);
   forEachCanonicalPresetFile([&](uint16_t, const uint8_t* id) {
+    progress.show(++visited < progress.total ? visited : progress.total);
     if (total >= SYNTH_PRESET_MAX_COUNT) {
       if (!limitReported) {
         reportStorageHealthIssue(SYNTH_PRESET_STORAGE_ROOT, "too many files");
