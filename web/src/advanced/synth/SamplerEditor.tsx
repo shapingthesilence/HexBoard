@@ -625,9 +625,9 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
     setBusy("Loading instrument…");
     setError("");
     try {
-      await client.current!.samplerInstrument(value);
+      await client.current!.start(6, value);
       if (value !== 1) {
-        const header = await client.current!.samplerSettings();
+        const header = await client.current!.playingSamplerSettings();
         const savedSpace =
           new DataView(header.buffer, header.byteOffset).getUint16(62, true) /
           65535;
@@ -638,7 +638,6 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
         setDeviceSpace(0);
         setDeviceSettings(false);
       }
-      await client.current!.start(6);
       setLoadedSource(value);
       setPlaying(true);
     } catch (e) {

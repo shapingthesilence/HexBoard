@@ -35,12 +35,14 @@ export function decodeSamplerLibrary(p:number[],first:number):SamplerInstrument[
  for(let i=0;i<4;i++){const bytes=v.getUint32(i*36+32,true),nameBytes=raw.slice(i*36,i*36+32),end=nameBytes.indexOf(0),text=nameBytes.slice(0,end<0?32:end);if(end>=0&&nameBytes.slice(end).some(Boolean)||text.some(c=>c<32||c>126)||bytes&&(!text.length||bytes%512||bytes<512||bytes>0x40000000)||!bytes&&text.length)throw Error('Invalid sampler instrument entry.');if(bytes)entries.push({id:first>=1024?first-1024+i:first+i+2,name:new TextDecoder().decode(text),bytes});}
  return entries;
 }
-export interface SamplerLoadingState {phase:0|1|2|3;voices:number;ready:number;total:number;loadedBytes:number;totalBytes:number;streaming?:boolean}
+export interface SamplerLoadingState {phase:0|1|2|3;voices:number;ready:number;total:number;loadedBytes:number;totalBytes:number;streaming?:boolean;source?:number}
 export function decodeSamplerLoading(p:number[]):SamplerLoadingState {
-  if(p.length!==18||p[0]!==17||p[1]>3||p[17]>1)throw Error('Invalid sampler loading response.');
+  if((p.length!==18&&p.length!==20)||p[0]!==17||p[1]>3||p[17]>1)throw Error('Invalid sampler loading response.');
+  const source=p.length===20?decodeU14(p.slice(18,20)):undefined;
+  if(source!==undefined&&source>1025)throw Error('Invalid sampler source.');
   const state={phase:p[1] as 0|1|2|3,voices:p[2],ready:decodeU14(p.slice(3,5)),total:decodeU14(p.slice(5,7)),loadedBytes:p.slice(7,12).reduce((a,b)=>a*128+b,0),totalBytes:p.slice(12,17).reduce((a,b)=>a*128+b,0)};
   if(state.total>128||state.ready>state.total||state.loadedBytes>state.totalBytes||state.totalBytes>0x40000000||state.voices>16||state.phase===0&&(state.voices||state.ready||state.total||state.loadedBytes||state.totalBytes)||(state.phase===1||state.phase===3)&&(!state.total||!state.totalBytes||(state.voices<1||state.voices>4))||state.phase===2&&(!state.total||state.ready!==state.total||state.loadedBytes!==state.totalBytes||state.voices<1))throw Error('Invalid sampler loading progress.');
-  return {...state,streaming:!!p[17]};
+  return {...state,streaming:!!p[17],source};
 }
 export interface PhysicalState { state: "stopped" | "playing" | "loading"; instrument: number; bend: number; preset: PhysicalPreset }
 export function decodePhysicalState(payload: number[]): PhysicalState {
@@ -207,7 +209,7 @@ export class PhysicalSynthClient {
   async modRoute(id:number,source:number,depth:number){this.modulation=await this.request<ModulationSources>(19,[id,source,...encodeU21(depth+65536)]);return this.request(0);}
   async setModulation(value:ModulationSources){const m=validateModulation(value);this.modulation=await this.request<ModulationSources>(17,[...m.settings.flatMap(encodeU21),...m.routes.flatMap(v=>encodeU21(v+65536))]);return this.request(0);}
   status(){return this.request(0);}
-  samplerLoading(){return this.request<SamplerLoadingState>(63);}
+  samplerLoading(includeSource=false){return this.request<SamplerLoadingState>(63,includeSource?[1]:[]);}
   async samplerSource(source:'patch'|'piano'){return this.samplerInstrument(source==='piano'?1:0);}
   async samplerInstrument(id:number){if(!Number.isInteger(id)||id<0||id>1025)throw Error('Invalid sampler instrument.');await this.stopAndWait();return this.request(51,encodeU14(id));}
   async samplerLibrary(refresh=false,folder=0):Promise<SamplerInstrument[]>{if(!Number.isInteger(folder)||folder<0||folder>32)throw Error("Invalid sampler folder.");const entries:SamplerInstrument[]=[];for(let first=folder*32;first<folder*32+32;first+=4)entries.push(...await this.request<SamplerInstrument[]>(64,[...encodeU14(first),refresh?1:0]));return entries;}
@@ -225,6 +227,7 @@ export class PhysicalSynthClient {
   async samplerSettings(header?:Uint8Array):Promise<Uint8Array>{
     if(header&&header.length!==128)throw Error('Sampler settings require a complete header.');await this.stopAndWait();return this.request<Uint8Array>(69,header?[1,...Array.from(header).flatMap(b=>[b>>7,b&127])]:[0]);
   }
+  playingSamplerSettings(){return this.request<Uint8Array>(69,[0]);}
   async uploadSamplerNamed(bytes:Uint8Array,folder:string,filename:string,progress?:(received:number,total:number)=>void){
     const text=(s:string)=>{if(!s.length||s.length>64||/[^\x20-\x7e]|[\\/:*?"<>|]/.test(s)||s.startsWith('.')||/[. ]$/.test(s))throw Error('Use a plain folder and filename.');return Array.from(s,c=>c.charCodeAt(0));};
     const f=text(folder),n=text(filename);if(!/\.hbs$/i.test(filename)||bytes.length<512||bytes.length%512)throw Error('Invalid prepared sampler file.');
@@ -294,12 +297,17 @@ export class PhysicalSynthClient {
     }catch(error){try{await this.cancelVoiceTest();}catch{/* Disconnect leaves a bounded, muted device test. */}throw error;}
     finally{this.onProgress?.();}
   }
-  async start(instrument = 2) {
+  async start(instrument = 2, samplerSource?:number) {
+    if(samplerSource!==undefined&&(instrument!==6||!Number.isInteger(samplerSource)||samplerSource<0||samplerSource>1025))throw Error('Invalid sampler instrument.');
     this.previewNeedsStartup=true;const startedAt=Date.now();this.onProgress?.({label:`Preparing ${engineNames[instrument]??'synth'}…`,startedAt,expectedMs:prepareEstimate(instrument,this.voiceLimit)});
-    try{let state=await this.request(1,[instrument]);while(state.state==='loading'){
+    try{let state=await this.request(1,samplerSource===undefined?[instrument]:[instrument,...encodeU14(samplerSource)]);while(state.state==='loading'){
       if(Date.now()-startedAt>(instrument===6?90000:45000))throw Error('The synth did not become playable. Retry the connection.');await new Promise(r=>setTimeout(r,50));
       try{state=await this.request(0);}catch(error){if(Date.now()-startedAt>(instrument===6?90000:45000))throw error;}
-    }if(state.state!=='playing')throw Error('The synth stopped before it was ready.');if(this.advanced||instrument>=4)this.previewNeedsStartup=false;return state;
+      if(instrument===6&&state.instrument===6&&state.state==='loading'&&(await this.samplerLoading()).phase===3)throw Error('The sampler could not verify the instrument audio.');
+    }
+    if(state.state!=='playing'||state.instrument!==instrument)throw Error('The requested synth could not start.');
+    if(samplerSource!==undefined&&(await this.samplerLoading(true)).source!==samplerSource)throw Error('The requested sampler instrument could not start.');
+    if(this.advanced||instrument>=4)this.previewNeedsStartup=false;return state;
     }finally{this.onProgress?.();}
   }
   stop() { return this.request(2); }

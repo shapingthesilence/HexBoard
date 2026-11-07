@@ -18,12 +18,15 @@ class Transport implements MidiTransport {
   sent: number[][] = [];
   tableAudioActive=false;tableCandidate=false;samplerBytes=0;samplerReceived=0;badSamplerOffset=false;respond = true;state = 1;sampleLoop:number[]|undefined;sampleReplyLength?:number;catalogReplies?:number[][];
   modulation=defaultModulation();
+  instrument=2;samplerSource=encodeU14(0);
   async send(bytes: ArrayLike<number>) {
     this.sent.push(Array.from(bytes));
     const frame = decodePresetSyncFrame(bytes);
     if(frame.payload[1]===76||frame.payload[1]===77){if(frame.payload[1]===76){if(this.tableAudioActive)throw Error('Audio is still rendering');this.tableCandidate=false;}else{this.tableAudioActive=false;if(this.tableCandidate)throw Error('An incomplete table is still staged');}const reply=frame.payload[1]===77?[17,...frame.payload.slice(2)]:[17,0,0,0,0,0];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x4d,frame.transactionId,reply)))));return;}
 
-    if(frame.payload[1]===1)this.state=1;if(frame.payload[1]===2)this.state=0;
+    if(frame.payload[1]===1){this.state=1;this.instrument=frame.payload[2];if(frame.payload.length===5)this.samplerSource=frame.payload.slice(3);}
+    if(frame.payload[1]===2)this.state=0;
+    if(frame.payload[1]===63){const reply=[17,2,16,0,1,0,1,0,0,0,0,1,0,0,0,0,1,0,...(frame.payload[2]?this.samplerSource:[])];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x47,frame.transactionId,reply)))));return;}
     if(frame.payload[1]===64){const reply=[17,...frame.payload.slice(2,4),4,...Array(288).fill(0)];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x48,frame.transactionId,reply)))));return;}
     if(frame.payload[1]===69){const bytes=frame.payload[2]?frame.payload.slice(3):Array(256).fill(0);queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x4a,frame.transactionId,[17,...bytes])))));return;}
     if(frame.payload[1]>=65&&frame.payload[1]<=67){const op=frame.payload[1],n=(p:number[])=>p.reduce((x,y)=>x*128+y,0),encoded=(x:number)=>Array.from({length:5},(_,i)=>Math.floor(x/128**(4-i))%128);if(op===65){const at=5+frame.payload[3]+frame.payload[4];this.samplerBytes=n(frame.payload.slice(at,at+5));this.samplerReceived=0;}if(op===66)this.samplerReceived=n(frame.payload.slice(2,7))+n(frame.payload.slice(7,9));const received=op===67?this.samplerBytes:this.samplerReceived+(this.badSamplerOffset?1:0);queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x49,frame.transactionId,[17,...encoded(received)])))));return;}
@@ -48,11 +51,21 @@ class Transport implements MidiTransport {
     if(frame.payload[1]===27)this.sampleLoop=frame.payload.slice(2);
     if(frame.payload[1]>=20){const sample=[17,0,...encodeU21(32768),...encodeU21(this.sampleLoop?1600:0),0,0,0,0,0,0,...encodeU21(65535),...(this.sampleLoop??[0,...encodeU21(0),...encodeU21(0),...encodeU21(0)])];const reply=this.sampleReplyLength===undefined?sample:Array.from({length:this.sampleReplyLength},(_,i)=>sample[i]??0);queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x3b,frame.transactionId,reply)))));return;}
     const response=frame.payload[1]===11?[18,...frame.payload.slice(2,-1)]:[18,0,0,0,0,0,0,...defaultFx().values.flat().flatMap(encodeU21),...defaultFx().steps.flatMap(encodeU21),...Array(80).fill(65536).flatMap(encodeU21)];
-    if (this.respond) for (const listener of this.listeners) listener(Uint8Array.from(encodeDefaultPresetSyncFrame(modulation?0x39:motion?0x38:fx?0x37:0x35, frame.transactionId, modulation?modResponse:motion?motionResponse:fx?response:[17,this.state,...payload().slice(2)])));
+    if (this.respond) for (const listener of this.listeners) listener(Uint8Array.from(encodeDefaultPresetSyncFrame(modulation?0x39:motion?0x38:fx?0x37:0x35, frame.transactionId, modulation?modResponse:motion?motionResponse:fx?response:[17,this.state,this.instrument,...payload().slice(3)])));
   }
   subscribe(listener: MidiMessageListener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 }
 describe("Advanced physical editor", () => {
+  it('starts a named sampler and reads its room settings on the live session',async()=>{
+    const t=new Transport(),c=new PhysicalSynthClient(t);
+    try{
+      expect((await c.start(6,1025)).instrument).toBe(6);
+      expect(await c.playingSamplerSettings()).toHaveLength(128);
+      expect(t.sent.map(decodePresetSyncFrame).map(f=>f.payload)).toEqual([
+        [17,1,6,...encodeU14(1025)],[17,63,1],[17,69,0],
+      ]);
+    }finally{c.close();}
+  });
   it('refreshes SD names without stopping the active synth',async()=>{const t=new Transport(),c=new PhysicalSynthClient(t);try{expect(await c.samplerLibrary(true,32)).toEqual([]);const frames=t.sent.map(decodePresetSyncFrame);expect(frames).toHaveLength(8);expect(frames.every(f=>f.payload[1]===64&&f.payload[4]===1)).toBe(true);expect(t.state).toBe(1);}finally{c.close();}});
   it('reads and writes a settings header while stopping only the music lease',async()=>{const t=new Transport(),c=new PhysicalSynthClient(t);try{const header=await c.samplerSettings();expect(header).toHaveLength(128);header[62]=135;const readback=await c.samplerSettings(header);expect(readback[62]).toBe(135);expect(t.sent.map(decodePresetSyncFrame).filter(f=>f.payload[1]===69).map(f=>f.payload[2])).toEqual([0,1]);expect(t.sent.map(decodePresetSyncFrame).some(f=>f.payload[1]===2)).toBe(true);}finally{c.close();}});
   it('copies named sampler instruments with verified offsets and safe human filenames',async()=>{const t=new Transport(),c=new PhysicalSynthClient(t);try{await c.uploadSamplerNamed(new Uint8Array(512),'My instruments','Warm piano.hbs');const frames=t.sent.map(decodePresetSyncFrame);const begin=frames.find(f=>f.payload[1]===65)!.payload;expect(begin.slice(5,5+14)).toEqual(Array.from('My instruments',x=>x.charCodeAt(0)));expect(frames.filter(f=>f.payload[1]===66)).toHaveLength(3);expect(frames.at(-1)!.payload[1]).toBe(67);await expect(c.uploadSamplerNamed(new Uint8Array(512),'../bad','Test.hbs')).rejects.toThrow(/plain/);t.badSamplerOffset=true;await expect(c.uploadSamplerNamed(new Uint8Array(512),'My instruments','Other.hbs')).rejects.toThrow(/offset/);}finally{c.close();}});
