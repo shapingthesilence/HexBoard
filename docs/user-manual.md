@@ -401,9 +401,9 @@ With a sampler preset loaded, the `Synth` page shows `Inst: <name>` (fixed by
 the preset), and hides the wavetable, `WT Pos`, `Wheel FX`, `FX Env` and `LFO`
 items. Its `Amp Env` page starts every stage at `Inst`, the instrument's own
 envelope; choosing a value replaces that stage for the whole instrument, and
-choosing `Inst` again restores it. Engine
-changes briefly mute audio; held keys need a fresh press afterward. Sampler
-envelopes are stored with the instrument. If a sampler preset's instrument is
+choosing `Inst` again restores it. New notes use the change. The mod wheel adds
+vibrato to sampler sounds: `Wheel Amt` sets how deep and `Vib Speed` how fast.
+Engine changes briefly mute audio; held keys need a fresh press afterward. If a sampler preset's instrument is
 not installed, the HexBoard shows `Upload instrument` and plays the wavetable
 engine instead. See [Classic sampler](compact-sampler.md) for importing and limits.
 

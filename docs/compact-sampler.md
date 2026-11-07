@@ -44,8 +44,12 @@ time `Sounds` opens, every installed instrument that no sound uses gets one in
 this ran, so deleted sounds are not recreated. Changes briefly mute playback and clear
 voices. Keys held through the change require a fresh press. Tuning, layout,
 pitch bend, the board arpeggiator, volume and jack/piezo routing remain available.
-Sampler envelopes come from the converted instrument; wavetable envelope/LFO
-settings do not replace them. The shared output drive still applies.
+Sampler envelopes come from the converted instrument, unless the sound's `Amp
+Env` sets a stage: each set stage replaces that stage in every region when a
+note starts (release stays at least 4 ms), and `Inst` keeps the region's own.
+The mod wheel always adds vibrato (`Wheel Amt` sets the depth, `Vib Speed` the
+rate, at the wavetable engine's depth); the wavetable LFO, FX envelopes and
+other wheel targets do not apply. The shared output drive still applies.
 
 Presets name their instrument, so instrument names are unique on the board:
 installing an instrument with the name of an installed one replaces it once the
@@ -112,7 +116,13 @@ loss above 1.5 dB. Smaller corrections stay within 1.5 dB and available peak
 headroom. This work runs during preparation, outside the device audio path.
 
 `synth/CompactSampler.cpp` owns preparation, selection, runtime directory and
-private readers. `CompactSamplerCodec.h` contains the bounded, host-testable
+private readers. Core 0 merges a region's envelope with the sound's overridden
+stages when it picks the region for a note; Core 1 copies that envelope when it
+starts the reader. Vibrato is refreshed every 32 samples, and each voice's
+vibrato step is recomputed only then or when its pitch changes, so eight voices
+cost about 2% of the render budget more than without vibrato (911 µs versus
+895 µs per 64-sample block, budget 1,572 µs, measured with
+`test_synth_performance.py`). `CompactSamplerCodec.h` contains the bounded, host-testable
 format validator and sample reader. `SynthSampleWorkspace` overlaps the existing
 48 KiB active wavetable data with sampler PCM; it does not add another PCM pool.
 Engine choice is dispatched once per 64-sample buffer. Both engines share the

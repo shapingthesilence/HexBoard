@@ -106,14 +106,17 @@ boards updating from released firmware hold at most 128 presets.
 - Once per board, opening `Sounds` gives every installed instrument without a
   sound one in `Instruments`; `/sampler/sounds.done` keeps it from repeating.
 
-## Phase 4 — Classic Sampler Runtime
+## Done: Phase 4 — Classic Sampler Runtime
 
-1. **Vibrato.** Apply a shared pitch LFO to sampler voice increments once per
-   64-sample block. Measure with `scripts/test_synth_performance.py` at eight
-   voices before enabling.
-2. **Envelope overrides.** When a mask bit is set, voices use the preset's
-   stage value instead of the region's. Keep note-off release at least 4 ms.
-3. Drive already applies through the shared output stage.
+- Mod wheel vibrato on sampler voices at the wavetable engine's depth and
+  rate (`Wheel Amt`, `Vib Speed`), refreshed every 32 samples; each voice's
+  vibrato step is recomputed only then or when its pitch changes.
+  `test_synth_performance.py` passes at eight voices: 911 µs versus 895 µs per
+  64-sample block without vibrato (budget 1,572 µs). A first per-sample 64-bit
+  version overran the budget and was replaced.
+- Amp envelope overrides: Core 0 merges the region envelope with the sound's
+  set stages when a note starts; release stays at least 4 ms.
+- Drive already applied through the shared output stage.
 
 ## Phase 5 — Sync App
 

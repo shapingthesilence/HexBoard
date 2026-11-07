@@ -15,7 +15,19 @@ std::vector<uint8_t> fixture() {
   auto* z=a+kAsset;z[2]=1;z[3]=127;putFloat(z+4,10);putFloat(z+8,30000);put16(z+12,32768);put16(z+14,256);put16(z+20,65535);put16(z+22,100);
   seal(b);return b;
 }
+void testVibrato() {
+  assert(vibratoStep(65536,0)==65536);
+  assert(vibratoStep(0,1000)==0);
+  // Same relative depth as the wavetable engine: amount / 2^18.
+  for(uint32_t step: {16384u,65536u,131072u,1u<<22}) for(int32_t amount: {-32640,-4096,4096,32640}) {
+    const double expected=step*(1.0+amount/262144.0), actual=vibratoStep(step,amount);
+    assert(std::fabs(actual-expected)<=expected*0.005+2 || actual==64u*65536u);
+  }
+  assert(vibratoStep(1u<<22,32640)==64u*65536u);  // clamped to the reader limit
+  assert(vibratoStep(2,-32767)>=1);
+}
 int main(int argc,char** argv) {
+  testVibrato();
   auto b=fixture();Directory d;assert(d.decode(b.data(),b.size()));assert(d.region(440,127)==0);assert(d.region(1,127)==-1);
   for(unsigned at: {0u,4u,6u,8u,12u,20u,24u,26u}) {auto damaged=b;damaged[at]^=128;assert(!d.decode(damaged.data(),damaged.size()));}
   auto reject=[&](unsigned offset,uint32_t value){auto damaged=b;put32(damaged.data()+offset,value);seal(damaged);assert(!d.decode(damaged.data(),damaged.size()));};

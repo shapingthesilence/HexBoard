@@ -73,6 +73,15 @@ struct Directory {
   }
 };
 
+// Mod wheel vibrato on a reader increment, at the wavetable engine's depth
+// (the step changes by amount / 2^18). 32-bit only: steps are at most 2^22 and
+// |amount| below 2^15, so (step >> 7) * amount fits.
+inline uint32_t vibratoStep(uint32_t step, int32_t amount) {
+  if (!amount || !step) return step;
+  const int32_t bent = int32_t(step) + ((int32_t(step >> 7) * amount) >> 11);
+  return bent < 1 ? 1u : (uint32_t(bent) > 64u * 65536u ? 64u * 65536u : uint32_t(bent));
+}
+
 // Core 1 owns readers. Q16.16 positions are bounded by the 24,576-frame pool.
 struct Reader {
   uint32_t position = 0;

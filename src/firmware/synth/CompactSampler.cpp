@@ -18,12 +18,21 @@ uint32_t regionDelays[CompactSampler::kZones] = {};
 struct Voice {
   CompactSampler::Reader reader;
   uint32_t delay = 0, step = 0, generation = 0;
+  // Step with vibrato applied, recomputed only when the step or vibrato changes.
+  uint32_t vibratoBase = 0, playStep = 0;
   int16_t zone = -1;
   uint8_t gain = 128;
 };
 Voice readers[POLYPHONY_LIMIT];
 std::atomic<int16_t> pendingRegions[POLYPHONY_LIMIT];
 std::atomic<uint32_t> pendingSteps[POLYPHONY_LIMIT];
+// Region envelope with the sound's "Inst" overrides applied, prepared on Core 0
+// when a note starts and copied by Core 1 when it consumes the attack command.
+EnvelopeParams pendingEnvelopes[POLYPHONY_LIMIT];
+// Mod wheel vibrato, refreshed on Core 1 at the synth control rate. The amount
+// uses the wavetable engine's units: step changes by amount / 2^18.
+uint8_t vibratoCountdown = 0;
+int32_t vibratoAmount = 0;
 std::atomic<bool> active{false};
 uint8_t loadedSlot = 255;
 char requestedName[32] = {};
@@ -96,7 +105,7 @@ void RAM_FUNC(startReader)(unsigned i) {
   if (owner >= SYNTH_PREVIEW_SLOT_START && owner < BTN_COUNT) v.gain = synthPreviewGainForSlot[owner - SYNTH_PREVIEW_SLOT_START];
   EnvelopeState& env = envelopeStates[i]; resetEnvelopeState(env);
   if (v.zone < 0 || unsigned(v.zone) >= directory.zones || !v.step) { publishVoiceFreed(i, v.generation); return; }
-  voiceVolumeEnvelopeParams[i] = regionEnvelopes[v.zone];
+  voiceVolumeEnvelopeParams[i] = pendingEnvelopes[i];
   const EnvelopeParams& p = voiceVolumeEnvelopeParams[i];
   v.delay = regionDelays[v.zone]; v.reader.start();
   env.stage = EnvelopeStage::Attack;
@@ -241,6 +250,36 @@ bool deleteCompactSampler(uint8_t slot) {
   invalidateSlotNames(); return ok;
 }
 
+// The region's envelope with each overridden stage taken from the current
+// sound's amp envelope. Release stays at least 4 ms, like region releases.
+EnvelopeParams samplerEnvelopeForRegion(int region) {
+  EnvelopeParams merged = (region >= 0 && unsigned(region) < directory.zones) ? regionEnvelopes[region] : EnvelopeParams{};
+  const uint8_t mask = envelopeOverride;
+  if (!mask) return merged;
+  const EnvelopeParams& sound = envelopeParams;
+  if (mask & SAMPLER_ENVELOPE_OVERRIDE_ATTACK) merged.attackTicks = sound.attackTicks;
+  if (mask & SAMPLER_ENVELOPE_OVERRIDE_HOLD) merged.holdTicks = sound.holdTicks;
+  if (mask & SAMPLER_ENVELOPE_OVERRIDE_DECAY) merged.decayTicks = sound.decayTicks;
+  if (mask & SAMPLER_ENVELOPE_OVERRIDE_SUSTAIN) merged.sustainLevel = sound.sustainLevel;
+  if (mask & SAMPLER_ENVELOPE_OVERRIDE_RELEASE) merged.releaseTicks = std::max<uint32_t>(samples(4), sound.releaseTicks);
+  merged.attackIncrement = merged.attackTicks ? std::max<uint32_t>(1, envelopeMaxLevel / merged.attackTicks) : envelopeMaxLevel;
+  merged.decayIncrement = (merged.decayTicks && merged.sustainLevel < envelopeMaxLevel)
+    ? std::max<uint32_t>(1, (envelopeMaxLevel - merged.sustainLevel) / merged.decayTicks)
+    : envelopeMaxLevel;
+  return merged;
+}
+
+void RAM_FUNC(refreshSamplerVibrato)() {
+  const int16_t wheel = scaleSynthModAmount(smoothedSynthModValue(SYNTH_CONTROL_RATE_SAMPLES));
+  if (!wheel) { vibratoAmount = 0; return; }
+  synthVibratoPhase += synthVibratoPhaseIncrement * SYNTH_CONTROL_RATE_SAMPLES;
+  const int16_t sample = synthVibratoSpeed == SYNTH_VIBRATO_SPEED_NOISE
+    ? readSynthVibratoSmoothNoiseSample()
+    : static_cast<int16_t>(int16_t(synthVibratoSine[synthWaveSampleIndexFromPhase32(synthVibratoPhase)]) - 128);
+  vibratoAmount = int32_t(sample) * wheel;
+}
+
+
 // Called on Core 0 before publishing attack/steal commands. Retunes preserve
 // the captured region and update only a single atomic reader increment.
 void RAM_FUNC(prepareCompactSamplerFrequency)(uint8_t channel, float nativeHz, float bentHz, bool start) {
@@ -251,6 +290,7 @@ void RAM_FUNC(prepareCompactSamplerFrequency)(uint8_t channel, float nativeHz, f
     const int16_t owner = synthChannelOwners[channel].load(std::memory_order_relaxed);
     if (owner >= SYNTH_PREVIEW_SLOT_START && owner < BTN_COUNT) velocity = synthPreviewVelocityForSlot[owner - SYNTH_PREVIEW_SLOT_START];
     region = directory.region(nativeHz, velocity);
+    pendingEnvelopes[channel] = samplerEnvelopeForRegion(region);
     pendingRegions[channel].store(region, std::memory_order_relaxed);
   }
   uint32_t step = 0;
@@ -265,6 +305,14 @@ void RAM_FUNC(prepareCompactSamplerFrequency)(uint8_t channel, float nativeHz, f
 
 int32_t RAM_FUNC(renderCompactSamplerMix)(uint32_t& envSum, uint8_t& voices, uint8_t& flags) {
   int32_t mix = 0;
+  // The sampler always uses the mod wheel for vibrato (Wheel FX is hidden).
+  const bool vibratoTick = vibratoCountdown == 0;
+  if (vibratoTick) {
+    vibratoCountdown = SYNTH_CONTROL_RATE_SAMPLES - 1;
+    refreshSamplerVibrato();
+  } else {
+    --vibratoCountdown;
+  }
   for (unsigned i = 0; i < currentSynthVoiceLimit(); ++i) {
     Voice& v = readers[i]; EnvelopeState& env = envelopeStates[i];
     switch (consumeEnvelopeCommand(i)) {
@@ -283,11 +331,12 @@ int32_t RAM_FUNC(renderCompactSamplerMix)(uint32_t& envSum, uint8_t& voices, uin
     }
     if (!v.reader.ended && v.zone >= 0) {
       if (!synthStealFadeInProgress(i)) v.step = pendingSteps[i].load(std::memory_order_acquire);
+      if (vibratoTick || v.step != v.vibratoBase) { v.vibratoBase = v.step; v.playStep = CompactSampler::vibratoStep(v.step, vibratoAmount); }
       if (v.delay) --v.delay;
       else {
         updateAmpEnvelopeState(env, voiceVolumeEnvelopeParams[i], 1);
         const auto& z = directory.regions[v.zone];
-        int32_t s = v.reader.read(directory.recordings[z.asset], synthSampleWorkspace.sampler.frames, v.step);
+        int32_t s = v.reader.read(directory.recordings[z.asset], synthSampleWorkspace.sampler.frames, v.playStep);
         if (!v.step || v.reader.ended || env.stage == EnvelopeStage::Idle || (env.stage == EnvelopeStage::Sustain && !env.level)) finishReader(i);
         else {
           uint32_t level = envelopeAudioLevel(env.level);
