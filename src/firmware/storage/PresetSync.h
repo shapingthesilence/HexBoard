@@ -64,6 +64,10 @@ constexpr uint8_t PRESET_SYNC_TLV_SYNTH_VALUES = 0x21;
 constexpr uint8_t PRESET_SYNC_TLV_FAVORITE = 0x23;
 constexpr uint8_t PRESET_SYNC_TLV_SYNTH_WAVETABLE_NAME = 0x26;
 constexpr uint8_t PRESET_SYNC_TLV_SYNTH_WAVETABLE_FOLDER_PATH = 0x27;
+// Present only on sampler presets: the Classic sampler instrument name, and
+// which amp envelope stages replace the instrument's own (SAMPLER_ENVELOPE_*).
+constexpr uint8_t PRESET_SYNC_TLV_SYNTH_SAMPLER_NAME = 0x28;
+constexpr uint8_t PRESET_SYNC_TLV_SYNTH_SAMPLER_ENVELOPE_OVERRIDE = 0x29;
 constexpr uint8_t PRESET_SYNC_TLV_WAVETABLE_FRAME_COUNT = 0x30;
 constexpr uint8_t PRESET_SYNC_TLV_WAVETABLE_SAMPLE_COUNT = 0x31;
 constexpr uint8_t PRESET_SYNC_TLV_WAVETABLE_SAMPLES = 0x32;

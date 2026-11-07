@@ -57,32 +57,30 @@ reported earlier came from the test script's retries while macOS set up MIDI,
 not from the board. The one-time move of 512 flat files took several minutes;
 boards updating from released firmware hold at most 128 presets.
 
-## Phase 2 — Sampler Preset Data Model
+## Done: Phase 2 — Sampler Preset Data Model
 
-1. **Instrument files by object id.** Replace `/sampler/00.hbc`–`31.hbc` with
-   `/sampler/<object-id>.hbc` and drop the slot numbers. Presets reference the
-   id. No resident instrument catalog is needed: loading a preset opens the
-   file by path, and Sync lists instruments from the directory. A cap of 64
-   instruments (about 3.3 MB at most) leaves room for user content in the
-   8 MB filesystem. The Classic sampler format is unreleased, so no migration
-   is needed.
-2. **HSP v13.** Append an engine byte, the instrument object id, and one
-   `SamplerEnvelopeOverride` bitmask (bits for attack, hold, decay, sustain,
-   release). Sampler presets reuse the existing envelope, drive, vibrato speed
-   and mod-amount values; a clear bit means **Inst**. Older files expand with
-   engine = wavetable through the existing `persistedSynthPresetWidth` table.
-3. **Remove `SamplerSlot`.** The profile's synth reference already decides the
-   sound. Bump `CURRENT_SETTINGS_VERSION`, add a tested migration that drops
-   the byte, and update the runtime sync, menu wiring, factory config and
-   validation (see `SettingKeys.inc.h` rules in `AGENTS.md`).
-4. **Index flags.** Write the engine into the record flags so icons and filters
-   work from the index alone.
-5. **Missing instrument.** Loading a sampler preset whose instrument is not
-   installed shows a notice and falls back to Basic Shapes, as missing
-   wavetables do today.
-6. **Factory library.** Add `factory-library/sampler/*.hbc` (or source files
-   converted by the existing browser tools). The generator validates every
-   preset's instrument reference and the flash budget.
+- Sampler presets reference their instrument **by name**, like wavetable
+  presets reference wavetables. This replaces the earlier idea of files named by
+  object id: the HBC format and Sync's install protocol stay unchanged, and an
+  edited instrument re-sent from Sync keeps its presets working. Installing an
+  instrument whose name is already installed replaces the older copy. The 32
+  slots remain; raising the cap is a separate change to the slot loop in Sync.
+- HSP v13 appends the instrument name (empty for wavetable presets) and a
+  5-bit amp envelope override mask (`SAMPLER_ENVELOPE_OVERRIDE_*`). Older
+  records expand as wavetable presets. Preset sync carries them as TLVs `0x28`
+  and `0x29`; Sync keeps them through edits, export and import.
+- Settings version 37 drops `SamplerSlot`. The profile's preset or draft records
+  the engine. When a version 36 file loads, the boot profile's slot becomes the
+  current sound's instrument name and the next normal save records it; other
+  profiles' slot choices are not carried over.
+- The `Sampler / Engine` menu is gone. Sending an instrument from Sync plays it;
+  Save Preset on the board stores a sampler preset.
+- Index records set the engine bits, so phase 3 icons need no file reads.
+- A missing instrument shows "Upload instrument" and plays the wavetable engine.
+- The factory library accepts `sampler/*.hbc` instruments and presets with a
+  `sampler` reference; no factory instruments are included yet.
+- The envelope mask is stored and round-trips, but playback ignores it until
+  phase 4.
 
 ## Phase 3 — Board Menus
 
@@ -91,8 +89,7 @@ boards updating from released firmware hold at most 128 presets.
    Mod wheel), `Amp Env ▸` (A/H/D/S/R with Inst as the first value), Glide,
    Arp and Save Preset. Hide the wavetable picker, position, FX Env 1/2 and LFO.
    Use the existing menu-visibility updates rather than a second menu tree.
-2. **Remove `Sampler / Engine`** and `CompactSamplerMenu`.
-3. **Engine icons.** Add an icon callback to `VirtualListMenuProvider`, draw a
+2. **Engine icons.** Add an icon callback to `VirtualListMenuProvider`, draw a
    wavetable or sampler sprite at the row's left edge, and move the current
    preset diamond to the right edge. Check both sprites on the real OLED.
 

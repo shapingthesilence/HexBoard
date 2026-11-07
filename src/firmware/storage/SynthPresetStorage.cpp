@@ -300,7 +300,9 @@ bool currentRuntimeMatchesSynthPresetValues(const SynthPresetSlot& preset) {
   // Wavetable names are globally unique; folders are organization metadata.
   // Loading resolves that metadata (for example, Built In to /Built In)
   // without changing the selected source or modifying the patch.
-  return strncmp(currentSynthWavetableName, preset.wavetableName, sizeof(preset.wavetableName)) == 0;
+  return strncmp(currentSynthWavetableName, preset.wavetableName, sizeof(preset.wavetableName)) == 0
+         && strncmp(compactSamplerRequestedName(), preset.samplerName, sizeof(preset.samplerName)) == 0
+         && compactSamplerEnvelopeOverride() == preset.samplerEnvelopeOverride;
 }
 
 bool currentRuntimeMatchesBlankSynthPreset() {
@@ -315,7 +317,9 @@ bool currentRuntimeMatchesBlankSynthPreset() {
       return false;
     }
   }
-  return strcmp(currentSynthWavetableName, SYNTH_WAVETABLE_BASIC_NAME) == 0;
+  return strcmp(currentSynthWavetableName, SYNTH_WAVETABLE_BASIC_NAME) == 0
+         && !compactSamplerRequestedName()[0]
+         && compactSamplerEnvelopeOverride() == 0;
 }
 
 const char* currentSynthPresetDisplayName() {
@@ -360,6 +364,8 @@ void captureCurrentSynthPreset(SynthPresetSlot& preset) {
   snprintf(preset.wavetableName, sizeof(preset.wavetableName), "%s", currentSynthWavetableName);
   snprintf(preset.wavetableFolderPath, sizeof(preset.wavetableFolderPath), "%s", currentSynthWavetableFolderPath);
   normalizeSynthPresetWavetableReference(preset);
+  snprintf(preset.samplerName, sizeof(preset.samplerName), "%s", compactSamplerRequestedName());
+  preset.samplerEnvelopeOverride = preset.samplerName[0] ? compactSamplerEnvelopeOverride() : 0;
 }
 
 void generateCurrentSynthPresetObjectId(SynthPresetSlot& preset) {
@@ -382,6 +388,13 @@ void generateCurrentSynthPresetObjectId(SynthPresetSlot& preset) {
   mixByte(':');
   for (const char* p = preset.wavetableName; *p; ++p) {
     mixByte(static_cast<uint8_t>(*p));
+  }
+  if (preset.samplerName[0]) {
+    mixByte(':');
+    for (const char* p = preset.samplerName; *p; ++p) {
+      mixByte(static_cast<uint8_t>(*p));
+    }
+    mixByte(preset.samplerEnvelopeOverride);
   }
 
   for (size_t i = 0; i < sizeof(preset.objectId); ++i) {
@@ -406,6 +419,8 @@ void applyBlankSynthPresetToSettings() {
     settings[keyIndex] = factoryDefaults[keyIndex];
   }
   selectFallbackSynthWavetable();
+  requestCompactSampler("");
+  setCompactSamplerEnvelopeOverride(0);
 }
 
 void loadBlankSynthPreset() {
@@ -606,6 +621,8 @@ void applySynthPresetToSettings(const SynthPresetSlot& preset) {
     settings[static_cast<uint8_t>(synthPresetKeys[i])] = value;
   }
   setCurrentSynthWavetableReference(preset.wavetableFolderPath, preset.wavetableName);
+  requestCompactSampler(preset.samplerName);
+  setCompactSamplerEnvelopeOverride(preset.samplerName[0] ? preset.samplerEnvelopeOverride : 0);
 }
 
 namespace {
@@ -778,17 +795,20 @@ void loadSynthPresetFromSlot(uint16_t presetIndex) {
     sendToLog("Synth preset record is missing.");
     return;
   }
-  bool missingWavetable = !synthWavetableNameIsAvailable(preset.wavetableName);
-  char missingWavetableName[SYNTH_WAVETABLE_NAME_LENGTH] = {};
-  if (missingWavetable) {
-    snprintf(missingWavetableName, sizeof(missingWavetableName), "%s", preset.wavetableName);
-  }
+  const bool samplerPreset = preset.samplerName[0] != '\0';
+  uint8_t instrumentSlot = 0;
+  const bool missingInstrument = samplerPreset && !compactSamplerSlotForName(preset.samplerName, instrumentSlot);
+  const bool missingWavetable = !samplerPreset && !synthWavetableNameIsAvailable(preset.wavetableName);
+  char missingName[SYNTH_PRESET_NAME_LENGTH] = {};
+  snprintf(missingName, sizeof(missingName), "%s", samplerPreset ? preset.samplerName : preset.wavetableName);
   applySynthPresetToSettings(preset);
   markSettingsDirty();
   trackCurrentSynthPreset(presetIndex, preset);
   syncSynthSettingsToRuntime();
-  if (missingWavetable) {
-    showMissingWavetableNotice(missingWavetableName);
+  if (missingInstrument) {
+    showMissingSamplerInstrumentNotice(missingName);
+  } else if (missingWavetable) {
+    showMissingWavetableNotice(missingName);
   }
   sendToLog("Loaded synth preset " + std::string(preset.name));
 }

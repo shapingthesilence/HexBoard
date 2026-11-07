@@ -45,6 +45,7 @@ void showDisplayNotice(const DisplayNoticeLine* lines, uint8_t lineCount);
 void showSynthPresetSaveRefusedNotice(const char* reason, const char* detail,
                                       const char* advice, const char* adviceDetail);
 void showMissingWavetableNotice(const char* wavetableName);
+void showMissingSamplerInstrumentNotice(const char* instrumentName);
 bool serviceDisplayNotice();
 void drawCenteredMenuHeaderTitle(const char* title);
 void menuHome();

@@ -26,7 +26,6 @@
 #include "PlayedNotesOverlay.h"
 #include "SynthPresetMenu.h"
 #include "SynthWavetableMenu.h"
-#include "CompactSamplerMenu.h"
 #include "VirtualListMenu.h"
 
 // @menu
@@ -491,8 +490,10 @@ void showDisplayNotice(const DisplayNoticeLine* lines, uint8_t lineCount) {
   displayNoticeVisible = true;
 }
 
-void showMissingWavetableNotice(const char* wavetableName) {
-  const char* name = wavetableName && wavetableName[0] ? wavetableName : "Unknown";
+namespace {
+// "Upload <kind>" / quoted name on one or two lines / where / fallback.
+void showMissingSoundSourceNotice(const char* heading, const char* missingName, const char* fallback) {
+  const char* name = missingName && missingName[0] ? missingName : "Unknown";
   size_t nameLength = strnlen(name, SYNTH_WAVETABLE_NAME_LENGTH - 1);
   char firstNameLine[22] = {};
   char secondNameLine[18] = {};
@@ -503,13 +504,22 @@ void showMissingWavetableNotice(const char* wavetableName) {
     snprintf(secondNameLine, sizeof(secondNameLine), "%.*s\"", 13, name + 18);
   }
   const DisplayNoticeLine lines[] = {
-    {"Upload wavetable", 17},
+    {heading, 17},
     {firstNameLine, static_cast<uint8_t>(secondNameLine[0] ? 39 : 46)},
     {secondNameLine, 56},
     {"with HexBoard Sync", 80},
-    {"Using Basic Shapes", 104},
+    {fallback, 104},
   };
   showDisplayNotice(lines, 5);
+}
+}  // namespace
+
+void showMissingWavetableNotice(const char* wavetableName) {
+  showMissingSoundSourceNotice("Upload wavetable", wavetableName, "Using Basic Shapes");
+}
+
+void showMissingSamplerInstrumentNotice(const char* instrumentName) {
+  showMissingSoundSourceNotice("Upload instrument", instrumentName, "Using wavetable");
 }
 
 void showSynthPresetSaveRefusedNotice(const char* reason, const char* detail,
@@ -605,7 +615,6 @@ GEMPage menuPageEditor("Editor", menuPageMain);
 GEMItem menuGotoEditor("Editor", menuPageEditor);
 GEMPage menuPageSynth("Synth", menuPageEditor);
 GEMItem menuGotoSynth("Synth", menuPageSynth);
-GEMItem menuGotoCompactSampler("Sampler / Engine", openCompactSamplerMenu);
 GEMPage menuPageSynthWavetableLoad("Wavetables", menuPageSynth);
 GEMItem menuGotoSynthWavetableLoad(currentSynthWavetableMenuLabel, menuPageSynthWavetableLoad);
 GEMPage menuPageSynthAmpEnv("Amp Env", menuPageSynth);
@@ -3264,7 +3273,6 @@ void setupSynthMenuPage() {
   addPreviewMenuItem(menuPageSynth, menuItemArpNoteLength, previewArpNoteLength);
   addPreviewMenuItem(menuPageSynth, menuItemPortamentoTime, previewPortamentoTime);
   updateCurrentSynthWavetableMenuLabel();
-  menuPageSynth.addMenuItem(menuGotoCompactSampler);
   menuPageSynth.addMenuItem(menuGotoSynthWavetableLoad);
   addPreviewMenuItem(menuPageSynth, menuItemSynthWavetablePosition, previewSynthWavetablePosition);
   addPreviewMenuItem(menuPageSynth, menuItemSynthDrive, previewSynthDrive);

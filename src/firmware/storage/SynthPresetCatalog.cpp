@@ -52,6 +52,12 @@ void folderFilePath(uint8_t slot, char* output, size_t outputLength, const char*
 
 // --- Preset files ---------------------------------------------------------
 
+uint8_t synthPresetIndexFlags(const SynthPresetSlot& preset) {
+  const uint8_t engine = preset.samplerName[0] ? SynthPresetIndex::kEngineSampler : SynthPresetIndex::kEngineWavetable;
+  return static_cast<uint8_t>((preset.favorite ? SynthPresetIndex::kFlagFavorite : 0)
+                              | (engine << SynthPresetIndex::kFlagEngineShift));
+}
+
 bool objectIdIsEmpty(const uint8_t* objectId) {
   for (size_t i = 0; i < SYNTH_PRESET_OBJECT_ID_LENGTH; ++i) {
     if (objectId[i] != 0) {
@@ -177,7 +183,7 @@ bool readCanonicalPresetFile(const uint8_t* fileId, uint16_t handle, SynthPreset
 void entryFromPreset(const SynthPresetSlot& preset, uint16_t handle, SynthPresetCatalogEntry& entry) {
   entry = SynthPresetCatalogEntry{};
   entry.handle = handle;
-  entry.flags = preset.favorite ? SynthPresetIndex::kFlagFavorite : 0;
+  entry.flags = synthPresetIndexFlags(preset);
   memcpy(entry.objectId, preset.objectId, sizeof(entry.objectId));
   snprintf(entry.name, sizeof(entry.name), "%s", preset.name);
   snprintf(entry.folderPath, sizeof(entry.folderPath), "%s", preset.folderPath);
@@ -532,7 +538,7 @@ void recordFromPreset(const SynthPresetSlot& preset, Record& record) {
   record = Record{};
   memcpy(record.id, preset.objectId, sizeof(record.id));
   snprintf(record.name, sizeof(record.name), "%s", preset.name);
-  record.flags = preset.favorite ? SynthPresetIndex::kFlagFavorite : 0;
+  record.flags = synthPresetIndexFlags(preset);
 }
 
 // Counts a long rebuild step on the flash-save screen, at most 4 times a second.

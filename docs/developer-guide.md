@@ -267,10 +267,13 @@ non-synth setting bytes, stable tuning/layout/scale references, compact synth
 preset-or-draft references, and payload CRC32. Synth values and wavetable
 references come from the referenced named preset or hidden profile draft.
 
-`CURRENT_SETTINGS_VERSION` is 36. `SettingsMigration.h` defines frozen profile
+`CURRENT_SETTINGS_VERSION` is 37. `SettingsMigration.h` defines frozen profile
 widths for supported versions: 57 non-synth bytes for version 32, 60 for versions
-33 through 35, and 61 for version 36. `SamplerSlot` is the appended byte; older
-profiles initialize it to the wavetable default (255).
+33 through 35 and 37, and 61 for version 36. Version 36's final byte was a
+sampler slot; version 37 drops it, because the profile's synth preset or draft
+now records the engine and instrument. Boot turns the boot profile's version 36
+slot into the current sound's instrument name (read-only lookup), so the next
+normal save keeps it; other profiles fall back to their preset's engine.
 Wheel depths retain their legacy positive bytes; negative depths use previously
 unused bytes, so supported older settings and preset values remain unchanged.
 The loader checks the exact size and original CRC before expanding each profile
@@ -318,7 +321,7 @@ Persistent stores:
 | --- | --- | --- |
 | `/settings.dat` | `Settings.cpp` | 9 non-synth profiles plus synth references; 10-second dirty save; identical data skipped |
 | `/.synth_profile_<0..8>.hsp` | `SynthPresetStorage.cpp` | hidden copy-on-write profile drafts; identical patch CRCs skipped |
-| `/presets/<0-F>/*.hsp` | `SynthPresetCatalog.cpp` | HSP v12; up to 512 atomic files, 32 folders, 64 presets per folder |
+| `/presets/<0-F>/*.hsp` | `SynthPresetCatalog.cpp` | HSP v13; up to 512 atomic files, 32 folders, 64 presets per folder |
 | `/preset_index/` | `SynthPresetCatalog.cpp` | HPF v1 folder table and HPI v2 folder files; see below |
 | `/synth_wavetables.dat`, `/wt_*.wtb` | `SynthWavetableStorage.cpp` | up to 32 entries; base or six mip levels |
 | `/geometry/*.hgb` | `PresetSyncGeometry.cpp` | HGB v3/schema 2; up to 64 atomic bundles |

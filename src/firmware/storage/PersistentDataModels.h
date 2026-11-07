@@ -11,7 +11,7 @@ struct SettingsHeader {
   uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 36;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 37;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
 
@@ -29,7 +29,7 @@ constexpr uint8_t NUM_SETTINGS = static_cast<uint8_t>(SettingKey::NumSettings);
 constexpr uint16_t SYNTH_PRESET_MAX_COUNT = 512;
 constexpr uint8_t SYNTH_PRESET_FOLDER_MAX_COUNT = 32;
 constexpr uint8_t SYNTH_PRESET_FOLDER_MAX_PRESETS = 64;
-constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 12;
+constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 13;
 constexpr uint8_t SYNTH_PRESET_SCHEMA_VERSION = 9;
 constexpr uint8_t SYNTH_WAVETABLE_FILE_VERSION = 1;
 constexpr uint8_t SYNTH_WAVETABLE_SCHEMA_VERSION = 1;
@@ -160,6 +160,13 @@ struct GeometryProfileReference {
 static_assert(sizeof(GeometryProfileReference) == 49,
               "GeometryProfileReference disk layout changed");
 
+constexpr uint8_t SAMPLER_ENVELOPE_OVERRIDE_ATTACK = 1u << 0;
+constexpr uint8_t SAMPLER_ENVELOPE_OVERRIDE_HOLD = 1u << 1;
+constexpr uint8_t SAMPLER_ENVELOPE_OVERRIDE_DECAY = 1u << 2;
+constexpr uint8_t SAMPLER_ENVELOPE_OVERRIDE_SUSTAIN = 1u << 3;
+constexpr uint8_t SAMPLER_ENVELOPE_OVERRIDE_RELEASE = 1u << 4;
+constexpr uint8_t SAMPLER_ENVELOPE_OVERRIDE_ALL = 0x1F;
+
 struct SynthPresetSlot {
   uint8_t valid = 0;
   uint8_t favorite = 0;
@@ -169,6 +176,12 @@ struct SynthPresetSlot {
   char wavetableName[SYNTH_WAVETABLE_NAME_LENGTH] = {};
   char wavetableFolderPath[SYNTH_WAVETABLE_FOLDER_LENGTH] = {};
   uint8_t values[SYNTH_PRESET_VALUE_COUNT] = {};
+  // Sampler presets name an installed Classic sampler instrument; empty
+  // selects the wavetable engine. Bit n set replaces amp envelope stage n
+  // (attack, hold, decay, sustain, release) with the preset's own value;
+  // a clear bit keeps the instrument's per-region value ("Inst").
+  char samplerName[SYNTH_PRESET_NAME_LENGTH] = {};
+  uint8_t samplerEnvelopeOverride = 0;
 };
 
 template <typename Slot, size_t Capacity>
@@ -295,12 +308,12 @@ static_assert(persistedSettingsWidth(CURRENT_SETTINGS_VERSION) == PROFILE_PERSIS
 // The host-side factory-library compiler writes these records byte-for-byte.
 // Fail the firmware build if the RP2040 ABI ever changes their disk layout.
 static_assert(sizeof(SettingsHeader) == 12, "SettingsHeader disk layout changed");
-static_assert(SETTINGS_PROFILE_VALUES_DATA_SIZE == 549,
+static_assert(SETTINGS_PROFILE_VALUES_DATA_SIZE == 540,
               "Persisted settings payload changed; update the factory-library builder");
-static_assert(SETTINGS_DATA_SIZE == 1143,
+static_assert(SETTINGS_DATA_SIZE == 1134,
               "Settings payload changed; update the factory-library builder");
 static_assert(sizeof(SynthPresetFileHeaderBase) == 8, "SynthPresetFileHeaderBase disk layout changed");
-static_assert(sizeof(SynthPresetSlot) == 213, "SynthPresetSlot disk layout changed");
+static_assert(sizeof(SynthPresetSlot) == SYNTH_PRESET_RECORD_WIDTH, "SynthPresetSlot disk layout changed");
 static_assert(sizeof(SynthWavetableFileHeader) == 12, "SynthWavetableFileHeader disk layout changed");
 static_assert(sizeof(SynthWavetableSlot) == 145, "SynthWavetableSlot disk layout changed");
 

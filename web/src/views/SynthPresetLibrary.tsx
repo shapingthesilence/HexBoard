@@ -21,6 +21,8 @@ import {
   synthWavetableMipLevelSamples,
   SYNTH_WAVETABLE_SAMPLE_BYTES,
   SynthPresetTlv,
+  SAMPLER_ENVELOPE_OVERRIDE_ALL,
+  type SynthPresetSampler,
   SynthSettingKey,
   SynthWavetableTlv,
   type SerumWavetableCrunchOptions,
@@ -84,6 +86,8 @@ interface EditableSynthPreset {
   wavetableFolderPath: string;
   favorite: boolean;
   values: EditableSynthValues;
+  /** Classic sampler presets keep their instrument; editing them is not offered yet. */
+  sampler?: SynthPresetSampler;
 }
 
 interface EditableSynthWavetable {
@@ -288,8 +292,17 @@ function normalizeObjectIdHex(value: unknown, seed: string): string {
 function clonePreset(preset: EditableSynthPreset): EditableSynthPreset {
   return {
     ...preset,
-    values: { ...preset.values }
+    values: { ...preset.values },
+    ...(preset.sampler ? { sampler: { ...preset.sampler } } : {})
   };
+}
+
+function samplerFromUnknown(value: unknown): SynthPresetSampler | undefined {
+  if (!isRecord(value) || typeof value.name !== "string" || !value.name.trim()) return undefined;
+  const mask = typeof value.envelopeOverride === "number" && Number.isInteger(value.envelopeOverride)
+    ? value.envelopeOverride & SAMPLER_ENVELOPE_OVERRIDE_ALL
+    : 0;
+  return { name: clampUtf8Bytes(value.name.trim(), deviceNameMaxBytes), envelopeOverride: mask };
 }
 
 function cloneWavetable(wavetable: EditableSynthWavetable): EditableSynthWavetable {
@@ -532,7 +545,8 @@ function encodeEditablePreset(preset: EditableSynthPreset) {
     values: {
       ...preset.values,
       Waveform: 27
-    }
+    },
+    ...(preset.sampler ? { sampler: preset.sampler } : {})
   });
 }
 
@@ -546,7 +560,8 @@ function exportPreset(preset: EditableSynthPreset) {
       folderPath: preset.wavetableFolderPath
     },
     favorite: preset.favorite,
-    values: preset.values satisfies SynthPresetValues
+    values: preset.values satisfies SynthPresetValues,
+    ...(preset.sampler ? { sampler: { ...preset.sampler } } : {})
   };
 }
 
@@ -589,7 +604,8 @@ function presetFromUnknown(value: unknown): EditableSynthPreset {
     wavetableName: wavetable.name,
     wavetableFolderPath: wavetable.folderPath,
     favorite: source.favorite === true,
-    values
+    values,
+    ...(samplerFromUnknown(source.sampler) ? { sampler: samplerFromUnknown(source.sampler) } : {})
   };
 }
 
@@ -660,6 +676,8 @@ function presetFromObjectBody(body: Uint8Array, deviceHandle?: number): Editable
   let wavetableName = "";
   let wavetableFolderPath = "";
   let favorite = false;
+  let samplerName = "";
+  let samplerEnvelopeOverride = 0;
 
   for (const record of decoded.records) {
     if (record.tag === CommonTlv.Name) {
@@ -674,6 +692,10 @@ function presetFromObjectBody(body: Uint8Array, deviceHandle?: number): Editable
       wavetableName = textFromBytes(record.value);
     } else if (record.tag === SynthPresetTlv.WavetableFolderPath) {
       wavetableFolderPath = decodeDeviceFolderPath(textFromBytes(record.value) || builtInWavetableFolder);
+    } else if (record.tag === SynthPresetTlv.SamplerName) {
+      samplerName = textFromBytes(record.value);
+    } else if (record.tag === SynthPresetTlv.SamplerEnvelopeOverride && record.value.length > 0) {
+      samplerEnvelopeOverride = record.value[0] & SAMPLER_ENVELOPE_OVERRIDE_ALL;
     } else if (record.tag === SynthPresetTlv.SynthValues) {
       for (let index = 0; index + 1 < record.value.length; index += 2) {
         const setting = Object.entries(SynthSettingKey).find(([, value]) => value === record.value[index])?.[0] as EditableSynthValueKey | undefined;
@@ -694,7 +716,8 @@ function presetFromObjectBody(body: Uint8Array, deviceHandle?: number): Editable
     wavetableName: wavetable.name,
     wavetableFolderPath: wavetable.folderPath,
     favorite,
-    values
+    values,
+    ...(samplerName ? { sampler: { name: samplerName, envelopeOverride: samplerEnvelopeOverride } } : {})
   };
 }
 

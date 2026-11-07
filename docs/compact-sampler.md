@@ -32,17 +32,26 @@ region inspector. The conversion report lists adaptations and playable-range cha
 The shared [loop-editing guide](web-app-guide.md#sampler-loop-editing) covers
 sample-level zoom, zero-crossing tools, length locking, crossfades and tuning.
 
-On the board, **Editor → Synth → Sampler / Engine** selects an installed instrument
-or returns to the wavetable engine. Changes briefly mute playback and clear
+On the board, the loaded synth preset chooses the engine: a sampler preset names
+an installed instrument, and any other preset uses the wavetable engine. Sending
+an instrument from the browser plays it immediately; **Save Preset** on the board
+then stores a sampler preset for it. Changes briefly mute playback and clear
 voices. Keys held through the change require a fresh press. Tuning, layout,
 pitch bend, the board arpeggiator, volume and jack/piezo routing remain available.
 Sampler envelopes come from the converted instrument; wavetable envelope/LFO
 settings do not replace them. The shared output drive still applies.
 
-Engine selection follows the normal settings/profile save policy. AutoSave is
-respected. **Save startup settings** in the browser copies current settings to
-profile 1 through the normal settings writer without enabling AutoSave.
-Named instrument files are installed immediately and survive firmware-only updates.
+Presets name their instrument, so instrument names are unique on the board:
+installing an instrument with the name of an installed one replaces it once the
+new file is safely stored, and presets that use the name keep working. A preset
+whose instrument is missing shows **Upload instrument** and plays the wavetable
+engine with the preset's wavetable.
+
+The current engine follows the normal settings/profile save policy through the
+profile's synth preset or draft. AutoSave is respected. **Save startup settings**
+in the browser copies current settings to profile 1 through the normal settings
+writer without enabling AutoSave. Named instrument files are installed
+immediately and survive firmware-only updates.
 
 ## Capacity And Conversion
 
@@ -119,11 +128,13 @@ timeout and restore muted output. File loading is read-only. Mount and content
 failures retain normal operation and report exact paths/stages; boot never formats
 or repairs storage. Invalid boot selections use the wavetable fallback.
 
-`SamplerSlot` is appended to `SettingKeys.inc.h`: 0–31 select instruments and
-255 selects wavetable. Settings version 36 has 61 non-synth bytes per profile;
-versions 32–35 retain their original prefixes and initialize the new byte from
-factory defaults. See [settings ownership](developer-guide.md#settings-and-persistence)
-and the [wire/format contract](preset-sync-sysex.md#classic-compact-sampler).
+Synth preset records (HSP v13) carry the instrument name, empty for wavetable
+presets, and the amp envelope override mask; `CompactSampler.cpp` keeps the
+requested name and loads it from `syncCompactSamplerSelection()`. Settings
+version 37 dropped version 36's `SamplerSlot` byte; boot keeps the boot
+profile's old choice by name. See
+[settings ownership](developer-guide.md#settings-and-persistence) and the
+[wire/format contract](preset-sync-sysex.md#classic-compact-sampler).
 
 ## Verification Tools
 

@@ -29,6 +29,7 @@ extern const uint8_t factoryDefaults[NUM_SETTINGS] = {
 // File System Handling: LittleFS Setup
 // ==================================================
 bool fileSystemExists = false;
+uint8_t migratedSamplerSlot = NO_LEGACY_SAMPLER_SLOT;
 bool lastSettingsSaveSucceeded = false;
 constexpr char SETTINGS_FILE_PATH[] = "/settings.dat";
 
@@ -174,7 +175,7 @@ bool load_settings() {
   }
   // Profile 1 is the canonical boot target.
   defaultProfileIndex = DEFAULT_PROFILE_INDEX;
-  uint8_t persistedProfileSettings[SETTINGS_PROFILE_VALUES_DATA_SIZE] = {};
+  uint8_t persistedProfileSettings[MAX_PERSISTED_SETTINGS_WIDTH * PROFILE_COUNT] = {};
   size_t settingsBytesRead =
     f.read(persistedProfileSettings, sourceSettingsSize);
   size_t geometryBytesRead =
@@ -213,6 +214,7 @@ bool load_settings() {
     memcpy(settingsProfiles[profile], factoryDefaults, NUM_SETTINGS);
   }
   // Expand only after the original payload passes its CRC check.
+  migratedSamplerSlot = persistedLegacySamplerSlot(header.version, persistedProfileSettings, DEFAULT_PROFILE_INDEX);
   uint8_t expandedSettings[SETTINGS_PROFILE_VALUES_DATA_SIZE];
   packPersistedProfileSettings(expandedSettings);
   expandPersistedSettings(expandedSettings, PROFILE_PERSISTED_SETTING_COUNT,

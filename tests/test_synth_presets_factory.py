@@ -1,6 +1,8 @@
 import contextlib
 import importlib.util
 import io
+import shutil
+import json
 from pathlib import Path
 import re
 import struct
@@ -14,6 +16,14 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('factory', ROOT / 'scripts/build_factory_library.py')
 factory = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(factory)
+
+
+def cxx_flags():
+    flags = ['-std=c++17']
+    if sys.platform == 'darwin':
+        sdk = subprocess.check_output(['xcrun', '--show-sdk-path'], text=True).strip()
+        flags += ['-isystem', str(Path(sdk) / 'usr/include/c++/v1')]
+    return flags
 
 
 class SynthPresetsFactoryTest(unittest.TestCase):
@@ -30,13 +40,13 @@ int main(int argc, char** argv) {
   for (int i = 1; i < argc; ++i) {
     FILE* file = fopen(argv[i], "rb");
     if (!file) return 1;
-    uint8_t data[222] = {};
+    uint8_t data[254] = {};
     const size_t size = fread(data, 1, sizeof(data), file);
     fclose(file);
     if (size < 8) return 1;
     const size_t width = persistedSynthPresetWidth(data[3]);
     if (!width || size != 8 + width) return 2;
-    uint8_t preset[213] = {};
+    uint8_t preset[246] = {};
     if (!expandPersistedSynthPreset(preset, sizeof(preset),
                                    data + 8, width, 100)) return 3;
   }
@@ -74,7 +84,7 @@ int main(int argc, char** argv) {
                 start = reference_offset + profile * 17
                 self.assertEqual(settings[start], 2)
                 self.assertIn(settings[start + 1:start + 17], ids)
-            # Reproduce the broken build: v12 payload mislabeled as v11.
+            # A current payload mislabeled as v11 must be rejected.
             malformed = work / 'mislabeled.hsp'
             data = bytearray(records[0].read_bytes())
             data[3] = 11
@@ -85,11 +95,7 @@ int main(int argc, char** argv) {
         with tempfile.TemporaryDirectory() as temporary:
             work = Path(temporary)
             checker = work / 'index_checker'
-            flags = ['-std=c++17']
-            if sys.platform == 'darwin':
-                sdk = subprocess.check_output(['xcrun', '--show-sdk-path'], text=True).strip()
-                flags += ['-isystem', str(Path(sdk) / 'usr/include/c++/v1')]
-            subprocess.run(['c++', *flags, str(ROOT / 'tests/synth_preset_index_test.cpp'),
+            subprocess.run(['c++', *cxx_flags(), str(ROOT / 'tests/synth_preset_index_test.cpp'),
                             '-o', str(checker)], check=True)
             output = work / 'filesystem'
             with contextlib.redirect_stdout(io.StringIO()):
@@ -111,6 +117,68 @@ int main(int argc, char** argv) {
             factory.build_preset_index(Path('presets'), entries)
         factory.build_preset_index(Path('presets'), entries[:-1])
 
+
+    def test_factory_sampler_presets_reference_installed_instruments(self):
+        def instrument(name):
+            frames = 5
+            asset = struct.pack('<IIIIff', 0, frames, 1, 4, 22050.0, 440.0) + bytes([1]) + bytes(7)
+            zone = struct.pack('<HBBffHHHHHHHH', 0, 1, 127, 10.0, 30000.0, 32768, 256, 0, 0, 65535, 100, 0, 0) + bytes(20)
+            pcm = struct.pack('<5h', 0, 1000, 2000, 3000, 4000)
+            header = bytearray(64)
+            header[:8] = b'HBC1' + struct.pack('<HH', 1, 64)
+            struct.pack_into('<IIIIHHI', header, 8, 64 + 32 + 48 + len(pcm), frames, zlib.crc32(pcm), 0, 1, 1, 0)
+            header[32:32 + len(name)] = name.encode()
+            metadata = bytes(header) + asset + zone
+            struct.pack_into('<I', header, 20, zlib.crc32(metadata[:20] + bytes(4) + metadata[24:]))
+            return bytes(header) + asset + zone + pcm
+
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            library = work / 'library'
+            shutil.copytree(ROOT / 'factory-library', library)
+            (library / 'sampler').mkdir()
+            (library / 'sampler' / 'Felt.hbc').write_bytes(instrument('Felt Piano'))
+            # The firmware's own decoder accepts the generated test instrument.
+            checker = work / 'hbc_checker.cpp'
+            checker.write_text(
+                '#include "src/firmware/synth/CompactSamplerCodec.h"\n'
+                '#include <stdio.h>\n'
+                'int main(int argc, char** argv) {\n'
+                '  static uint8_t data[60000]; FILE* f = fopen(argv[1], "rb");\n'
+                '  size_t n = fread(data, 1, sizeof(data), f); fclose(f);\n'
+                '  size_t metadata = 64 + CompactSampler::u16(data + 24) * 32 + CompactSampler::u16(data + 26) * 48;\n'
+                '  CompactSampler::Directory d;\n'
+                '  return metadata <= n && d.decode(data, metadata) && d.total == n ? 0 : 1;\n'
+                '}\n')
+            subprocess.run(['c++', *cxx_flags(), '-I', str(ROOT), str(checker), '-o', str(work / 'hbc_checker')], check=True)
+            subprocess.run([str(work / 'hbc_checker'), str(library / 'sampler' / 'Felt.hbc')], check=True)
+
+            document = json.loads((library / 'presets/Pads/Glassy Bow.json').read_text())
+            preset = document.get('preset', document)
+            preset.update(name='Felt Keys', sampler={'name': 'Felt Piano', 'envelopeOverride': 0b10001})
+            preset.pop('objectId', None)
+            preset.pop('wavetable', None)
+            felt = library / 'presets/Pads/Felt Keys.json'
+            felt.write_text(json.dumps(document))
+            output = work / 'filesystem'
+            with contextlib.redirect_stdout(io.StringIO()):
+                factory.build_library(library, output)
+            self.assertEqual((output / 'sampler/00.hbc').read_bytes(), instrument('Felt Piano'))
+            records = [path.read_bytes()[8:] for path in (output / 'presets').rglob('*.hsp')]
+            sampler_records = [record for record in records if record[213:245].rstrip(bytes(1)) == b'Felt Piano']
+            self.assertEqual(len(sampler_records), 1)
+            self.assertEqual(sampler_records[0][245], 0b10001)
+            self.assertTrue(all(record[213:246] == bytes(33) for record in records if record not in sampler_records))
+
+            preset['sampler'] = {'name': 'Missing Instrument'}
+            felt.write_text(json.dumps(document))
+            with self.assertRaises(factory.LibraryError):
+                factory.build_library(library, work / 'missing')
+            preset['sampler'] = {'name': 'Felt Piano'}
+            felt.write_text(json.dumps(document))
+            (library / 'sampler' / 'Copy.hbc').write_bytes(instrument('Felt Piano'))
+            with self.assertRaises(factory.LibraryError):
+                factory.build_library(library, work / 'duplicate')
 
 if __name__ == '__main__':
     unittest.main()

@@ -33,6 +33,7 @@ constexpr uint8_t kFlagFavorite = 0x01;
 constexpr uint8_t kFlagEngineShift = 1;
 constexpr uint8_t kFlagEngineMask = 0x0E;
 constexpr uint8_t kEngineWavetable = 0;
+constexpr uint8_t kEngineSampler = 1;
 constexpr uint8_t kKnownFlagBits = kFlagFavorite | kFlagEngineMask;
 
 inline uint16_t u16(const uint8_t* p) { return static_cast<uint16_t>(p[0] | (p[1] << 8)); }

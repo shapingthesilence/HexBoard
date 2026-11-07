@@ -25,6 +25,8 @@ std::atomic<int16_t> pendingRegions[POLYPHONY_LIMIT];
 std::atomic<uint32_t> pendingSteps[POLYPHONY_LIMIT];
 std::atomic<bool> active{false};
 uint8_t loadedSlot = 255;
+char requestedName[32] = {};
+uint8_t envelopeOverride = 0;
 
 void failure(const char* path, const char* stage) { reportStorageHealthIssue(path, stage); }
 uint32_t samples(uint16_t ms) { return (uint64_t(ms) * AUDIO_SAMPLE_RATE_HZ + 999) / 1000; }
@@ -100,6 +102,18 @@ bool RAM_FUNC(compactSamplerActive)() { return active.load(std::memory_order_acq
 uint8_t compactSamplerSlot() { return loadedSlot; }
 const char* compactSamplerName() { return compactSamplerActive() ? directory.name : "Wavetable"; }
 void compactSamplerPath(uint8_t slot, char* path, size_t capacity) { snprintf(path, capacity, "/sampler/%02u.hbc", slot); }
+const char* compactSamplerRequestedName() { return requestedName; }
+void requestCompactSampler(const char* name) { snprintf(requestedName, sizeof(requestedName), "%s", name ? name : ""); }
+uint8_t compactSamplerEnvelopeOverride() { return envelopeOverride; }
+void setCompactSamplerEnvelopeOverride(uint8_t mask) { envelopeOverride = mask & SAMPLER_ENVELOPE_OVERRIDE_ALL; }
+bool compactSamplerSlotForName(const char* name, uint8_t& slot) {
+  if (!name || !name[0]) return false;
+  for (uint8_t candidate = 0; candidate < CompactSampler::kSlots; ++candidate) {
+    char installed[32] = {}; uint32_t bytes = 0;
+    if (compactSamplerFileInfo(candidate, installed, sizeof(installed), bytes) && strcmp(installed, name) == 0) { slot = candidate; return true; }
+  }
+  return false;
+}
 bool compactSamplerFileInfo(uint8_t slot, char* name, size_t capacity, uint32_t& bytes) {
   if (slot >= CompactSampler::kSlots || !fileSystemExists) return false;
   char path[32]; compactSamplerPath(slot, path, sizeof(path)); File f = LittleFS.open(path, "r");
@@ -146,12 +160,26 @@ bool selectCompactSampler(uint8_t slot, bool persist) {
     if (!ok) selectFallbackSynthWavetable();
     loadSelectedSynthWavetable();
   }
-  if (persist && ok) { settings[static_cast<uint8_t>(SettingKey::SamplerSlot)] = slot; markSettingsDirty(); }
+  if (persist && ok) { requestCompactSampler(slot == 255 ? "" : directory.name); markSettingsDirty(); }
   resumeWorkspace(); return ok;
 }
+// After a version 36 settings migration, keep the boot profile playing the
+// instrument its old slot setting chose. Settings are already dirty, so the
+// next normal save records the name in the profile's synth draft.
+void applyMigratedCompactSamplerSelection() {
+  const uint8_t slot = migratedSamplerSlot;
+  migratedSamplerSlot = NO_LEGACY_SAMPLER_SLOT;
+  char name[32] = {}; uint32_t bytes = 0;
+  if (slot < CompactSampler::kSlots && !requestedName[0] && compactSamplerFileInfo(slot, name, sizeof(name), bytes)) {
+    requestCompactSampler(name);
+  }
+}
+// A missing requested instrument plays the wavetable engine but stays
+// requested, so the sound keeps naming it until another sound is chosen.
 void syncCompactSamplerSelection() {
-  const uint8_t requested = settingValue(SettingKey::SamplerSlot);
-  if (!selectCompactSampler(requested, false)) selectCompactSampler(255, false);
+  uint8_t slot = 255;
+  if (requestedName[0] && compactSamplerSlotForName(requestedName, slot) && selectCompactSampler(slot, false)) return;
+  selectCompactSampler(255, false);
 }
 bool installCompactSampler(const char* stagedPath, uint16_t slot) {
   if (slot >= CompactSampler::kSlots) return false;
@@ -160,7 +188,22 @@ bool installCompactSampler(const char* stagedPath, uint16_t slot) {
   char path[32]; compactSamplerPath(slot, path, sizeof(path));
   if (LittleFS.exists(path)) return false; // New slots only; existing instruments survive interrupted installs.
   if (!LittleFS.exists("/sampler") && !LittleFS.mkdir("/sampler")) return false;
-  return LittleFS.rename(stagedPath, path);
+  if (!LittleFS.rename(stagedPath, path)) return false;
+  // Presets name instruments, so a same-named instrument is an update: the
+  // older copies go once the new one is safely installed.
+  bool replacedLoaded = false;
+  for (uint8_t other = 0; other < CompactSampler::kSlots; ++other) {
+    char name[32] = {}; uint32_t bytes = 0;
+    if (other == slot || !compactSamplerFileInfo(other, name, sizeof(name), bytes) || strcmp(name, d->name) != 0) continue;
+    char otherPath[32]; compactSamplerPath(other, otherPath, sizeof(otherPath));
+    if (loadedSlot == other) replacedLoaded = true;
+    LittleFS.remove(otherPath);
+  }
+  if (replacedLoaded) {
+    loadedSlot = 255;
+    if (!selectCompactSampler(slot, false)) selectCompactSampler(255, false);
+  }
+  return true;
 }
 bool deleteCompactSampler(uint8_t slot) {
   if (slot >= CompactSampler::kSlots || !fileSystemExists) return false;

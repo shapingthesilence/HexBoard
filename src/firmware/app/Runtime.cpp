@@ -100,6 +100,7 @@ void hexboardSetup() {
   load_synth_wavetables();
   load_geometry_objects();
   restoreSynthStateForProfile(activeProfileIndex);
+  applyMigratedCompactSamplerSelection();
   setupGFX();
   setupRotary();
   setupMenu();

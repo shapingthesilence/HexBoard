@@ -47,6 +47,11 @@ std::vector<uint8_t> buildSynthPresetObjectBody(const SynthPresetSlot& preset) {
   presetSyncAppendTlv(body, PRESET_SYNC_TLV_SYNTH_VALUES, values.data(), static_cast<uint16_t>(values.size()));
   uint8_t favorite = preset.favorite ? 1 : 0;
   presetSyncAppendTlv(body, PRESET_SYNC_TLV_FAVORITE, &favorite, 1);
+  if (preset.samplerName[0]) {
+    presetSyncAppendTextTlv(body, PRESET_SYNC_TLV_SYNTH_SAMPLER_NAME, preset.samplerName, sizeof(preset.samplerName));
+    uint8_t envelopeOverride = preset.samplerEnvelopeOverride & SAMPLER_ENVELOPE_OVERRIDE_ALL;
+    presetSyncAppendTlv(body, PRESET_SYNC_TLV_SYNTH_SAMPLER_ENVELOPE_OVERRIDE, &envelopeOverride, 1);
+  }
   return body;
 }
 
@@ -147,6 +152,16 @@ bool parseSynthPresetObjectBody(const std::vector<uint8_t>& body, SynthPresetSlo
       case PRESET_SYNC_TLV_SYNTH_WAVETABLE_FOLDER_PATH:
         copyPresetSyncText(preset.wavetableFolderPath, sizeof(preset.wavetableFolderPath), value, length);
         break;
+      case PRESET_SYNC_TLV_SYNTH_SAMPLER_NAME:
+        copyPresetSyncText(preset.samplerName, sizeof(preset.samplerName), value, length);
+        break;
+      case PRESET_SYNC_TLV_SYNTH_SAMPLER_ENVELOPE_OVERRIDE:
+        if (length != 1 || (value[0] & ~SAMPLER_ENVELOPE_OVERRIDE_ALL) != 0) {
+          error = "bad sampler envelope override";
+          return false;
+        }
+        preset.samplerEnvelopeOverride = value[0];
+        break;
       default:
         break;
     }
@@ -157,6 +172,9 @@ bool parseSynthPresetObjectBody(const std::vector<uint8_t>& body, SynthPresetSlo
   if (!sawName || !sawObjectId || !sawValues) {
     error = "missing required synth preset TLV";
     return false;
+  }
+  if (!preset.samplerName[0]) {
+    preset.samplerEnvelopeOverride = 0;
   }
   normalizeSynthPresetValues(preset);
   normalizeSynthPresetMetadata(preset, 0);

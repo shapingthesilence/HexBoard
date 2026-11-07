@@ -95,4 +95,3 @@ HEXBOARD_SETTING(ColorDithering, 0)
 HEXBOARD_SETTING(LedFramePeriodLow, 232)  // 4328us, little-endian low byte
 HEXBOARD_SETTING(LedFramePeriodHigh, 16)
 HEXBOARD_SETTING(ArpeggiatorNoteLength, 100)
-HEXBOARD_SETTING(SamplerSlot, 255)  // 255 selects the wavetable engine; 0..31 sampler slots.

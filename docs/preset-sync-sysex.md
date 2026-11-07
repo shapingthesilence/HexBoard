@@ -83,10 +83,10 @@ File headers:
 | File | Magic | Version owner | Payload |
 | --- | --- | --- | --- |
 | `/settings.dat` | `STG` | Main settings schema | Non-synth profile settings, tuning/layout/scale IDs, and synth preset-or-draft references |
-| `/.synth_profile_<0..8>.hsp` | `HSP` | Synth preset file schema `12` | Hidden full synth patch for a modified profile |
+| `/.synth_profile_<0..8>.hsp` | `HSP` | Synth preset file schema `13` | Hidden full synth patch for a modified profile |
 | `/geometry/*.hgb` | `HGB` | Geometry bundle file schema `3`; object schema `2` | One tuning root and all linked layout/scale/color/map records |
 | `/geometry_order.dat` | `HGO` | Geometry order file schema `1` | Ordered tuning object IDs used by device and web library menus |
-| `/presets/<0-F>/*.hsp` | `HSP` | Synth preset file schema `12` | One named preset, folder, values, and wavetable reference |
+| `/presets/<0-F>/*.hsp` | `HSP` | Synth preset file schema `13` | One named preset, folder, values, wavetable reference, and optional sampler instrument |
 | `/preset_index/folders.hpf` | `HPF` | Folder table schema `1` | 32 folder slots |
 | `/preset_index/<slot>.hpi` | `HPI` | Folder index schema `2` | Object id, name and flags of each preset in one folder slot |
 | `/synth_wavetables.dat` | `SYW` | Synth wavetable catalog schema | Named user wavetable objects and sample-file paths |
@@ -1145,6 +1145,8 @@ Recommended TLVs:
 | `0x24` | `LastModifiedUnixTime` | Optional `u32-le` timestamp from the web app |
 | `0x26` | `SynthWavetableName` | UTF-8 wavetable name dependency |
 | `0x27` | `SynthWavetableFolderPath` | UTF-8 compatibility/display metadata; not used for dependency lookup |
+| `0x28` | `SynthSamplerName` | UTF-8 Classic sampler instrument name; present only on sampler presets |
+| `0x29` | `SynthSamplerEnvelopeOverride` | `u8` mask of amp envelope stages replacing the instrument's (bit 0 attack, 1 hold, 2 decay, 3 sustain, 4 release); sent with `0x28` |
 
 The current synth preset key set is:
 
@@ -1449,9 +1451,10 @@ encoding. `ascii` is one u7 byte count followed by at most 31 ASCII bytes.
 Slots are 0–31. Selection/status value 127 denotes the wavetable engine. Empty
 slot info reports `exists=0`, zero bytes and an empty name. Status reports limits,
 not the current patch's counts. Invalid requests use normal NACKs. Operations
-are busy during read/write transfers or the explicit audio benchmark. Save startup
-settings uses the ordinary settings writer and profile 1; it does not change
-AutoSave. Selection otherwise follows the normal settings-save policy.
+are busy during read/write transfers or the explicit audio benchmark. Select makes
+the instrument the current sound's engine; saving a preset or profile then
+records its name. Save startup settings uses the ordinary settings writer and
+profile 1; it does not change AutoSave.
 
 Object type `0x0e` transfers raw HBC files through the existing WRITE_BEGIN /
 DATA_CHUNK / TRANSFER_END / WRITE_COMMIT exchange, schema 1.0. The handle is the
@@ -1459,7 +1462,8 @@ actual destination slot, flags must be exactly SaveToFlash (2), and the file lim
 is 51,264 bytes. It supports ACK-paced writes and streamed READ_REQ for export.
 There is no apply-only or overwrite operation. Generic object-list messages do
 not enumerate these slots; use slot info. Install validates the staged file before
-renaming into an unused slot. Failure, abort and the existing transfer timeout
+renaming into an unused slot, then removes any other slot holding an instrument
+of the same name, because synth presets reference instruments by name. Failure, abort and the existing transfer timeout
 leave installed instruments intact and restore the muted audio transport.
 
 ### HBC1 File Layout
