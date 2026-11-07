@@ -1,6 +1,7 @@
 # Sampler Presets And Larger Library — Plan
 
-This is a proposal. Apart from the first section, nothing here is implemented.
+Every phase below is implemented. This page records the plan and its
+measurements; current behavior lives in the guides linked here.
 Current behavior is described in the [user manual](user-manual.md), the
 [developer guide](developer-guide.md#settings-and-persistence),
 [preset sync](preset-sync-sysex.md) and the [Classic sampler](compact-sampler.md).
@@ -118,13 +119,17 @@ boards updating from released firmware hold at most 128 presets.
   set stages when a note starts; release stays at least 4 ms.
 - Drive already applied through the shared output stage.
 
-## Phase 5 — Sync App
+## Done: Phase 5 — Sync App
 
-- Show both engines in one library, with the same icons as the board.
-- Sampler preset editor: choose the instrument at creation, then edit only the
-  board-supported controls. Upload the instrument before the preset that uses
-  it.
-- Warn before deleting an instrument that presets still use.
+- One library for both engines, with the board's wave and sample icons. The
+  Classic tabs are now **Sounds** and **Instruments**.
+- **New sampler sound** picks an installed instrument; the sampler editor offers
+  Playback, Amp envelope with `Inst` per stage, Vibrato and Drive. Saving or
+  previewing checks the instrument is installed (instruments are sent from
+  **Instruments**, which already saves a sound with each one).
+- Deleting an instrument lists the sounds that use it first.
+- No firmware change: Sync reads every preset body already, so the sampler
+  reference is known without a new list flag.
 
 ## Verification
 
@@ -134,7 +139,9 @@ boards updating from released firmware hold at most 128 presets.
   the Update image, then use a preset-sync probe to compare preset lists and
   bodies before and after, round-trip append/rename/move/delete, test the folder
   and library limits, and time empty filtered listings at 18 and 512 presets.
-- Web: run the web tests and build when Phase 5 lands.
+- Web: `npm test` and `npm run build` in `web/`; a Playwright run against a
+  connected board checked icons, the sampler editor, saving a sampler sound
+  (instrument and mask on the board) and the delete warning.
 
 ## Open Questions
 

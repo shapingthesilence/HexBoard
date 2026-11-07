@@ -86,3 +86,12 @@
 /* Test keyboard: octave, preview level, Mod and Chord share one row. */
 .physical-editor .auditionPanel .editorGrid.compact { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 16px; }
 .physical-editor .auditionPanel .editorGrid.compact > .field { flex: 0 1 160px; }
+
+/* Classic sampler sounds: amp envelope stages that can follow the instrument. */
+.classic-sampler-instrument { margin: 0; }
+.classic-sampler-stage { display: grid; justify-items: center; gap: 2px; }
+.classic-sampler-stage[data-inst] .physical-control { opacity: .55; }
+.classic-sampler-stage .checkField { font-size: 10px; }
+
+/* Engine icons in library rows, matching the board's preset list. */
+.engineIcon { flex: none; width: 14px; height: 14px; color: var(--text-soft); }

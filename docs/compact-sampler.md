@@ -24,7 +24,8 @@ for their new conversion. Browser interpolation and output
 protection differ from the board, so compare on the device too. Existing slots
 are protected; delete an instrument explicitly to reclaim one.
 Choosing an instrument in the board library plays it immediately. The library
-also supports export and deletion. Exported `.hbc` files
+also supports export and deletion; deleting asks first and names the sounds
+that use the instrument. Exported `.hbc` files
 can be reopened in the shared editor. Advanced `.hbs` export remains unchanged.
 Waveform, loop, mapping and **Region ADSR** controls remain visible. ADSR sliders
 give finer control over short times; type exact milliseconds or sustain percent,

@@ -47,7 +47,8 @@ The [curriculum](curriculum.md) separates included courses from planned content.
 
 [Architecture proposals](architecture-proposals.md) describe unimplemented
 refactors for review. The [sampler presets plan](sampler-presets-plan.md)
-proposes sampler presets in the shared library and the remaining library work. [Preset-sync extensions](preset-sync-proposals.md) contain
+records the now-implemented sampler sounds and larger library, with
+measurements. [Preset-sync extensions](preset-sync-proposals.md) contain
 unimplemented protocol designs. Neither is a supported product contract.
 
 Repository contribution and verification rules live in [AGENTS.md](../AGENTS.md).

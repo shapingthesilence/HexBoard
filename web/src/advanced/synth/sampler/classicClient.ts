@@ -1,7 +1,7 @@
 import { PresetSyncClient } from "../../../midi/presetSyncClient.ts";
 import type { MidiTransport } from "../../../midi/types.ts";
 import { ObjectType, WriteFlag, decodeU21, decodeU28 } from "../../../protocol/index.ts";
-import { createSynthPresetObject } from "../../../catalogs/synthPresets.ts";
+import { createSynthPresetObject, samplerNameFromSynthPresetBody } from "../../../catalogs/synthPresets.ts";
 import { deterministicObjectId } from "../../../catalogs/objectId.ts";
 import { HEXBOARD_PRESET_NAME_MAX_BYTES } from "../../../catalogs/hexboardPresetCapacity.ts";
 
@@ -11,7 +11,8 @@ export const MAX_CLASSIC_SAMPLER_SLOTS = 127;
 export interface ClassicInstrument { id: number; name: string; bytes: number }
 export class ClassicSamplerClient {
   private client: PresetSyncClient;
-  constructor(transport: MidiTransport) { this.client = new PresetSyncClient(transport); }
+  /** Pass the page's own client to share its transaction numbers. */
+  constructor(transport: MidiTransport, client?: PresetSyncClient) { this.client = client ?? new PresetSyncClient(transport); }
   async status() {
     const p = await this.client.compactSampler(0);
     if (p.length < 12 || p.length !== 12 + p[11]) throw Error("Invalid Classic sampler status");
@@ -54,6 +55,14 @@ export class ClassicSamplerClient {
     });
     await this.client.sendSynthPresetSaveConfirmed(encoded);
     return { name, folderPath };
+  }
+  /** Names of the board's sounds that play this instrument. Reads every sound. */
+  async soundsUsing(instrumentName: string) {
+    const names: string[] = [];
+    for (const record of await this.client.listSynthPresets()) {
+      if (samplerNameFromSynthPresetBody(await this.client.readSynthPreset(record.handle)) === instrumentName) names.push(record.name);
+    }
+    return names;
   }
   async select(slot: number) { await this.client.compactSampler(2,slot); }
   async saveStartup() { await this.client.compactSampler(4); }

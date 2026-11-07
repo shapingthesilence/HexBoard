@@ -54,6 +54,8 @@ import {
 } from "./classicSynth/classicSynthModel.ts";
 export { wheelAmountByteToPercent, wheelAmountPercentToByte } from "./classicSynth/classicSynthModel.ts";
 import { ClassicKnob, ClassicSoundEditor } from "./classicSynth/ClassicSoundEditor.tsx";
+import { ClassicSamplerSoundEditor, type SamplerInstrumentStatus } from "./classicSynth/ClassicSamplerSoundEditor.tsx";
+import { ClassicSamplerClient } from "../advanced/synth/sampler/classicClient.ts";
 
 interface SynthPresetLibraryProps {
   transport: MidiTransport;
@@ -86,7 +88,7 @@ interface EditableSynthPreset {
   wavetableFolderPath: string;
   favorite: boolean;
   values: EditableSynthValues;
-  /** Classic sampler presets keep their instrument; editing them is not offered yet. */
+  /** Classic sampler sounds play this instrument; Sync sets it when the sound is made. */
   sampler?: SynthPresetSampler;
 }
 
@@ -135,6 +137,8 @@ const factoryWavetableFolder = "/";
 const basicWavetableName = "Basic Shapes";
 const deviceNameMaxBytes = 31;
 const deviceFolderMaxBytes = 47;
+/** Where the board and Sync put sounds made for instruments. */
+const samplerSoundFolder = "Instruments";
 
 const defaultPreset: EditableSynthPreset = {
   objectIdHex: objectIdToHex(deterministicObjectId("Soft String Pad")),
@@ -1030,6 +1034,9 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   const [libraryKind, setLibraryKind] = useState<SynthLibraryKind>("presets");
   const [computerPresets, setComputerPresets] = useState(loadComputerPresets);
   const [hexboardPresets, setHexboardPresets] = useState<EditableSynthPreset[]>([]);
+  /** Instrument names on the board; null until read. */
+  const [hexboardInstruments, setHexboardInstruments] = useState<string[] | null>(null);
+  const [newSamplerSound, setNewSamplerSound] = useState<{ instruments: string[]; choice: string } | null>(null);
   const [computerWavetables, setComputerWavetables] = useState(loadComputerWavetables);
   const [hexboardWavetables, setHexboardWavetables] = useState<EditableSynthWavetable[]>([]);
   const [preset, setPreset] = useState<EditableSynthPreset>(() => restoredDraft?.value ?? clonePreset(defaultPreset));
@@ -1119,6 +1126,46 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     setSyncStatus("New sound");
   }
   const client = useMemo(() => new PresetSyncClient(transport), [transport]);
+  const samplerClient = useMemo(() => new ClassicSamplerClient(transport, client), [client, transport]);
+  useEffect(() => setHexboardInstruments(null), [samplerClient]);
+
+  async function loadHexBoardInstruments(): Promise<string[]> {
+    const names = (await samplerClient.library()).map((instrument) => instrument.name);
+    setHexboardInstruments(names);
+    return names;
+  }
+
+  async function openNewSamplerSound() {
+    if (!connected) { setSyncStatus("Connect HexBoard to make a sampler sound"); return; }
+    try {
+      setSyncStatus("Reading HexBoard instruments...");
+      const instruments = await loadHexBoardInstruments();
+      if (instruments.length === 0) { setSyncStatus("No instruments on HexBoard. Send one from the Instruments tab first."); return; }
+      setNewSamplerSound({ instruments, choice: instruments[0] });
+      setSyncStatus("Ready");
+    } catch (error) {
+      setSyncStatus(error instanceof Error ? error.message : "Failed to read HexBoard instruments");
+    }
+  }
+
+  function createSamplerSound(instrumentName: string) {
+    const values = { ...defaultPreset.values, SynthModTarget: 0, EffectEnvelopeTarget: 0, EffectEnvelope2Target: 0, SynthLfoTarget: 0 };
+    const next: EditableSynthPreset = {
+      ...clonePreset(defaultPreset),
+      objectIdHex: objectIdToHex(deterministicObjectId(`draft:${Date.now()}`)),
+      name: clampUtf8Bytes(instrumentName, HEXBOARD_PRESET_NAME_MAX_BYTES),
+      folderPath: samplerSoundFolder,
+      favorite: false,
+      values,
+      sampler: { name: instrumentName, envelopeOverride: 0 }
+    };
+    setNewSamplerSound(null);
+    setDraftBase(next);
+    setPreset(next);
+    setOpenedSource("computer");
+    skipNextAutoSend.current = true;
+    setSyncStatus(`New sampler sound for ${instrumentName}`);
+  }
   const allFolders = useMemo(
     () =>
       Array.from(
@@ -1219,8 +1266,11 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   const liveSendPatch = useMemo(() => ({
     values: preset.values,
     wavetableName: preset.wavetableName,
-    wavetableFolderPath: preset.wavetableFolderPath
-  }), [preset.values, preset.wavetableFolderPath, preset.wavetableName]);
+    wavetableFolderPath: preset.wavetableFolderPath,
+    sampler: preset.sampler
+  }), [preset.values, preset.wavetableFolderPath, preset.wavetableName, preset.sampler]);
+  const samplerInstrumentStatus: SamplerInstrumentStatus = !preset.sampler || !connected || hexboardInstruments === null
+    ? "unknown" : hexboardInstruments.includes(preset.sampler.name) ? "installed" : "missing";
   const draftPreset = useMemo(() => encodeEditablePreset(preset), [preset]);
   const monoModeSelected = preset.values.PlaybackMode === 1 || preset.values.PlaybackMode === 4;
   const arpModeSelected = preset.values.PlaybackMode === 2 || preset.values.PlaybackMode === 6;
@@ -1908,6 +1958,14 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   }
 
   async function ensurePresetWavetableOnHexBoard(nextPreset: EditableSynthPreset): Promise<EditableSynthPreset | null> {
+    if (nextPreset.sampler) {
+      const instruments = hexboardInstruments ?? await loadHexBoardInstruments();
+      if (!instruments.includes(nextPreset.sampler.name)) {
+        setSyncStatus(`“${nextPreset.sampler.name}” is not on HexBoard. Send it from the Instruments tab first.`);
+        return null;
+      }
+      return clonePreset(nextPreset);
+    }
     const reference = normalizeWavetableReference(nextPreset.wavetableFolderPath, nextPreset.wavetableName);
     const referenceKey = wavetableSaveKey(reference);
     const deviceWavetable = [...builtInWavetables, ...hexboardWavetables]
@@ -2581,6 +2639,9 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
         }
       }
       setHexboardPresets(presets.sort(comparePresets));
+      if (presets.some((item) => item.sampler)) {
+        try { await loadHexBoardInstruments(); } catch { setHexboardInstruments(null); }
+      }
       if (readErrors.length > 0) {
         setSyncStatus(`${successStatus}: listed ${presets.length} preset${presets.length === 1 ? "" : "s"}, but ${readErrors.length} full read${readErrors.length === 1 ? "" : "s"} failed. ${readErrors[0]}`);
       } else {
@@ -2766,10 +2827,25 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
           </div>
         ) : null}
 
+        {newSamplerSound ? (
+          <form className="row synthFolderCreation" aria-label="New sampler sound" onSubmit={(event) => { event.preventDefault(); createSamplerSound(newSamplerSound.choice); }}>
+            <label className="field">
+              <span>Instrument on HexBoard</span>
+              <select autoFocus value={newSamplerSound.choice} onChange={(event) => setNewSamplerSound({ ...newSamplerSound, choice: event.target.value })}>
+                {newSamplerSound.instruments.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </label>
+            <button className="primary" type="submit">Make sound</button>
+            <button type="button" onClick={() => setNewSamplerSound(null)}>Cancel</button>
+            <span className="muted">The sound keeps this instrument. Send new instruments from the Instruments tab.</span>
+          </form>
+        ) : null}
+
         {libraryKind === "presets" ? (
           <>
             <div className="row libraryPrimaryActions">
               <button className="primary" type="button" onClick={newPreset}>New sound</button>
+              <button disabled={!connected} type="button" title="A sound that plays an instrument on the HexBoard" onClick={() => void openNewSamplerSound()}>New sampler sound</button>
               <button disabled={!connected} type="button" onClick={() => void refreshHexBoardLibrary()}>
                 Refresh HexBoard
               </button>
@@ -3144,6 +3220,19 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
         {syncStatus !== "Ready" ? <div className="operationStatus" role="status">{syncStatus}</div> : null}
         </header>
         <div className="editorBody">
+        {preset.sampler ? <>
+        <header className="instrument-title"><h2>Sampler</h2><span>HexBoard Classic · installed instrument</span></header>
+        <ClassicSamplerSoundEditor
+          values={preset.values}
+          onChange={updateValue}
+          instrumentName={preset.sampler.name}
+          instrumentStatus={samplerInstrumentStatus}
+          envelopeOverride={preset.sampler.envelopeOverride}
+          onEnvelopeOverrideChange={(mask) => updatePresetMetadata((current) => current.sampler
+            ? { ...current, sampler: { ...current.sampler, envelopeOverride: mask & SAMPLER_ENVELOPE_OVERRIDE_ALL } } : current)}
+          modWheel={previewMod}
+        />
+        </> : <>
         <header className="instrument-title"><h2>Wavetable</h2><span>HexBoard Classic · 16-frame wavetables</span></header>
 
         <section className={auditionOpen ? "auditionPanel" : "auditionPanel collapsed"}>
@@ -3261,6 +3350,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
               </label>
           )}
         />
+        </>}
 
         <details className="compactDisclosure"><summary>Developer details</summary><pre className="dataPreview">
 {`Frames on last send: ${lastFrameCount}
@@ -3273,6 +3363,17 @@ ${formatHex(draftPreset.body)}`}
       </div>
     </section>
   );
+}
+
+/** The board's preset-row icons: a sine cycle for wavetable sounds, an audio clip for sampler sounds. */
+function EngineIcon({ sampler }: { sampler: boolean }) {
+  const label = sampler ? "Sampler sound" : "Wavetable sound";
+  return <svg className="engineIcon" viewBox="0 0 14 14" role="img" aria-label={label}>
+    <title>{label}</title>
+    {sampler
+      ? <path d="M1 7h12M3.5 5v4M5.5 3v8M8 1.5v11M10.5 4v6" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+      : <path d="M1 7C2.5 2 5.5 2 7 7S11.5 12 13 7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>}
+  </svg>;
 }
 
 interface LibrarySpacePanelProps {
@@ -3492,6 +3593,7 @@ function LibrarySpacePanel({
                           onChange={(event) => onSelectionChange(space, item.objectIdHex, event.target.checked)}
                         />
                       </label>
+                      <EngineIcon sampler={item.sampler !== undefined}/>
                       <button className="presetNameButton" type="button" title={`Open ${item.name}`} onClick={() => onOpen(space, item)}>
                         <strong>{item.name}</strong>
                         <span>{folderLabel(item.folderPath)}{draftIds.includes(`${space}:${item.objectIdHex}`) ? " · Draft" : ""}</span>

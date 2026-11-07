@@ -780,6 +780,20 @@ The sound’s more-actions menu contains export, `Load current HexBoard sound`,
 and `Discard draft`; `Other drafts` resumes unfinished sounds. Connecting does
 not replace your open sound. Previewing or saving to HexBoard requires a connection.
 
+Both engines share one library. A small wave icon marks wavetable sounds and a
+sample icon marks Classic sampler sounds, as in the HexBoard's `Sounds` list.
+**New sampler sound** (connection needed) lists the instruments installed on
+the HexBoard; pick one and **Make sound** opens a new sound in `Instruments`
+that plays it. A sampler sound keeps its instrument; make a new one to use
+another instrument. Its editor offers what the board offers: Playback, an
+**Amp envelope** whose stages start at `Inst` (the instrument's own values),
+**Vibrato** (`Wheel amount`, `Vibrato speed`) and **Drive**. Turning a stage
+replaces it for the whole instrument; tick `Inst` to restore it. The browser
+can't play instruments, so the test keyboard is hidden; use **Preview on
+HexBoard**. Saving or previewing a sampler sound first checks that its
+instrument is on the HexBoard, and stops with a message if it is not; send the
+instrument from **Instruments** first.
+
 Preset names are limited to 23 characters, the length the HexBoard's preset
 list shows. The HexBoard Library holds up to 512 presets in up to 32 folders,
 with up to 32 presets in each folder. A save, move or batch copy that would
@@ -1165,14 +1179,17 @@ set the final hardware accuracy.
 
 ## Classic Sampler
 
-With updated Classic firmware connected, Synth offers Wavetable and Sampler
-editors. Sampler shares Advanced's import, waveform, loop and region tools with
+With updated Classic firmware connected, Synth offers **Sounds** (the sound
+library and editor for both engines) and **Instruments** (the sampler
+instrument editor). Instruments shares Advanced's import, waveform, loop and region tools with
 controls limited to Classic playback. Import and edits automatically prepare the
 Classic conversion. Compare original and converted recordings, then use **Send to
 HexBoard**. Region ADSR is in Mapping with sliders, exact time/percent fields and
 selected/all-region editing. Review size and sound changes before copying to the
 board. Choosing a Classic library instrument plays it immediately. The library
-exports and deletes installed instruments. **Save startup settings** saves current
+exports and deletes installed instruments; before a delete it lists the sounds
+that use the instrument, which then play the wavetable engine until it is sent
+again. **Save startup settings** saves current
 settings to profile 1 and respects the existing AutoSave preference.
 
 See [Classic sampler](compact-sampler.md) for supported sources, eight-voice and

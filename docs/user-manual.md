@@ -387,7 +387,7 @@ frame `1` lets a negative envelope or LFO amount move backward through the
 wavetable.
 
 Sampler presets play an imported mono instrument instead of a wavetable; the
-preset you load chooses the engine. Use HexBoard Sync's Synth → Sampler editor
+preset you load chooses the engine. Use HexBoard Sync's Synth → Instruments editor
 to convert and install your own SoundFonts or recordings: **Send to HexBoard**
 installs the instrument and saves a sound for it (in `Instruments` unless you
 choose another folder), and `Save Sound` on the HexBoard also keeps the
@@ -395,7 +395,9 @@ instrument that is playing. Instruments installed before this firmware get a
 sound each in `Instruments` the first time `Sounds` opens; the HexBoard counts
 `Adding sounds` while it does this once. In the `Sounds` list, a small wave icon
 marks wavetable sounds and a sample icon marks sampler sounds; the diamond on
-the right marks the loaded sound.
+the right marks the loaded sound. Sync's **New sampler sound** makes more
+sounds for an installed instrument, and Sync edits sampler sounds with the same
+controls as the board.
 
 With a sampler preset loaded, the `Synth` page shows `Inst: <name>` (fixed by
 the preset), and hides the wavetable, `WT Pos`, `Wheel FX`, `FX Env` and `LFO`

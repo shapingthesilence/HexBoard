@@ -27,10 +27,22 @@ export function ClassicSamplerLibrary({ transport, revision, download, locked = 
       <button disabled={unavailable} onClick={()=>void refresh()}>Refresh library</button>
       <button disabled={unavailable||active===127} onClick={()=>void perform(async()=>{await client!.select(127);setActive(127);})}>Use wavetable engine</button>
       <button disabled={unavailable||!entries.length} onClick={()=>void perform(async()=>{const e=entries.find(e=>e.id===slot)!;download(await client!.read(slot),`${e.name.replace(/[\\/:*?"<>|]/g,"_")}.hbc`);})}>Export selected</button>
-      <button disabled={unavailable||!entries.length} onClick={()=>void perform(async()=>{await client!.remove(slot);await refresh();})}>Delete selected</button>
+      <button disabled={unavailable||!entries.length} onClick={()=>void perform(async()=>{
+        const entry=entries.find(e=>e.id===slot)!, users=await client!.soundsUsing(entry.name);
+        if(!window.confirm(deleteMessage(entry.name,users)))return;
+        await client!.remove(slot);await refresh();})}>Delete selected</button>
     </div>
     <p className="panel-note">Choose an instrument to play it immediately. Save startup settings stores your current settings in profile 1 without changing AutoSave.</p>
     {active!==127&&<p role="status">Sampler active: {entries.find(e=>e.id===active)?.name??`slot ${active+1}`}</p>}
     {error&&<p role="alert">{error}</p>}
   </fieldset>;
+}
+
+/** Sounds keep their reference: they play the wavetable engine until the instrument is sent again. */
+export function deleteMessage(name: string, users: readonly string[]): string {
+  if (!users.length) return `Delete “${name}” from the HexBoard? This cannot be undone.`;
+  const shown = users.slice(0, 6).map((user) => `• ${user}`).join("\n");
+  const more = users.length > 6 ? `\n• …and ${users.length - 6} more` : "";
+  return `${users.length} sound${users.length === 1 ? " uses" : "s use"} “${name}”:\n\n${shown}${more}\n\n`
+    + `They stay on the HexBoard but show “Upload instrument” and play the wavetable engine until you send “${name}” again. Delete it anyway?`;
 }
