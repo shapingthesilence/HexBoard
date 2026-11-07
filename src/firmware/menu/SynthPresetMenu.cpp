@@ -49,7 +49,7 @@ char synthPresetMenuCurrentFolder[SYNTH_PRESET_FOLDER_LENGTH] = "/";
 // The Favorites view lists favorite presets from every folder.
 bool synthPresetMenuShowingFavorites = false;
 // The list menu reads these through pointers, so they can change in place.
-char synthPresetMenuTitleText[16] = "Load Preset";
+char synthPresetMenuTitleText[16] = "Sounds";
 char synthPresetMenuEmptyText[16] = "Blank";
 
 // Rows: Favorites (Load, root only), action, subfolders, presets, then an
@@ -65,9 +65,9 @@ enum class SynthPresetMenuRowKind : uint8_t {
 void updateSynthPresetMenuText() {
   const bool save = activeSynthPresetMenuMode == SynthPresetMenuMode::Save;
   snprintf(synthPresetMenuTitleText, sizeof(synthPresetMenuTitleText), "%s",
-           save ? "Save Preset" : (synthPresetMenuShowingFavorites ? "Favorites" : "Load Preset"));
+           save ? "Save Sound" : (synthPresetMenuShowingFavorites ? "Favorites" : "Sounds"));
   snprintf(synthPresetMenuEmptyText, sizeof(synthPresetMenuEmptyText), "%s",
-           save ? "No Presets" : (synthPresetMenuShowingFavorites ? "No Favorites" : "Blank"));
+           save ? "No Sounds" : (synthPresetMenuShowingFavorites ? "No Favorites" : "Blank"));
 }
 
 bool synthPresetMenuHasFavoritesRow() {
@@ -182,7 +182,7 @@ bool synthPresetVirtualLabel(void*, uint16_t index, char* output, size_t outputL
       snprintf(output,
                outputLength,
                "%s",
-               activeSynthPresetMenuMode == SynthPresetMenuMode::Save ? "New Preset" : "Blank");
+               activeSynthPresetMenuMode == SynthPresetMenuMode::Save ? "New Sound" : "Blank");
       return true;
     case SynthPresetMenuRowKind::Folder:
       synthPresetFolderLabel(synthPresetMenuSubfolders[itemIndex], output, outputLength);
@@ -315,6 +315,9 @@ void openSynthPresetMenu(SynthPresetMenuMode mode, SynthPresetMenuReturn destina
   // After a firmware-only update, build the index on first use. This writes
   // flash once and then makes every folder load a single sequential read.
   ensureSynthPresetCatalogIndexed(false);
+  if (mode == SynthPresetMenuMode::Load) {
+    addSoundsForInstalledInstruments();
+  }
   snprintf(synthPresetMenuCurrentFolder, sizeof(synthPresetMenuCurrentFolder), "%s", SYNTH_PRESET_ROOT_FOLDER);
   synthPresetMenuShowingFavorites = false;
   rebuildSynthPresetVirtualList();

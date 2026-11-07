@@ -14,10 +14,11 @@ source layers need a rendered adaptation and can exceed Classic capacity.
 
 Importing or editing automatically prepares the Classic instrument. Compare
 **Original recordings** and **Converted for HexBoard** on the audition keyboard.
-**Send to HexBoard** installs and selects the current prepared instrument;
-**Send and save preset** also saves a sampler preset that plays it, using the
-preset name (23 characters) and folder fields beside it; saving the same name
-in the same folder again updates that preset. **Save HBC file** downloads it. Sending and export wait for preparation to finish.
+**Send to HexBoard** installs and selects the current prepared instrument and
+saves a sampler sound that plays it, using the sound name (23 characters,
+default the instrument name) and folder (default `Instruments`) fields beside
+it; sending again with the same name and folder updates that sound.
+**Save HBC file** downloads it. Sending and export wait for preparation to finish.
 Envelope edits reuse the fitted samples for immediate audition. Sample edits wait
 for their new conversion. Browser interpolation and output
 protection differ from the board, so compare on the device too. Existing slots
@@ -36,8 +37,11 @@ sample-level zoom, zero-crossing tools, length locking, crossfades and tuning.
 
 On the board, the loaded synth preset chooses the engine: a sampler preset names
 an installed instrument, and any other preset uses the wavetable engine. Sending
-an instrument from the browser plays it immediately; **Save Preset** on the board
-then stores a sampler preset for it. Changes briefly mute playback and clear
+an instrument from the browser plays it and saves its sound; **Save Sound** on
+the board also stores the instrument that is playing. Once per board, the first
+time `Sounds` opens, every installed instrument that no sound uses gets one in
+`Instruments` (then `Instruments 2`, ...); `/sampler/sounds.done` records that
+this ran, so deleted sounds are not recreated. Changes briefly mute playback and clear
 voices. Keys held through the change require a fresh press. Tuning, layout,
 pitch bend, the board arpeggiator, volume and jack/piezo routing remain available.
 Sampler envelopes come from the converted instrument; wavetable envelope/LFO

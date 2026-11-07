@@ -30,3 +30,6 @@ void normalizeSynthPresetFolderPath(char* folderPath, size_t folderPathLength);
 void normalizeSynthPresetValues(SynthPresetSlot& preset);
 void normalizeSynthPresetMetadata(SynthPresetSlot& preset, uint16_t fallbackIndex);
 void generateSynthPresetObjectId(SynthPresetSlot& preset, uint16_t fallbackIndex);
+// Once per board: gives every installed sampler instrument without a sound one
+// in "Instruments" (then "Instruments 2", ...). Writes flash; never at boot.
+void addSoundsForInstalledInstruments();

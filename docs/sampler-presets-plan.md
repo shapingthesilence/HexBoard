@@ -97,6 +97,15 @@ boards updating from released firmware hold at most 128 presets.
 - Sync's Classic sampler editor has **Send and save preset**: install, select
   and save a sampler preset in one step, without touching the board.
 
+## Done: Sounds
+
+- The board calls presets **sounds**: `Sound:<name>`, the `Sounds` list and
+  `Save Sound`, whichever engine a sound uses.
+- Sync's **Send to HexBoard** always saves a sound for the instrument (default
+  folder `Instruments`); the separate save button is gone.
+- Once per board, opening `Sounds` gives every installed instrument without a
+  sound one in `Instruments`; `/sampler/sounds.done` keeps it from repeating.
+
 ## Phase 4 — Classic Sampler Runtime
 
 1. **Vibrato.** Apply a shared pitch LFO to sampler voice increments once per

@@ -525,7 +525,7 @@ void showMissingSamplerInstrumentNotice(const char* instrumentName) {
 void showSynthPresetSaveRefusedNotice(const char* reason, const char* detail,
                                       const char* advice, const char* adviceDetail) {
   const DisplayNoticeLine lines[] = {
-    {"Preset not saved", 17},
+    {"Sound not saved", 17},
     {reason, 46},
     {detail, 63},
     {advice, 87},
@@ -599,8 +599,8 @@ bool servicePresetSyncTransfer() {
 char mainTuningMenuLabel[40] = "Tuning";
 char mainLayoutMenuLabel[40] = "Layout";
 char mainScaleMenuLabel[40] = "Scale";
-char mainSynthPresetMenuLabel[48] = "Synth:Current";
-char synthPresetMenuLabel[48] = "Preset:Current";
+char mainSynthPresetMenuLabel[48] = "Sound:Current";
+char synthPresetMenuLabel[48] = "Sound:Current";
 
 GEMPage menuPageMain("HexBoard");
 GEMPage menuPageTuning("Tuning", menuPageMain);
@@ -625,11 +625,11 @@ GEMPage menuPageSynthFx1("FX Env 1", menuPageSynth);
 GEMItem menuGotoSynthFx1("FX Env 1", menuPageSynthFx1);
 GEMPage menuPageSynthFx2("FX Env 2", menuPageSynth);
 GEMItem menuGotoSynthFx2("FX Env 2", menuPageSynthFx2);
-GEMPage menuPageSynthPresetSave("Save Preset", menuPageSynth);
-GEMItem menuGotoSynthPresetSave("Save Preset", menuPageSynthPresetSave);
-GEMPage menuPageMainSynthPresetLoad("Load Preset", menuPageMain);
+GEMPage menuPageSynthPresetSave("Save Sound", menuPageSynth);
+GEMItem menuGotoSynthPresetSave("Save Sound", menuPageSynthPresetSave);
+GEMPage menuPageMainSynthPresetLoad("Sounds", menuPageMain);
 GEMItem menuGotoMainSynthPresetLoad(mainSynthPresetMenuLabel, menuPageMainSynthPresetLoad);
-GEMPage menuPageSynthPresetLoad("Load Preset", menuPageSynth);
+GEMPage menuPageSynthPresetLoad("Sounds", menuPageSynth);
 GEMItem menuGotoSynthPresetLoad(synthPresetMenuLabel, menuPageSynthPresetLoad);
 GEMPage menuPageOptions("Settings", menuPageMain);
 GEMItem menuGotoOptions("Settings", menuPageOptions);
@@ -2847,12 +2847,12 @@ void updateMainMenuDynamicLabels() {
            current.scale().name ? current.scale().name : "Current");
   snprintf(mainSynthPresetMenuLabel,
            sizeof(mainSynthPresetMenuLabel),
-           "Synth:%s%s",
+           "Sound:%s%s",
            currentSynthPresetRuntimeModified() ? "*" : "",
            currentSynthPresetDisplayName());
   snprintf(synthPresetMenuLabel,
            sizeof(synthPresetMenuLabel),
-           "Preset:%s%s",
+           "Sound:%s%s",
            currentSynthPresetRuntimeModified() ? "*" : "",
            currentSynthPresetDisplayName());
 }
@@ -2890,12 +2890,12 @@ bool virtualListLauncherLabelParts(GEMItem* item,
   } else if (item == &menuGotoMainSynthPresetLoad) {
     label = mainSynthPresetMenuLabel;
     labelLength = sizeof(mainSynthPresetMenuLabel);
-    prefix = currentSynthPresetRuntimeModified() ? "Synth:*" : "Synth:";
+    prefix = currentSynthPresetRuntimeModified() ? "Sound:*" : "Sound:";
     value = currentSynthPresetDisplayName();
   } else if (item == &menuGotoSynthPresetLoad) {
     label = synthPresetMenuLabel;
     labelLength = sizeof(synthPresetMenuLabel);
-    prefix = currentSynthPresetRuntimeModified() ? "Preset:*" : "Preset:";
+    prefix = currentSynthPresetRuntimeModified() ? "Sound:*" : "Sound:";
     value = currentSynthPresetDisplayName();
   } else if (item == &menuGotoSynthWavetableLoad) {
     label = currentSynthWavetableMenuLabel;

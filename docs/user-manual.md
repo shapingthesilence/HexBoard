@@ -122,7 +122,7 @@ The main menu includes:
 - `Tuning:<current>`
 - `Layout:<current>`
 - `Scale:<current>`
-- `Synth:<current preset>`
+- `Sound:<current sound>`
 - `Lights & Colors`
 - `Transpose`
 - `Editor`
@@ -135,9 +135,10 @@ above `Settings`. For sequencer information, see the
 include `File Management` -> `USB Backup` for
 using the desktop HexBoard Backup GUI with saved `.hbseq` sequences.
 
-`Synth:<current preset>` opens the synth preset load menu from the top level.
-If the current synth sound has changed since the loaded preset was selected or
-saved, the preset name is shown with a leading `*`.
+`Sound:<current sound>` opens the `Sounds` list from the top level. Sounds are
+the HexBoard's saved synth presets, whether they play a wavetable or a sampler
+instrument. If the current sound has changed since it was loaded or saved, its
+name is shown with a leading `*`.
 Library browsers use arrows for folders and actions, and a diamond marks the
 loaded item. Long names scroll when you leave the selection on them.
 
@@ -304,8 +305,8 @@ Options include:
 - `Tempo`
 - `Metronome`
 - `Time Sig`
-- `Preset:<current preset>`
-- `Save Preset`
+- `Sound:<current sound>`
+- `Save Sound`
 
 On hardware `V1.1`, the onboard synth plays through the piezo buzzer when the
 synth is active. There is no headphone-jack output path and no `Buzzer` menu
@@ -387,11 +388,14 @@ wavetable.
 
 Sampler presets play an imported mono instrument instead of a wavetable; the
 preset you load chooses the engine. Use HexBoard Sync's Synth → Sampler editor
-to convert and install your own SoundFonts or recordings: **Send and save
-preset** installs the instrument and saves a preset for it in one step, and
-`Save Preset` on the HexBoard also keeps the instrument that is playing.
-In preset lists, a small wave icon marks wavetable presets and a sample icon
-marks sampler presets; the diamond on the right marks the loaded preset.
+to convert and install your own SoundFonts or recordings: **Send to HexBoard**
+installs the instrument and saves a sound for it (in `Instruments` unless you
+choose another folder), and `Save Sound` on the HexBoard also keeps the
+instrument that is playing. Instruments installed before this firmware get a
+sound each in `Instruments` the first time `Sounds` opens; the HexBoard counts
+`Adding sounds` while it does this once. In the `Sounds` list, a small wave icon
+marks wavetable sounds and a sample icon marks sampler sounds; the diamond on
+the right marks the loaded sound.
 
 With a sampler preset loaded, the `Synth` page shows `Inst: <name>` (fixed by
 the preset), and hides the wavetable, `WT Pos`, `Wheel FX`, `FX Env` and `LFO`
@@ -481,15 +485,15 @@ the modulation direction, and `Off` disables it.
 `Time Sig` sets the metronome accent cycle and beat length. The first beat of
 each measure is accented.
 
-The top-level `Synth:<preset>` item and the `Preset:<preset>` item inside
-`Editor` -> `Synth` both open synth preset load lists. The library holds up to
+The top-level `Sound:<sound>` item and the `Sound:<sound>` item inside
+`Editor` -> `Synth` both open the `Sounds` list. The library holds up to
 `512` named presets in up to `32` folders, with up to `32` presets in each
 folder. Saving into a full folder or a full library is refused. Each settings profile remembers its selected
 synth preset or `Blank` state. Auto-save and manual profile saves also preserve
 unsaved synth edits without overwriting the named preset, so the preset label
 can still show as modified after restart. On
-the device, presets appear in a folder browser; `New Preset` saves into
-the currently open folder. In the load list, `Favorites` is always the first
+the device, sounds appear in a folder browser; `Save Sound` -> `New Sound` saves
+into the currently open folder. In the load list, `Favorites` is always the first
 item. It lists presets marked as favorites in HexBoard Sync from every folder
 (up to `32`); press back to return to the folders. The browser shows the first `23` characters of each
 name. After a firmware-only update, the first time the preset list opens the
@@ -517,12 +521,13 @@ bulk library file, or both in one file selection. Before a batch import or copy,
 the app lists how many existing destination presets will be replaced and waits
 for confirmation.
 
-The load list also includes `Blank`. Loading from the top-level `Synth` item
+The load list also includes `Blank`. Loading from the top-level `Sound` item
 returns to the main menu; loading or saving from `Editor` -> `Synth` returns to
 `Synth`. Loading a preset changes only the current synth parameters and
 wavetable reference, which can still be preserved by profile auto-save. The
 currently loaded catalog preset shows a diamond in the left
-action-icon slot when it appears in the load list; `Blank`, `New Preset`, and
+action-icon slot when it appears in the load list (on the right edge for rows
+with an engine icon); `Blank`, `New Sound`, and
 the unselected `Current` state are not marked.
 
 Short `Attack` feels immediate. Long `Attack` fades in. `Hold` keeps the initial

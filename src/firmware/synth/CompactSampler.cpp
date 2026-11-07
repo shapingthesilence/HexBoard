@@ -29,6 +29,7 @@ uint8_t loadedSlot = 255;
 char requestedName[32] = {};
 uint8_t envelopeOverride = 0;
 static_assert(CompactSampler::kSlots < 127, "slot 127 means the wavetable engine on the wire");
+static_assert(COMPACT_SAMPLER_SLOT_COUNT == CompactSampler::kSlots, "slot count must match the codec");
 // Name hashes of installed instruments, so a lookup by name opens only the
 // matching slot's file. Rebuilt lazily after any install or delete.
 uint32_t slotNameHashes[CompactSampler::kSlots] = {};

@@ -120,9 +120,9 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
   const classic = target === "classic";
   const compactClient = useMemo(() => classic && transport ? new ClassicSamplerClient(transport) : undefined, [classic, transport]);
   const [libraryRevision, setLibraryRevision] = useState(0);
-  // Classic: the sampler preset saved with "Send and save preset".
+  // Classic: every instrument sent to the HexBoard is saved as a sound.
   const [presetName, setPresetName] = useState("");
-  const [presetFolder, setPresetFolder] = useState("Samplers");
+  const [presetFolder, setPresetFolder] = useState("Instruments");
   const [presetStatus, setPresetStatus] = useState("");
   const [preparationMessage, setPreparationMessage] = useState("");
   const [preparationError, setPreparationError] = useState("");
@@ -550,10 +550,10 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
           setLibraryRevision(n=>n+1);
           setPresetStatus("");
           if (savePreset) {
-            setBusy("Saving preset…");
+            setBusy("Saving sound…");
             const instrumentName = instrumentNameFromHbc(result.bytes);
             const saved = await compactClient.savePreset({ name: presetName || instrumentName, folderPath: presetFolder, instrumentName });
-            setPresetStatus(`Saved preset “${saved.name}” in ${saved.folderPath === "/" ? "the root folder" : saved.folderPath} on HexBoard.`);
+            setPresetStatus(`Saved sound “${saved.name}” in ${saved.folderPath === "/" ? "the root folder" : saved.folderPath} on HexBoard.`);
           }
         } else download(result.bytes, filename(patch.name ?? "Instrument"));
         return;
@@ -1282,13 +1282,12 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
         </div>
         <div className="sampler-fields">
           {preparationError && <button disabled={!!busy} onClick={() => setPreparationRevision(value => value + 1)}>Retry conversion</button>}
-          <button className={prepared ? "primary" : ""} disabled={!transport || !prepared || !!busy} onClick={() => void exportPatch(true)}>Send to HexBoard</button>
+          <button className={prepared ? "primary" : ""} disabled={!transport || !prepared || !!busy} onClick={() => void exportPatch(true, false, true)}>Send to HexBoard</button>
           <button disabled={!prepared || !!busy} onClick={() => void exportPatch()}>Save HBC file</button>
         </div>
-        <div className="sampler-fields" aria-label="Save as HexBoard preset">
-          <label>Preset name<input aria-label="HexBoard preset name" value={presetName} placeholder={patch.name ?? "Instrument"} maxLength={HEXBOARD_PRESET_NAME_MAX_BYTES} onChange={e=>setPresetName(e.target.value)}/></label>
-          <label>Folder<input aria-label="HexBoard preset folder" value={presetFolder} maxLength={47} placeholder="Root" onChange={e=>setPresetFolder(e.target.value)}/></label>
-          <button disabled={!transport || !prepared || !!busy} onClick={() => void exportPatch(true, false, true)}>Send and save preset</button>
+        <div className="sampler-fields" aria-label="HexBoard sound">
+          <label>Sound name<input aria-label="HexBoard sound name" value={presetName} placeholder={patch.name ?? "Instrument"} maxLength={HEXBOARD_PRESET_NAME_MAX_BYTES} onChange={e=>setPresetName(e.target.value)}/></label>
+          <label>Folder<input aria-label="HexBoard sound folder" value={presetFolder} maxLength={47} placeholder="Root" onChange={e=>setPresetFolder(e.target.value)}/></label>
         </div>
         {presetStatus && <p role="status">{presetStatus}</p>}
       </section>}

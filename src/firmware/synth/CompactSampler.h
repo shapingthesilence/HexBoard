@@ -21,6 +21,7 @@ uint8_t compactSamplerEnvelopeOverride();
 void setCompactSamplerEnvelopeOverride(uint8_t mask);
 void syncCompactSamplerSelection();
 void applyMigratedCompactSamplerSelection();
+constexpr uint8_t COMPACT_SAMPLER_SLOT_COUNT = 64;
 bool compactSamplerFileInfo(uint8_t slot, char* name, size_t capacity, uint32_t& bytes);
 bool installCompactSampler(const char* stagedPath, uint16_t slot);
 bool deleteCompactSampler(uint8_t slot);

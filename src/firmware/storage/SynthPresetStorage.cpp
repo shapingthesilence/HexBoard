@@ -693,11 +693,11 @@ void showBoardSaveRefusal(SynthPresetStoreResult result) {
   switch (result) {
     case SynthPresetStoreResult::FolderFull:
       reason = "Folder is full";
-      snprintf(detail, sizeof(detail), "%u presets per folder", static_cast<unsigned>(SYNTH_PRESET_FOLDER_MAX_PRESETS));
+      snprintf(detail, sizeof(detail), "%u sounds per folder", static_cast<unsigned>(SYNTH_PRESET_FOLDER_MAX_PRESETS));
       break;
     case SynthPresetStoreResult::LibraryFull:
       reason = "Library is full";
-      snprintf(detail, sizeof(detail), "%u presets maximum", static_cast<unsigned>(SYNTH_PRESET_MAX_COUNT));
+      snprintf(detail, sizeof(detail), "%u sounds maximum", static_cast<unsigned>(SYNTH_PRESET_MAX_COUNT));
       break;
     case SynthPresetStoreResult::TooManyFolders:
       reason = "Too many folders";
@@ -741,7 +741,7 @@ void saveSynthPresetAsNew(const char* folderPath) {
   }
   SynthPresetSlot preset = {};
   captureCurrentSynthPreset(preset);
-  snprintf(preset.name, sizeof(preset.name), "Preset %u", static_cast<unsigned>(count + 1));
+  snprintf(preset.name, sizeof(preset.name), "Sound %u", static_cast<unsigned>(count + 1));
   snprintf(preset.folderPath, sizeof(preset.folderPath), "%s", folderPath && folderPath[0] ? folderPath : SYNTH_PRESET_ROOT_FOLDER);
   normalizeSynthPresetMetadata(preset, count);
   // A new preset must not reuse another preset's id (and file).
@@ -811,4 +811,100 @@ void loadSynthPresetFromSlot(uint16_t presetIndex) {
     showMissingWavetableNotice(missingName);
   }
   sendToLog("Loaded synth preset " + std::string(preset.name));
+}
+
+namespace {
+constexpr char INSTRUMENT_SOUNDS_MARKER_PATH[] = "/sampler/sounds.done";
+constexpr char INSTRUMENT_SOUNDS_FOLDER[] = "Instruments";
+
+// The first "Instruments", "Instruments 2", ... folder with room for one more.
+bool instrumentSoundsFolder(char* folder, size_t folderLength) {
+  for (unsigned n = 1; n <= SYNTH_PRESET_FOLDER_MAX_COUNT; ++n) {
+    if (n == 1) {
+      snprintf(folder, folderLength, "%s", INSTRUMENT_SOUNDS_FOLDER);
+    } else {
+      snprintf(folder, folderLength, "%s %u", INSTRUMENT_SOUNDS_FOLDER, n);
+    }
+    if (synthPresetCatalogMatchCount(folder) < SYNTH_PRESET_FOLDER_MAX_PRESETS) {
+      return true;
+    }
+  }
+  return false;
+}
+}  // namespace
+
+void addSoundsForInstalledInstruments() {
+  if (!fileSystemExists || !LittleFS.exists("/sampler") || LittleFS.exists(INSTRUMENT_SOUNDS_MARKER_PATH)
+      || !ensureSynthPresetCatalogIndexed(false)) {
+    return;
+  }
+  // Instruments some sound already plays.
+  uint64_t covered = 0;
+  auto markCovered = [&](const SynthPresetCatalogEntry& entry) {
+    SynthPresetSlot preset = {};
+    uint8_t slot = 0;
+    if (synthPresetCatalogEntryIsSampler(entry)
+        && readSynthPresetFileByObjectId(entry.objectId, preset)
+        && compactSamplerSlotForName(preset.samplerName, slot)) {
+      covered |= uint64_t(1) << slot;
+    }
+    return true;
+  };
+  visitSynthPresetCatalogWith(markCovered);
+  uint64_t missing = 0;
+  uint16_t total = 0;
+  for (uint8_t slot = 0; slot < COMPACT_SAMPLER_SLOT_COUNT; ++slot) {
+    char name[SYNTH_PRESET_NAME_LENGTH] = {};
+    uint32_t bytes = 0;
+    if (!(covered & (uint64_t(1) << slot)) && compactSamplerFileInfo(slot, name, sizeof(name), bytes)) {
+      missing |= uint64_t(1) << slot;
+      ++total;
+    }
+  }
+
+  uint16_t added = 0;
+  if (total > 0) {
+    beginFlashSafeWrite();
+    for (uint8_t slot = 0; slot < COMPACT_SAMPLER_SLOT_COUNT; ++slot) {
+      if (!(missing & (uint64_t(1) << slot))) {
+        continue;
+      }
+      showFlashSaveProgress("Adding sounds", added, total);
+      SynthPresetSlot preset = {};
+      uint32_t bytes = 0;
+      if (!compactSamplerFileInfo(slot, preset.samplerName, sizeof(preset.samplerName), bytes)
+          || !instrumentSoundsFolder(preset.folderPath, sizeof(preset.folderPath))) {
+        break;
+      }
+      preset.valid = 1;
+      for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
+        preset.values[i] = factoryDefaults[static_cast<uint8_t>(synthPresetKeys[i])];
+      }
+      snprintf(preset.name, sizeof(preset.name), "%s", preset.samplerName);
+      normalizeSynthPresetValues(preset);
+      normalizeSynthPresetMetadata(preset, synthPresetCatalogCount());
+      uint16_t existing = 0;
+      uint16_t salt = synthPresetCatalogCount();
+      for (uint8_t attempt = 0; attempt < 8 && findSynthPresetCatalogHandle(preset.objectId, existing); ++attempt) {
+        generateSynthPresetObjectId(preset, ++salt);
+      }
+      uint16_t storedHandle = 0;
+      const SynthPresetStoreResult result =
+        storeSynthPresetInCatalog(SYNTH_PRESET_CATALOG_NEW_HANDLE, preset, storedHandle);
+      if (result != SynthPresetStoreResult::Stored) {
+        sendToLog(synthPresetStoreResultMessage(result));
+        break;
+      }
+      ++added;
+    }
+    showFlashSaveProgress("Adding sounds", added, total);
+    endFlashSafeWrite();
+  }
+  // Once only: later instruments get their sound when HexBoard Sync sends
+  // them, and a sound the user deletes is not recreated.
+  File marker = LittleFS.open(INSTRUMENT_SOUNDS_MARKER_PATH, "w");
+  if (marker) {
+    marker.close();
+  }
+  sendToLog("Added sounds for installed instruments (" + std::to_string(added) + "/" + std::to_string(total) + ").");
 }
