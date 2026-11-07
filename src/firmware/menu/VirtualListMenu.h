@@ -24,6 +24,9 @@ struct VirtualListMenuProvider {
   void (*close)(void* context) = nullptr;
   const char* emptyLabel = "";
   bool (*getValue)(void*, uint16_t, char*, size_t) = nullptr;
+  // Button rows with an icon draw it at the left; the current-row diamond
+  // then moves to the right edge. Icons are 6x8 XBM sprites.
+  const unsigned char* (*getIcon)(void* context, uint16_t index) = nullptr;
   void (*adjust)(void*, uint16_t, int) = nullptr;
 };
 

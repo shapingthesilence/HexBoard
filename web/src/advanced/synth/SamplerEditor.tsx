@@ -11,7 +11,8 @@ import type { LoopCandidate } from "./sampler/analysis.ts";
 import { useTuningTargets } from "../../editor/tuningTargets.ts";
 import { readCompactPatch, compactLimits } from "./sampler/compact.mjs";
 import { ClassicSamplerLibrary } from "./sampler/ClassicSamplerLibrary.tsx";
-import { ClassicSamplerClient } from "./sampler/classicClient.ts";
+import { ClassicSamplerClient, instrumentNameFromHbc } from "./sampler/classicClient.ts";
+import { HEXBOARD_PRESET_NAME_MAX_BYTES } from "../../catalogs/hexboardPresetCapacity.ts";
 import {
   useEffect,
   useMemo,
@@ -119,6 +120,10 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
   const classic = target === "classic";
   const compactClient = useMemo(() => classic && transport ? new ClassicSamplerClient(transport) : undefined, [classic, transport]);
   const [libraryRevision, setLibraryRevision] = useState(0);
+  // Classic: the sampler preset saved with "Send and save preset".
+  const [presetName, setPresetName] = useState("");
+  const [presetFolder, setPresetFolder] = useState("Samplers");
+  const [presetStatus, setPresetStatus] = useState("");
   const [preparationMessage, setPreparationMessage] = useState("");
   const [preparationError, setPreparationError] = useState("");
   const [preparationRevision, setPreparationRevision] = useState(0);
@@ -524,7 +529,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
       setBusy("");
     }
   }
-  async function exportPatch(usb = false, prepareOnly = false) {
+  async function exportPatch(usb = false, prepareOnly = false, savePreset = false) {
     if (!patch.assets.length) return;
     const preparingPatch = patch;
     setBusy(classic ? "Preparing instrument…" : "Preparing pitch protection…");
@@ -543,6 +548,13 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
           const slot = await compactClient.upload(result.bytes, (n,total)=>setBusy(`Copying instrument · ${Math.round(n/total*100)}%`));
           await compactClient.select(slot);
           setLibraryRevision(n=>n+1);
+          setPresetStatus("");
+          if (savePreset) {
+            setBusy("Saving preset…");
+            const instrumentName = instrumentNameFromHbc(result.bytes);
+            const saved = await compactClient.savePreset({ name: presetName || instrumentName, folderPath: presetFolder, instrumentName });
+            setPresetStatus(`Saved preset “${saved.name}” in ${saved.folderPath === "/" ? "the root folder" : saved.folderPath} on HexBoard.`);
+          }
         } else download(result.bytes, filename(patch.name ?? "Instrument"));
         return;
       }
@@ -1273,6 +1285,12 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
           <button className={prepared ? "primary" : ""} disabled={!transport || !prepared || !!busy} onClick={() => void exportPatch(true)}>Send to HexBoard</button>
           <button disabled={!prepared || !!busy} onClick={() => void exportPatch()}>Save HBC file</button>
         </div>
+        <div className="sampler-fields" aria-label="Save as HexBoard preset">
+          <label>Preset name<input aria-label="HexBoard preset name" value={presetName} placeholder={patch.name ?? "Instrument"} maxLength={HEXBOARD_PRESET_NAME_MAX_BYTES} onChange={e=>setPresetName(e.target.value)}/></label>
+          <label>Folder<input aria-label="HexBoard preset folder" value={presetFolder} maxLength={47} placeholder="Root" onChange={e=>setPresetFolder(e.target.value)}/></label>
+          <button disabled={!transport || !prepared || !!busy} onClick={() => void exportPatch(true, false, true)}>Send and save preset</button>
+        </div>
+        {presetStatus && <p role="status">{presetStatus}</p>}
       </section>}
       {(error || preparationError) && <p className="sampler-error" role="alert">{error || preparationError}</p>}
       {setupOpen&&<InstrumentSetup patch={patch} classic={classic} design={sustainDesign} cycles={loopCycles} mode={template} onClose={()=>setSetupOpen(false)} onApply={(next,design,cycles,mode)=>{preview.current!.clear();const zones=mode!==template?(mode==="instrument"?automatic(next.assets):mappedZones(assignSequentially(next.assets.length),next.assets.length)):next.zones;edit({...next,zones});setTemplate(mode);setSustainDesign(design);setLoopCycles(cycles);if(mode!==template)setWorkspaceView(mode==="instrument"?"sample":"mapping");}}/>}

@@ -1448,7 +1448,9 @@ encoding. `ascii` is one u7 byte count followed by at most 31 ASCII bytes.
 | Delete | `3, slot:u7` | `3, slot:u7` |
 | Save startup settings | `4` | `4` |
 
-Slots are 0–31. Selection/status value 127 denotes the wavetable engine. Empty
+Current firmware has slots 0–63; slot info for a slot past the last one is
+NACKed, which hosts use to find the slot count. Selection/status value 127
+denotes the wavetable engine. Empty
 slot info reports `exists=0`, zero bytes and an empty name. Status reports limits,
 not the current patch's counts. Invalid requests use normal NACKs. Operations
 are busy during read/write transfers or the explicit audio benchmark. Select makes

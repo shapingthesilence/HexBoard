@@ -27,6 +27,8 @@ constexpr uint16_t SYNTH_PRESET_HANDLE_STRIDE = 256;
 constexpr uint16_t SYNTH_PRESET_CATALOG_NEW_HANDLE = 0xFFFFu;
 
 constexpr uint8_t SYNTH_PRESET_CATALOG_FLAG_FAVORITE = 0x01;
+constexpr uint8_t SYNTH_PRESET_CATALOG_ENGINE_MASK = 0x0E;
+constexpr uint8_t SYNTH_PRESET_CATALOG_ENGINE_SAMPLER = 0x02;
 
 struct SynthPresetCatalogEntry {
   uint16_t handle = 0;
@@ -35,6 +37,10 @@ struct SynthPresetCatalogEntry {
   char name[SYNTH_PRESET_NAME_LENGTH] = {};
   char folderPath[SYNTH_PRESET_FOLDER_LENGTH] = {};
 };
+
+inline bool synthPresetCatalogEntryIsSampler(const SynthPresetCatalogEntry& entry) {
+  return (entry.flags & SYNTH_PRESET_CATALOG_ENGINE_MASK) == SYNTH_PRESET_CATALOG_ENGINE_SAMPLER;
+}
 
 // Return false to stop visiting.
 using SynthPresetCatalogVisitor = bool (*)(void* context, const SynthPresetCatalogEntry& entry);

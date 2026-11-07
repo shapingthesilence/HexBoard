@@ -2563,12 +2563,113 @@ void previewPBSpeed(GEMPreviewCallbackData previewData) {
   pbWheelSpeed = previewData.previewValInt;
 }
 
+// --- Sampler presets -------------------------------------------------------
+// The instrument is fixed by the preset, so it is shown read-only. Each amp
+// envelope stage offers "Inst" (the instrument's own per-region value) before
+// the usual values; choosing a value replaces that stage for every region.
+char samplerInstrumentMenuLabel[40] = "Inst:";
+void samplerInstrumentMenuAction() {}
+GEMItem menuItemSamplerInstrument(samplerInstrumentMenuLabel, samplerInstrumentMenuAction, true);
+GEMPage menuPageSamplerAmpEnv("Amp Env", menuPageSynth);
+GEMItem menuGotoSamplerAmpEnv("Amp Env", menuPageSamplerAmpEnv);
+
+constexpr uint8_t SAMPLER_ENVELOPE_INST = 255;
+constexpr uint8_t SAMPLER_ENVELOPE_STAGES = 5;
+constexpr uint8_t ENVELOPE_TIME_OPTION_COUNT = sizeof(optionByteEnvelopeTimes) / sizeof(SelectOptionByte);
+constexpr uint8_t SUSTAIN_OPTION_COUNT = sizeof(optionByteSustain) / sizeof(SelectOptionByte);
+SelectOptionByte optionByteSamplerEnvelopeTimes[ENVELOPE_TIME_OPTION_COUNT + 1];
+SelectOptionByte optionByteSamplerSustain[SUSTAIN_OPTION_COUNT + 1];
+struct InitializeSamplerEnvelopeOptions {
+  InitializeSamplerEnvelopeOptions() {
+    optionByteSamplerEnvelopeTimes[0] = { "Inst", SAMPLER_ENVELOPE_INST };
+    for (uint8_t i = 0; i < ENVELOPE_TIME_OPTION_COUNT; ++i) optionByteSamplerEnvelopeTimes[i + 1] = optionByteEnvelopeTimes[i];
+    optionByteSamplerSustain[0] = { "Inst", SAMPLER_ENVELOPE_INST };
+    for (uint8_t i = 0; i < SUSTAIN_OPTION_COUNT; ++i) optionByteSamplerSustain[i + 1] = optionByteSustain[i];
+  }
+} initializeSamplerEnvelopeOptions;
+GEMSelect selectSamplerEnvelopeTime(ENVELOPE_TIME_OPTION_COUNT + 1, optionByteSamplerEnvelopeTimes);
+GEMSelect selectSamplerSustain(SUSTAIN_OPTION_COUNT + 1, optionByteSamplerSustain);
+
+uint8_t samplerEnvelopeChoices[SAMPLER_ENVELOPE_STAGES] = {
+  SAMPLER_ENVELOPE_INST, SAMPLER_ENVELOPE_INST, SAMPLER_ENVELOPE_INST, SAMPLER_ENVELOPE_INST, SAMPLER_ENVELOPE_INST
+};
+struct SamplerEnvelopeStage {
+  uint8_t overrideBit;
+  SettingKey key;
+  uint8_t* runtimeValue;
+};
+const SamplerEnvelopeStage samplerEnvelopeStages[SAMPLER_ENVELOPE_STAGES] = {
+  { SAMPLER_ENVELOPE_OVERRIDE_ATTACK, SettingKey::EnvelopeAttackIndex, &envelopeAttackIndex },
+  { SAMPLER_ENVELOPE_OVERRIDE_HOLD, SettingKey::EnvelopeHoldIndex, &envelopeHoldIndex },
+  { SAMPLER_ENVELOPE_OVERRIDE_DECAY, SettingKey::EnvelopeDecayIndex, &envelopeDecayIndex },
+  { SAMPLER_ENVELOPE_OVERRIDE_SUSTAIN, SettingKey::EnvelopeSustainLevel, &envelopeSustainLevel },
+  { SAMPLER_ENVELOPE_OVERRIDE_RELEASE, SettingKey::EnvelopeReleaseIndex, &envelopeReleaseIndex },
+};
+
+void refreshSamplerEnvelopeChoices() {
+  const uint8_t mask = compactSamplerEnvelopeOverride();
+  for (uint8_t stage = 0; stage < SAMPLER_ENVELOPE_STAGES; ++stage) {
+    const SamplerEnvelopeStage& s = samplerEnvelopeStages[stage];
+    samplerEnvelopeChoices[stage] = (mask & s.overrideBit) ? *s.runtimeValue : SAMPLER_ENVELOPE_INST;
+  }
+}
+
+void saveSamplerEnvelopeChoice(GEMCallbackData data) {
+  const uint8_t stage = data.valByte;
+  if (stage >= SAMPLER_ENVELOPE_STAGES) {
+    return;
+  }
+  const SamplerEnvelopeStage& s = samplerEnvelopeStages[stage];
+  const uint8_t choice = samplerEnvelopeChoices[stage];
+  uint8_t mask = compactSamplerEnvelopeOverride();
+  if (choice == SAMPLER_ENVELOPE_INST) {
+    mask = static_cast<uint8_t>(mask & ~s.overrideBit);
+  } else {
+    mask = static_cast<uint8_t>(mask | s.overrideBit);
+    *s.runtimeValue = choice;
+    settings[static_cast<uint8_t>(s.key)] = choice;
+    updateEnvelopeParamsFromSettings();
+  }
+  setCompactSamplerEnvelopeOverride(mask);
+  markSettingsDirty();
+}
+
+GEMItem menuItemSamplerAttack("Attack", samplerEnvelopeChoices[0], selectSamplerEnvelopeTime, saveSamplerEnvelopeChoice, static_cast<byte>(0));
+GEMItem menuItemSamplerHold("Hold", samplerEnvelopeChoices[1], selectSamplerEnvelopeTime, saveSamplerEnvelopeChoice, static_cast<byte>(1));
+GEMItem menuItemSamplerDecay("Decay", samplerEnvelopeChoices[2], selectSamplerEnvelopeTime, saveSamplerEnvelopeChoice, static_cast<byte>(2));
+GEMItem menuItemSamplerSustain("Sustain", samplerEnvelopeChoices[3], selectSamplerSustain, saveSamplerEnvelopeChoice, static_cast<byte>(3));
+GEMItem menuItemSamplerRelease("Release", samplerEnvelopeChoices[4], selectSamplerEnvelopeTime, saveSamplerEnvelopeChoice, static_cast<byte>(4));
+
+bool synthMenuShowsSampler = false;
+
 void updateSynthMenuVisibility() {
   menuItemPortamentoTime.hide(!isMonoPlaybackMode(playbackMode));
   bool arpSelected = isArpPlaybackMode(playbackMode);
   menuItemArpNoteLength.hide(!arpSelected);
   menuItemArpSpeed.hide(!arpSelected);
   menuItemArpDirection.hide(!arpSelected);
+
+  // A sampler preset shows only the edits the sampler supports.
+  const bool sampler = compactSamplerRequestedName()[0] != '\0';
+  snprintf(samplerInstrumentMenuLabel, sizeof(samplerInstrumentMenuLabel), "Inst: %s", compactSamplerRequestedName());
+  refreshSamplerEnvelopeChoices();
+  menuItemSamplerInstrument.hide(!sampler);
+  menuGotoSamplerAmpEnv.hide(!sampler);
+  menuGotoSynthAmpEnv.hide(sampler);
+  menuGotoSynthWavetableLoad.hide(sampler);
+  menuItemSynthWavetablePosition.hide(sampler);
+  menuGotoSynthFx1.hide(sampler);
+  menuGotoSynthFx2.hide(sampler);
+  menuGotoSynthLfo.hide(sampler);
+  menuItemSynthModTarget.hide(sampler);
+  if (sampler != synthMenuShowsSampler) {
+    synthMenuShowsSampler = sampler;
+    GEMPage* page = menu.getCurrentMenuPage();
+    if (!virtualListMenuIsActive()
+        && (page == &menuPageSynth || page == &menuPageSynthAmpEnv || page == &menuPageSamplerAmpEnv)) {
+      menuSynthOptionsHome();
+    }
+  }
 }
 
 void playbackModeChanged() {
@@ -3265,6 +3366,7 @@ void setupEditorMenuPage() {
 }
 
 void setupSynthMenuPage() {
+  menuPageSynth.addMenuItem(menuItemSamplerInstrument);
   menuPageSynth.addMenuItem(menuItemPlayback);
   addPreviewMenuItem(menuPageSynth, menuItemSynthOutputVolume, previewSynthOutputVolume);
   // menuItemAudioD added here for hardware V1.2
@@ -3277,6 +3379,12 @@ void setupSynthMenuPage() {
   addPreviewMenuItem(menuPageSynth, menuItemSynthWavetablePosition, previewSynthWavetablePosition);
   addPreviewMenuItem(menuPageSynth, menuItemSynthDrive, previewSynthDrive);
   menuPageSynth.addMenuItem(menuGotoSynthAmpEnv);
+  menuPageSynth.addMenuItem(menuGotoSamplerAmpEnv);
+  menuPageSamplerAmpEnv.addMenuItem(menuItemSamplerAttack);
+  menuPageSamplerAmpEnv.addMenuItem(menuItemSamplerHold);
+  menuPageSamplerAmpEnv.addMenuItem(menuItemSamplerDecay);
+  menuPageSamplerAmpEnv.addMenuItem(menuItemSamplerSustain);
+  menuPageSamplerAmpEnv.addMenuItem(menuItemSamplerRelease);
   addPreviewMenuItem(menuPageSynthAmpEnv, menuItemEnvelopeAttack, previewEnvelopeAttack);
   addPreviewMenuItem(menuPageSynthAmpEnv, menuItemEnvelopeHold, previewEnvelopeHold);
   addPreviewMenuItem(menuPageSynthAmpEnv, menuItemEnvelopeDecay, previewEnvelopeDecay);

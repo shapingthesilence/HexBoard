@@ -1,6 +1,7 @@
 #include "CompactSampler.h"
 #include "CompactSamplerCodec.h"
 #include "SynthAudioInternal.h"
+#include "../menu/MenuAndDisplay.h"
 #include "../storage/Settings.h"
 #include "../storage/StorageHealth.h"
 #include "../storage/SynthPresetStorage.h"
@@ -27,6 +28,18 @@ std::atomic<bool> active{false};
 uint8_t loadedSlot = 255;
 char requestedName[32] = {};
 uint8_t envelopeOverride = 0;
+static_assert(CompactSampler::kSlots < 127, "slot 127 means the wavetable engine on the wire");
+// Name hashes of installed instruments, so a lookup by name opens only the
+// matching slot's file. Rebuilt lazily after any install or delete.
+uint32_t slotNameHashes[CompactSampler::kSlots] = {};
+uint64_t slotPresent = 0;
+bool slotNamesValid = false;
+uint32_t nameHash(const char* name) {
+  uint32_t hash = 2166136261u;
+  for (const char* p = name; *p; ++p) { hash ^= static_cast<uint8_t>(*p); hash *= 16777619u; }
+  return hash;
+}
+void invalidateSlotNames() { slotNamesValid = false; }
 
 void failure(const char* path, const char* stage) { reportStorageHealthIssue(path, stage); }
 uint32_t samples(uint16_t ms) { return (uint64_t(ms) * AUDIO_SAMPLE_RATE_HZ + 999) / 1000; }
@@ -107,8 +120,20 @@ void requestCompactSampler(const char* name) { snprintf(requestedName, sizeof(re
 uint8_t compactSamplerEnvelopeOverride() { return envelopeOverride; }
 void setCompactSamplerEnvelopeOverride(uint8_t mask) { envelopeOverride = mask & SAMPLER_ENVELOPE_OVERRIDE_ALL; }
 bool compactSamplerSlotForName(const char* name, uint8_t& slot) {
-  if (!name || !name[0]) return false;
+  if (!name || !name[0] || !fileSystemExists) return false;
+  if (!slotNamesValid) {
+    slotPresent = 0;
+    for (uint8_t candidate = 0; candidate < CompactSampler::kSlots; ++candidate) {
+      char installed[32] = {}; uint32_t bytes = 0;
+      if (!compactSamplerFileInfo(candidate, installed, sizeof(installed), bytes)) continue;
+      slotNameHashes[candidate] = nameHash(installed);
+      slotPresent |= uint64_t(1) << candidate;
+    }
+    slotNamesValid = true;
+  }
+  const uint32_t wanted = nameHash(name);
   for (uint8_t candidate = 0; candidate < CompactSampler::kSlots; ++candidate) {
+    if (!(slotPresent & (uint64_t(1) << candidate)) || slotNameHashes[candidate] != wanted) continue;
     char installed[32] = {}; uint32_t bytes = 0;
     if (compactSamplerFileInfo(candidate, installed, sizeof(installed), bytes) && strcmp(installed, name) == 0) { slot = candidate; return true; }
   }
@@ -160,8 +185,9 @@ bool selectCompactSampler(uint8_t slot, bool persist) {
     if (!ok) selectFallbackSynthWavetable();
     loadSelectedSynthWavetable();
   }
-  if (persist && ok) { requestCompactSampler(slot == 255 ? "" : directory.name); markSettingsDirty(); }
-  resumeWorkspace(); return ok;
+  resumeWorkspace();
+  if (persist && ok) { requestCompactSampler(slot == 255 ? "" : directory.name); markSettingsDirty(); updateSynthMenuVisibility(); }
+  return ok;
 }
 // After a version 36 settings migration, keep the boot profile playing the
 // instrument its old slot setting chose. Settings are already dirty, so the
@@ -189,6 +215,7 @@ bool installCompactSampler(const char* stagedPath, uint16_t slot) {
   if (LittleFS.exists(path)) return false; // New slots only; existing instruments survive interrupted installs.
   if (!LittleFS.exists("/sampler") && !LittleFS.mkdir("/sampler")) return false;
   if (!LittleFS.rename(stagedPath, path)) return false;
+  invalidateSlotNames();
   // Presets name instruments, so a same-named instrument is an update: the
   // older copies go once the new one is safely installed.
   bool replacedLoaded = false;
@@ -209,7 +236,8 @@ bool deleteCompactSampler(uint8_t slot) {
   if (slot >= CompactSampler::kSlots || !fileSystemExists) return false;
   if (loadedSlot == slot && !selectCompactSampler(255)) return false;
   char path[32]; compactSamplerPath(slot, path, sizeof(path));
-  beginFlashSafeWrite(); const bool ok = LittleFS.remove(path); endFlashSafeWrite(); return ok;
+  beginFlashSafeWrite(); const bool ok = LittleFS.remove(path); endFlashSafeWrite();
+  invalidateSlotNames(); return ok;
 }
 
 // Called on Core 0 before publishing attack/steal commands. Retunes preserve

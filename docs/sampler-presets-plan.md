@@ -82,16 +82,20 @@ boards updating from released firmware hold at most 128 presets.
 - The envelope mask is stored and round-trips, but playback ignores it until
   phase 4.
 
-## Phase 3 — Board Menus
+## Done: Phase 3 — Board Menus, 64 Instruments, Saving From Sync
 
-1. **Engine-aware Synth page.** With a sampler preset loaded, show:
-   `Instrument: <name>` (read-only), Volume, Drive, `Vibrato ▸` (Depth, Speed,
-   Mod wheel), `Amp Env ▸` (A/H/D/S/R with Inst as the first value), Glide,
-   Arp and Save Preset. Hide the wavetable picker, position, FX Env 1/2 and LFO.
-   Use the existing menu-visibility updates rather than a second menu tree.
-2. **Engine icons.** Add an icon callback to `VirtualListMenuProvider`, draw a
-   wavetable or sampler sprite at the row's left edge, and move the current
-   preset diamond to the right edge. Check both sprites on the real OLED.
+- With a sampler preset loaded the Synth page shows a read-only
+  `Inst: <name>` row and a sampler `Amp Env` page whose stages start at `Inst`;
+  wavetable, `WT Pos`, `Wheel FX`, FX envelopes and LFO are hidden. `Wheel Amt`
+  and `Vib Speed` stay as the vibrato controls (the planned `Vibrato ▸`
+  submenu was not needed). Hiding uses `updateSynthMenuVisibility()`.
+- Preset rows show a wavetable or sampler icon; the loaded-preset diamond moves
+  to the right edge (`VirtualListMenuProvider::getIcon`).
+- Instrument slots rose from 32 to 64. A 4-byte name hash per slot finds an
+  instrument by name without opening every file. Sync finds the board's slot
+  count from slot-info NACKs, so it works with both limits.
+- Sync's Classic sampler editor has **Send and save preset**: install, select
+  and save a sampler preset in one step, without touching the board.
 
 ## Phase 4 — Classic Sampler Runtime
 

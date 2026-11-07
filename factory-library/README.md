@@ -32,7 +32,7 @@ the preset replaces (1 attack, 2 hold, 4 decay, 8 sustain, 16 release); leave it
 
 Place Classic sampler `.hbc` files (exported from HexBoard Sync) under
 `sampler/`. The generator validates each file's sizes and CRCs and installs them
-into `/sampler/00.hbc` onward in filename order, at most 32. Instrument names come
+into `/sampler/00.hbc` onward in filename order, at most 64. Instrument names come
 from the file and must be unique, because presets refer to instruments by name.
 
 ## Wavetables

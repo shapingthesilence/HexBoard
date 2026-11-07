@@ -164,6 +164,7 @@ void drawRows() {
     } else {
       rowLabel(itemIndex, label, sizeof(label));
       bool currentRow = rowIsCurrent(itemIndex);
+      const unsigned char* icon = nullptr;
       if (providerItemCount() == 0) {
         u8g2.setCursor(5, yText);
       } else {
@@ -184,18 +185,29 @@ void drawRows() {
             break;
           case VirtualListMenuRowType::Button:
           default:
+            icon = activeProvider.getIcon ? activeProvider.getIcon(activeProvider.context, itemIndex - 1) : nullptr;
             u8g2.setCursor(11, yText);
             u8g2.drawXBMP(5,
                           yDraw,
                           VIRTUAL_LIST_SPRITE_WIDTH,
                           VIRTUAL_LIST_SPRITE_HEIGHT,
-                          currentRow ? currentDiamondBits : arrowButtonBits);
+                          icon ? icon : (currentRow ? currentDiamondBits : arrowButtonBits));
+            if (icon && currentRow) {
+              u8g2.drawXBMP(u8g2.getDisplayWidth() - 8,
+                            yDraw,
+                            VIRTUAL_LIST_SPRITE_WIDTH,
+                            VIRTUAL_LIST_SPRITE_HEIGHT,
+                            currentDiamondBits);
+            }
             break;
         }
       }
       const bool checkboxRow = rowType(itemIndex) == VirtualListMenuRowType::Checkbox;
       const bool valueRow = checkboxRow || rowType(itemIndex) == VirtualListMenuRowType::Value;
-      printMenuString(label, valueRow ? (VIRTUAL_LIST_VALUES_LEFT_OFFSET-6)/VIRTUAL_LIST_FONT_WIDTH : menuItemFullLength());
+      // Leave room for a right-edge marker beside icon rows.
+      const uint8_t labelLength = valueRow ? (VIRTUAL_LIST_VALUES_LEFT_OFFSET-6)/VIRTUAL_LIST_FONT_WIDTH
+                                           : static_cast<uint8_t>(menuItemFullLength() - (icon ? 1 : 0));
+      printMenuString(label, labelLength);
       if (checkboxRow) {
         u8g2.drawFrame(VIRTUAL_LIST_VALUES_LEFT_OFFSET, yDraw, 7, 7);
         if (activeProvider.isChecked

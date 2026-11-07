@@ -15,7 +15,9 @@ source layers need a rendered adaptation and can exceed Classic capacity.
 Importing or editing automatically prepares the Classic instrument. Compare
 **Original recordings** and **Converted for HexBoard** on the audition keyboard.
 **Send to HexBoard** installs and selects the current prepared instrument;
-**Save HBC file** downloads it. Sending and export wait for preparation to finish.
+**Send and save preset** also saves a sampler preset that plays it, using the
+preset name (23 characters) and folder fields beside it; saving the same name
+in the same folder again updates that preset. **Save HBC file** downloads it. Sending and export wait for preparation to finish.
 Envelope edits reuse the fitted samples for immediate audition. Sample edits wait
 for their new conversion. Browser interpolation and output
 protection differ from the board, so compare on the device too. Existing slots
@@ -61,7 +63,7 @@ immediately and survive firmware-only updates.
 | Mono signed PCM16 sample pool | 49,152 bytes / 24,576 frames |
 | Recordings per instrument | 16 |
 | Non-overlapping pitch/velocity regions | 32 |
-| Stored instrument slots | 32 |
+| Stored instrument slots | 64 |
 
 Recordings are shared by voices. File size also includes bounded metadata;
 the maximum complete file is 51,264 bytes. Original low sample rates are retained
@@ -120,7 +122,7 @@ rendering performs no allocation or filesystem I/O. Rotary polling continues
 while rendering is paused. Voice-freed notifications carry generation identity
 so an ended old sample cannot release a newly assigned owner.
 
-The installed files are `/sampler/00.hbc` through `/sampler/31.hbc`. Transfers
+The installed files are `/sampler/00.hbc` through `/sampler/63.hbc`. Transfers
 stream into the existing temporary-file mechanism, validate metadata and PCM,
 then rename into an unused slot. An interrupted or rejected install cannot
 replace an existing instrument. Abandoned transfers use the existing preset-sync

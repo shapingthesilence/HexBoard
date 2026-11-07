@@ -8,7 +8,7 @@
 // HBC1: bounded, native-rate mono PCM16. No Arduino or storage dependencies.
 namespace CompactSampler {
 constexpr unsigned kHeader = 64, kAsset = 32, kZone = 48;
-constexpr unsigned kAssets = 16, kZones = 32, kPcmBytes = 49152, kSlots = 32;
+constexpr unsigned kAssets = 16, kZones = 32, kPcmBytes = 49152, kSlots = 64;
 constexpr unsigned kMetadata = kHeader + kAssets * kAsset + kZones * kZone;
 constexpr unsigned kFileBytes = kMetadata + kPcmBytes;
 inline uint16_t u16(const uint8_t* p) { return p[0] | (uint16_t(p[1]) << 8); }

@@ -387,8 +387,17 @@ wavetable.
 
 Sampler presets play an imported mono instrument instead of a wavetable; the
 preset you load chooses the engine. Use HexBoard Sync's Synth → Sampler editor
-to convert and install your own SoundFonts or recordings: sending one to the
-HexBoard plays it right away, and `Save Preset` then keeps it as a preset. Engine
+to convert and install your own SoundFonts or recordings: **Send and save
+preset** installs the instrument and saves a preset for it in one step, and
+`Save Preset` on the HexBoard also keeps the instrument that is playing.
+In preset lists, a small wave icon marks wavetable presets and a sample icon
+marks sampler presets; the diamond on the right marks the loaded preset.
+
+With a sampler preset loaded, the `Synth` page shows `Inst: <name>` (fixed by
+the preset), and hides the wavetable, `WT Pos`, `Wheel FX`, `FX Env` and `LFO`
+items. Its `Amp Env` page starts every stage at `Inst`, the instrument's own
+envelope; choosing a value replaces that stage for the whole instrument, and
+choosing `Inst` again restores it. Engine
 changes briefly mute audio; held keys need a fresh press afterward. Sampler
 envelopes are stored with the instrument. If a sampler preset's instrument is
 not installed, the HexBoard shows `Upload instrument` and plays the wavetable
