@@ -13,7 +13,7 @@ import {wavetableEngine,wavetableSchema,wavetableWords,wavetableFromWords,validW
 import type {SynthProgress} from './progress.ts';
 import type { MidiTransport } from "../../midi/types.ts";
 import { decodePresetSyncFrame, encodeDefaultPresetSyncFrame, encodeU14, encodeU21, decodeU14, decodeU21 } from "../../protocol/index.ts";
-import { physicalPresetFromUnknown, modulationSettingCount, defaultSample, defaultSampleLoop, validateSample, type SampleLoop, type SampleExciter, defaultModulation, validateModulation, type ModulationSources, defaultFx, validateFx, fxSlotCount, fxRouteCount, type FxRack, type PhysicalPreset, type PhysicalVelocityEngine, encodeLogPitchHz } from "./schema.ts";
+import { physicalPresetFromUnknown, modulationSettingCount, defaultSample, defaultSampleLoop, validateSample, type SampleLoop, type SampleExciter, defaultModulation, validateModulation, type ModulationSources, defaultFx, validateFx, roomFxSchema, fxSlotCount, fxRouteCount, type FxRack, type PhysicalPreset, type PhysicalVelocityEngine, encodeLogPitchHz } from "./schema.ts";
 
 export interface PresetCatalogState {phase:number;action:number;error?:number;awaiting?:boolean;slot:number;medium:0|1|2;progress:number;mask:number;elapsedMs:number;maxSliceUs:number;engine:number;folder:number;capacity:number;folderCapacity:number;heapMin:number}
 export interface DevicePresetFolder {index:number;name:string;mask:number}
@@ -66,10 +66,10 @@ export function decodePhysicalExpression(p: number[]): PhysicalExpression {
 // Order bytes, then values, volume steps and global routes as 3-byte U21.
 const fxValuesAt=1+fxSlotCount,fxStepsAt=fxValuesAt+7*4*3,fxRoutesAt=fxStepsAt+16*3,fxBytes=fxRoutesAt+fxRouteCount*3;
 export function decodeFx(payload:number[]): FxRack {
-  if(payload.length!==fxBytes||payload[0]!==17)throw Error("Unsupported FX response. Update Advanced firmware.");
+  if(payload.length!==fxBytes||payload[0]!==roomFxSchema)throw Error("Unsupported FX response. Update Advanced firmware.");
   const padded=payload.slice(1,fxValuesAt), end=padded.indexOf(0);
   if(end>=0 && padded.slice(end).some(id=>id!==0))throw Error("Invalid effect order.");
-  return validateFx({steps:Array.from({length:16},(_,i)=>decodeU21(payload.slice(fxStepsAt+i*3,fxStepsAt+3+i*3))),order:padded.filter(Boolean),routes:Array.from({length:fxRouteCount},(_,i)=>decodeU21(payload.slice(fxRoutesAt+i*3,fxRoutesAt+3+i*3))-65536),values:Array.from({length:7},(_,i)=>Array.from({length:4},(_,j)=>decodeU21(payload.slice(fxValuesAt+(i*4+j)*3,fxValuesAt+3+(i*4+j)*3))))});
+  return validateFx({room:true,steps:Array.from({length:16},(_,i)=>decodeU21(payload.slice(fxStepsAt+i*3,fxStepsAt+3+i*3))),order:padded.filter(Boolean),routes:Array.from({length:fxRouteCount},(_,i)=>decodeU21(payload.slice(fxRoutesAt+i*3,fxRoutesAt+3+i*3))-65536),values:Array.from({length:7},(_,i)=>Array.from({length:4},(_,j)=>decodeU21(payload.slice(fxValuesAt+(i*4+j)*3,fxValuesAt+3+(i*4+j)*3))))});
 }
 export function decodeModulation(payload:number[]):ModulationSources {
   const n=modulationSettingCount;if(payload.length!==1+3*(n+66)||payload[0]!==17)throw Error("Update Advanced firmware for envelope curves.");
@@ -199,7 +199,7 @@ export class PhysicalSynthClient {
   private async waitSample(){this.onProgress?.({label:"Preparing synth…"});for(let i=0;i<300;i++){if(!(await this.request<SampleMeta>(20)).busy)return;await new Promise(r=>setTimeout(r,20));}throw Error("Sample transfer did not finish.");}
   async previewSample(){if(!this.sample.frames.length)throw Error("Import a sample first.");this.onProgress?.({label:"Preparing preview…"});try{await this.request<SampleMeta>(24,[1,...encodeU21(this.sample.gain),...encodeU21(this.sample.direct)]);this.sample.enabled=true;const state=await this.request(0);if(state.state==="stopped")await this.start();await this.waitSample();if(this.previewNeedsStartup){this.onProgress?.({label:"Preparing audio…"});await new Promise(resolve=>setTimeout(resolve,2000));this.previewNeedsStartup=false;}await this.request<SampleMeta>(25);return await this.request(0);}finally{this.onProgress?.();}}
   async readEffects(){return validateFx(await this.request<FxRack>(10));}
-  async effects(fx:FxRack) { const f=validateFx(fx);await this.request<FxRack>(11,[...f.order,...Array(fxSlotCount-f.order.length).fill(0),...f.values.flat().flatMap(encodeU21),...f.steps.flatMap(encodeU21),...f.routes!.flatMap(v=>encodeU21(v+65536))]);return this.request(0); }
+  async effects(fx:FxRack) { const f=validateFx(fx);await this.request<FxRack>(11,[...f.order,...Array(fxSlotCount-f.order.length).fill(0),...f.values.flat().flatMap(encodeU21),...f.steps.flatMap(encodeU21),...f.routes!.flatMap(v=>encodeU21(v+65536)),roomFxSchema]);return this.request(0); }
   async expression() {const e=await this.request<PhysicalExpression>(8);this.motion=await this.request<MotionState>(12);return {...e,tiltX:this.motion.tiltX,tiltY:this.motion.tiltY,motionValid:this.motion.valid,motionDetected:this.motion.detected};}
   async zeroMotion(){this.motion=await this.request<MotionState>(15);return this.motion;}
   async tiltRoute(id:number,axis:number,depth:number){this.motion=await this.request<MotionState>(14,[id,axis,...encodeU21(depth+65536)]);return this.request(0);}

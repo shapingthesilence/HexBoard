@@ -53,13 +53,14 @@ export const fxSourceIds=[3,4,6,7,8];
 export const fxTargetIds=[0,1,4,5,6,8,9,10,12,13,14,20,21,22,24,25];
 export const fxSlotCount=6,fxRouteCount=fxTargetIds.length*5;
 export const fxRow=(id:number)=>id>=5?id:id-1;
-export interface FxRack { order: number[]; values: number[][]; steps:number[]; routes?:number[] }
-export const defaultFx = (): FxRack => ({order:[],routes:Array(fxRouteCount).fill(0),steps:Array.from({length:16},(_,i)=>i%2?0:65535),values:[[20000,16000,0,0],[24000,45000,30000,0],[26214,35000,6000,47],[18000,22000,18000,0],[0,32768,32768,18000],[65535,0,65535,0],ensembleDefaults()]});
+export const roomFxSchema = 18;
+export interface FxRack { room?: true; order: number[]; values: number[][]; steps:number[]; routes?:number[] }
+export const defaultFx = (): FxRack => ({room:true,order:[],routes:Array(fxRouteCount).fill(0),steps:Array.from({length:16},(_,i)=>i%2?0:65535),values:[[20000,16000,0,0],[24000,16413,35535,65535],[26214,35000,6000,47],[18000,22000,18000,0],[0,32768,32768,18000],[65535,0,65535,0],ensembleDefaults()]});
 // Mix 50%, width, voices (0: Duo, 1: Quad) and rate ×1.
 export const ensembleDefaults=()=>[32768,52000,0,32768];
 export const effectTypes = [
   {id:1,name:"Distortion",controls:["Drive","Mix"]},
-  {id:2,name:"Reverb",controls:["Mix","Size","Damping"]},
+  {id:2,name:"Reverb",controls:["Amount","Decay","Tone","Width"]},
   {id:3,name:"Volume Steps",controls:["Tempo","Depth","Smoothing"]},
   {id:4,name:"Chorus",controls:["Mix","Rate","Depth"]},
   {id:5,name:"Filter",controls:["Cutoff","Resonance","Mix"]},
@@ -75,11 +76,22 @@ export function validateFx(value: unknown): FxRack {
   const values=f.values.map(row=>[...row]);if(values.length===5)values.push([65535,0,65535,0]);if(values.length===6)values.push(ensembleDefaults());
   if(values[5][3]>2)throw Error("Invalid filter mode.");if(values[6][2]>1)throw Error("Invalid ensemble voices.");
   const given=f.routes??[];const routes=given.length===70?[...given,...Array(fxRouteCount-70).fill(0)]:f.routes??Array(fxRouteCount).fill(0);if(!Array.isArray(routes)||routes.length!==fxRouteCount||routes.some(v=>!Number.isInteger(v)||v<-65536||v>65536)||fxTargetIds.some((_,t)=>routes.slice(t*5,t*5+5).filter(Boolean).length>4))throw Error("Invalid global FX modulation.");
-  return {order:[...f.order],values,steps:[...steps],routes:[...routes]};
+  const convertedRoutes = [...routes];
+  if (f.room !== undefined && f.room !== true) throw Error("Invalid reverb settings.");
+  if (!f.room) {
+    // Convert older browser sounds from feedback/damping to seconds and tone.
+    const [amount, size, damping] = values[1];
+    const seconds = Math.min(8, -.49858015993326527 / Math.log(.45 + .5 * size / 65535));
+    values[1] = [amount, Math.round((seconds - .2) / 7.8 * 65535), 65535 - damping, 65535];
+    const toneRoute = fxTargetIds.indexOf(6) * fxSourceIds.length;
+    for (let i = toneRoute; i < toneRoute + fxSourceIds.length; ++i) convertedRoutes[i] = -convertedRoutes[i] || 0;
+  }
+  return {room:true,order:[...f.order],values,steps:[...steps],routes:convertedRoutes};
 }
 export function effectDescription(id:number,index:number,value:number) {
   const v=value/65535;
   if(id===1 && index===0)return `${(1+15*v).toFixed(1)}×`;
+  if(id===2&&index===1)return `${Math.round(200+7800*v)} ms`;
   if(id===3&&index===0)return `${Math.round(40+200*v)} BPM`;
   if(id===4 && index===1)return `${(.1+2.9*v).toFixed(2)} Hz`;
   if(id===6 && index===3)return `×${(2**(2*(v-.5))).toFixed(2)}`;

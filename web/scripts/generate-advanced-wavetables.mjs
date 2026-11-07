@@ -1,5 +1,5 @@
-import {readFile,writeFile,mkdir,readdir} from 'node:fs/promises';
-import {resolve,dirname,basename,relative} from 'node:path';
+import {readFile,writeFile,mkdir} from 'node:fs/promises';
+import {resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {wavetableSources,buildWaveformSourceMap} from './factory-wavetable-sources.mjs';
@@ -10,7 +10,4 @@ const source=await readFile(resolve(root,'src/firmware/synth/BuiltinWavetables.c
 async function add(name,bytes,path,group='HexBoard Classic',options={},sourcePrecision){const prepared=prepareTable(bytes,options),decoded=decodeTable(bytes,options),slug=name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');await writeFile(resolve(output,slug+'.hwt'),prepared.bytes);await writeFile(resolve(output,slug+'.wav'),bytes);rows.push({id:'factory:'+slug,name,group,crc:prepared.crc,file:slug,source:path,sourceSha256:createHash('sha256').update(bytes).digest('hex'),sourcePrecision:sourcePrecision??'original WAV',sourceFrames:decoded.frames,sourceFrameSize:decoded.frameSize,options});}
 for(const d of wavetableSources){if(d.name==='Basic Shapes')continue;if(d.kind==='wav')await add(d.name,new Uint8Array(await readFile(resolve(root,d.path))),d.path);else await add(d.name,anchorWav(d.waveforms.map(w=>anchors.get(w))),'src/firmware/synth/BuiltinWavetables.cpp','HexBoard Classic',{frameSize:512},'8-bit original anchor samples; blended before final quantization');}
 await add('NotPiano',new Uint8Array(await readFile(resolve(root,'src/Default Wavetables/NotPiano.wav'))),'src/Default Wavetables/NotPiano.wav');
-// Preserve the higher-precision individual source cycles as their own tables.
-async function visit(dir){for(const entry of await readdir(dir,{withFileTypes:true})){const path=resolve(dir,entry.name);if(entry.isDirectory())await visit(path);else if(/\.wav$/i.test(entry.name)){const bytes=new Uint8Array(await readFile(path)),d=decodeTable(bytes);if(d.frames===1)await add(basename(entry.name,'.wav'),bytes,relative(root,path),'Classic source cycles');}}}
-await visit(resolve(root,'src/Default Wavetables/Matthew Parker Wavetables'));
 rows.sort((a,b)=>a.group.localeCompare(b.group)||a.name.localeCompare(b.name));await writeFile(resolve(root,'web/src/advanced/synth/wavetable/factory.json'),JSON.stringify(rows,null,2)+'\n');console.log(`Prepared ${rows.length} Advanced default tables from original Classic sources.`);
