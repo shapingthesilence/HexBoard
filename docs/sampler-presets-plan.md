@@ -28,16 +28,16 @@ One preset library for both engines. A preset is a sound source plus settings:
   `/preset_index/` holds a 32-slot folder table and one index file per folder
   (`storage/SynthPresetIndexCodec.h`). Handles are `slot × 256 + position`.
 - RAM keeps only the folder table with counts and the open browser folder
-  (64 presets with 24-byte names, 24 subfolders). Static RAM is about 9.4 KB
+  (32 presets with 24-byte names, 24 subfolders). Static RAM is about 9.4 KB
   lower than with the old 128-preset catalog.
-- Limits: 512 presets, 32 folder paths, 64 presets per folder, checked before
+- Limits: 512 presets, 32 folder paths, 32 presets per folder, checked before
   anything is written. The board shows "Preset not saved" with the reason;
   Sync checks the same limits and the 23-character name limit before sending.
 - Boot validates the index without listing `/presets`; a pending marker
   detects interrupted changes. A first-use rebuild also moves files from the
   old flat layout.
 - The board's load list starts with `Favorites`: favorite presets from every
-  folder (one pass over the folder files, up to 64 shown).
+  folder (one pass over the folder files, up to 32 shown).
 - A first-use rebuild shows "Moving presets n / N" and "Indexing presets
   n / N" on the flash-save screen.
 - Index records reserve engine bits (`kFlagEngineMask`), so the browser can
@@ -126,4 +126,4 @@ boards updating from released firmware hold at most 128 presets.
 
 ## Open Questions
 
-- Is 64 instruments the right cap, given the factory library's size?
+None at the moment.

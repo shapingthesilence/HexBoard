@@ -1118,9 +1118,9 @@ as synth-only objects, separate from tuning/layout/profile objects.
 
 Synth presets are named and organized by folder path. Current firmware supports
 up to `512` independent fixed-size `.hsp` files in at most `32` distinct folder
-paths, with at most `64` presets in one folder. A save that would exceed a limit
+paths, with at most `32` presets in one folder. A save that would exceed a limit
 is refused with `StorageFull`; presets already over the folder limit stay
-listed, and the device browser shows the first `64` of them. Preset metadata is
+listed, and the device browser shows the first `32` of them. Preset metadata is
 listed from `/preset_index/`; RAM keeps only folder paths, counts and the
 current loaded preset record. A preset file that fails validation is reported
 and skipped without invalidating the rest of the library. Handles are

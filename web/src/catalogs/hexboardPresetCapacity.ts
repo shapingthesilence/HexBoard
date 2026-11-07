@@ -1,7 +1,7 @@
 // Classic HexBoard synth preset library limits (firmware PersistentDataModels.h).
 export const HEXBOARD_PRESET_MAX_COUNT = 512;
 export const HEXBOARD_PRESET_FOLDER_MAX_COUNT = 32;
-export const HEXBOARD_PRESET_FOLDER_MAX_PRESETS = 64;
+export const HEXBOARD_PRESET_FOLDER_MAX_PRESETS = 32;
 // The board browser shows 23 characters; names are limited to match.
 export const HEXBOARD_PRESET_NAME_MAX_BYTES = 23;
 

@@ -782,7 +782,7 @@ not replace your open sound. Previewing or saving to HexBoard requires a connect
 
 Preset names are limited to 23 characters, the length the HexBoard's preset
 list shows. The HexBoard Library holds up to 512 presets in up to 32 folders,
-with up to 64 presets in each folder. A save, move or batch copy that would
+with up to 32 presets in each folder. A save, move or batch copy that would
 exceed a limit is stopped before anything is sent, and the status line names
 the full folder or limit. A batch copy that would not fit copies nothing.
 

@@ -321,7 +321,7 @@ Persistent stores:
 | --- | --- | --- |
 | `/settings.dat` | `Settings.cpp` | 9 non-synth profiles plus synth references; 10-second dirty save; identical data skipped |
 | `/.synth_profile_<0..8>.hsp` | `SynthPresetStorage.cpp` | hidden copy-on-write profile drafts; identical patch CRCs skipped |
-| `/presets/<0-F>/*.hsp` | `SynthPresetCatalog.cpp` | HSP v13; up to 512 atomic files, 32 folders, 64 presets per folder |
+| `/presets/<0-F>/*.hsp` | `SynthPresetCatalog.cpp` | HSP v13; up to 512 atomic files, 32 folders, 32 presets per folder |
 | `/preset_index/` | `SynthPresetCatalog.cpp` | HPF v1 folder table and HPI v2 folder files; see below |
 | `/synth_wavetables.dat`, `/wt_*.wtb` | `SynthWavetableStorage.cpp` | up to 32 entries; base or six mip levels |
 | `/geometry/*.hgb` | `PresetSyncGeometry.cpp` | HGB v3/schema 2; up to 64 atomic bundles |
@@ -338,7 +338,7 @@ used folder slot holding that folder's object ids, names and flags. Handles are
 later handles in the same folder; slots keep their number while used.
 
 RAM keeps the folder table with per-folder counts (about 1.6 KB) and the
-browser's open folder (at most 64 presets and 24 subfolders, copied on entry).
+browser's open folder (at most 32 presets and 24 subfolders, copied on entry).
 Scrolling never reads flash. Entering a folder reads one folder file; subfolders
 come from the table. The load list's first row, `Favorites`, fills the same
 buffer from every folder file's favorite flag. Sync list pages use the counts to read only their own

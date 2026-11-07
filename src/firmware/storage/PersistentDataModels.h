@@ -28,7 +28,7 @@ constexpr uint8_t NUM_SETTINGS = static_cast<uint8_t>(SettingKey::NumSettings);
 // distinct folder paths and the open browser folder are held in RAM.
 constexpr uint16_t SYNTH_PRESET_MAX_COUNT = 512;
 constexpr uint8_t SYNTH_PRESET_FOLDER_MAX_COUNT = 32;
-constexpr uint8_t SYNTH_PRESET_FOLDER_MAX_PRESETS = 64;
+constexpr uint8_t SYNTH_PRESET_FOLDER_MAX_PRESETS = 32;
 constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 13;
 constexpr uint8_t SYNTH_PRESET_SCHEMA_VERSION = 9;
 constexpr uint8_t SYNTH_WAVETABLE_FILE_VERSION = 1;
