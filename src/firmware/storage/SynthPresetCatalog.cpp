@@ -22,6 +22,7 @@ constexpr char TABLE_TEMP_PATH[] = "/preset_index/folders.tmp";
 // The single-file index written by earlier firmware; removed by a rebuild.
 constexpr char LEGACY_INDEX_PATH[] = "/synth_preset_index.dat";
 constexpr char LEGACY_INDEX_TEMP_PATH[] = "/synth_preset_index.tmp";
+static_assert(SYNTH_PRESET_CATALOG_FLAG_FAVORITE == SynthPresetIndex::kFlagFavorite, "favorite flag must match the index");
 static_assert(FOLDER_FILE_MAX_RECORDS < SYNTH_PRESET_HANDLE_STRIDE, "folder positions must fit the handle stride");
 static_assert(FOLDER_SLOTS * SYNTH_PRESET_HANDLE_STRIDE <= 0x3FFF, "handles must stay below preset sync NEW_OBJECT");
 

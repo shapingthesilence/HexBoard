@@ -337,7 +337,8 @@ later handles in the same folder; slots keep their number while used.
 RAM keeps the folder table with per-folder counts (about 1.6 KB) and the
 browser's open folder (at most 64 presets and 24 subfolders, copied on entry).
 Scrolling never reads flash. Entering a folder reads one folder file; subfolders
-come from the table. Sync list pages use the counts to read only their own
+come from the table. The load list's first row, `Favorites`, fills the same
+buffer from every folder file's favorite flag. Sync list pages use the counts to read only their own
 records. Lookups by object id read every folder file.
 
 Boot validates the table and every folder file by CRC and never writes. It does

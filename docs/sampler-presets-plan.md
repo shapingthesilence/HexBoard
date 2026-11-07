@@ -36,6 +36,8 @@ One preset library for both engines. A preset is a sound source plus settings:
 - Boot validates the index without listing `/presets`; a pending marker
   detects interrupted changes. A first-use rebuild also moves files from the
   old flat layout.
+- The board's load list starts with `Favorites`: favorite presets from every
+  folder (one pass over the folder files, up to 64 shown).
 - Index records reserve engine bits (`kFlagEngineMask`), so the browser can
   show engine icons without opening preset files.
 
@@ -55,10 +57,7 @@ boards updating from released firmware hold at most 128 presets.
 
 ## Phase 1 — Remaining
 
-1. **Optional Favorites folder.** The index already stores the favorite flag.
-   A virtual `★ Favorites` row at the root would gather favorites from every
-   folder file, limited to the 64-entry folder buffer.
-2. **Progress during the one-time move.** The rebuild shows only the flash-save
+1. **Progress during the one-time move.** The rebuild shows only the flash-save
    screen. A count ("Updating presets 40/128") would reassure users with large
    libraries.
 
@@ -130,5 +129,4 @@ boards updating from released firmware hold at most 128 presets.
 
 ## Open Questions
 
-- Should Favorites (phase 1.1) be part of the first release?
 - Is 64 instruments the right cap, given the factory library's size?

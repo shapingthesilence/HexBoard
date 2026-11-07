@@ -26,6 +26,8 @@ constexpr char SYNTH_PRESET_INDEX_PENDING_PATH[] = "/preset_index/pending";
 constexpr uint16_t SYNTH_PRESET_HANDLE_STRIDE = 256;
 constexpr uint16_t SYNTH_PRESET_CATALOG_NEW_HANDLE = 0xFFFFu;
 
+constexpr uint8_t SYNTH_PRESET_CATALOG_FLAG_FAVORITE = 0x01;
+
 struct SynthPresetCatalogEntry {
   uint16_t handle = 0;
   uint8_t flags = 0;

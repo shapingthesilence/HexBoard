@@ -477,7 +477,9 @@ synth preset or `Blank` state. Auto-save and manual profile saves also preserve
 unsaved synth edits without overwriting the named preset, so the preset label
 can still show as modified after restart. On
 the device, presets appear in a folder browser; `New Preset` saves into
-the currently open folder. The browser shows the first `23` characters of each
+the currently open folder. In the load list, `Favorites` is always the first
+item. It lists presets marked as favorites in HexBoard Sync from every folder
+(up to `64`); press back to return to the folders. The browser shows the first `23` characters of each
 name. After a firmware-only update, the first time the preset list opens the
 HexBoard shows `Saving to flash.` while it reorganizes the preset files and
 builds its preset index. With a large library this can take a minute or more;
