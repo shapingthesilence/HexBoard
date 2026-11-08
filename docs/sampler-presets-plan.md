@@ -143,6 +143,32 @@ boards updating from released firmware hold at most 128 presets.
   connected board checked icons, the sampler editor, saving a sampler sound
   (instrument and mask on the board) and the delete warning.
 
+## Not Yet Done
+
+Known gaps after Phase 5. None is implemented; each needs a decision first.
+
+- **Factory instruments.** The factory build can ship instruments and sampler
+  sounds, but `factory-library/` has none, so a fresh board has no sampler
+  sounds. Needs freely licensed source recordings (see Open Questions).
+- **Renamed or deleted instruments.** Sounds find their instrument by name.
+  Re-sending it under a new name, or deleting it, leaves its sounds on
+  **Upload instrument**. The delete warning names them but cannot delete them
+  or point them at another instrument. Pointing a sound at another instrument
+  would relax the rule that a sound keeps its instrument.
+- **Sharing sounds between boards.** A sampler sound saved in the Browser
+  Library or exported as a file carries only the instrument's name. A bundle of
+  sound plus instrument would let it move to a board without that instrument.
+- **Delete warning speed.** Sync reads every sound body to find the ones using
+  an instrument. That took a few seconds at 49 sounds and will be slower near
+  512. A sampler flag in the board's list replies would let Sync read only
+  sampler sounds (firmware and protocol change).
+- **Inst stage values.** A stage set to `Inst` shows the sound's stored value
+  on its knob, not the envelope the instrument actually uses. Sync could read
+  the instrument file to show its real values.
+- **Untested by ear.** Preview on HexBoard and Live preview for sampler sounds
+  in Sync.
+
 ## Open Questions
 
-None at the moment.
+- Which freely licensed instruments to ship in the factory library, and how
+  many fit next to user instruments in the board's storage.
