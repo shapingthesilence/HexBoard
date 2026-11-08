@@ -1180,17 +1180,18 @@ set the final hardware accuracy.
 ## Classic Sampler
 
 With updated Classic firmware connected, Synth offers **Sounds** (the sound
-library and editor for both engines) and **Instruments** (the sampler
-instrument editor). Instruments shares Advanced's import, waveform, loop and region tools with
-controls limited to Classic playback. Import and edits automatically prepare the
-Classic conversion. Compare original and converted recordings, then use **Send to
-HexBoard**. Region ADSR is in Mapping with sliders, exact time/percent fields and
-selected/all-region editing. Review size and sound changes before copying to the
-board. Choosing a Classic library instrument plays it immediately. The library
-exports and deletes installed instruments; before a delete it lists the sounds
-that use the instrument, which then play the wavetable engine until it is sent
-again. **Save startup settings** saves current
-settings to profile 1 and respects the existing AutoSave preference.
+library and editor for both engines) and **Instruments** (the sampler instrument
+editor). Instruments shares Advanced's import, waveform, loop and region tools
+with controls limited to Classic playback. Import and edits automatically
+prepare the Classic conversion. Compare original and converted recordings, then
+use **Send to HexBoard**. Region ADSR is in Mapping with sliders, exact
+time/percent fields and selected/all-region editing. Review size and sound
+changes before copying to the board. The Classic library exports and deletes
+installed instruments; choosing one there does not play it, since the loaded
+sound decides what plays. Before a delete it lists the sounds that use the
+instrument, which then play the wavetable engine until it is sent again. **Save
+startup settings** saves current settings to profile 1 and respects the existing
+AutoSave preference.
 
 See [Classic sampler](compact-sampler.md) for supported sources, eight-voice and
 48 KiB limits, loop behavior, conversion and device controls.
