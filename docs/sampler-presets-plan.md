@@ -1,6 +1,6 @@
 # Sampler Presets And Larger Library — Plan
 
-Phases 1–6 are implemented except Phase 6's comparison set. This page records the plan
+Phases 1–6 are implemented. This page records the plan
 and its measurements; current behavior lives in the guides linked here.
 Current behavior is described in the [user manual](user-manual.md), the
 [developer guide](developer-guide.md#settings-and-persistence),
@@ -170,9 +170,13 @@ not justify several sounds per instrument, and one file is what people share.
 - **Stack.** The sampler-sound commit runs deep in the SysEx handler on Core
   0's 4 KiB stack. The first build overflowed it and froze the board; the
   preset copies and copy buffer now live on the heap or in static storage.
-- **Comparison set (not done yet).** Convert a broad General MIDI selection
-  from FluidR3 and MuseScore General (both MIT) with the Sync converter and
-  install them in `FluidR3 …` and `MuseScore …` folders for listening.
+- **Comparison set.** 48 General MIDI programs from FluidR3 and MuseScore
+  General (both MIT) were converted with the Sync converter and installed as
+  `FR3 …` / `MS …` pairs in `Compare Keys`, `Compare Strings` and `Compare
+  Winds Synth`: 83 of 96 fit. Neither bank fits Classic as is (velocity
+  layers and stereo pairs give 50–130 regions), so a scratch step kept one
+  layer and one side and thinned key splits until the RAM check passed; most
+  ended with one recording for the whole range.
 
 ## Verification
 
@@ -196,6 +200,11 @@ Known gaps after Phase 5. None is implemented; each needs a decision first.
 - **Renamed or deleted instruments, sharing, delete warning speed.** Solved
   by Phase 6: the instrument lives inside its sound.
 - **Wavetable sounds** still export their wavetable as a separate `.hexwav`.
+- **Fitting large SoundFont presets.** Sync's Instruments editor rejects most
+  General MIDI presets for Classic (over 16 recordings / 32 regions, or over
+  48 KiB). An automatic fit (one velocity layer, one stereo side, fewer key
+  splits, trimmed tails) would make them importable; the comparison set used a
+  scratch version that often fell back to a single recording.
 - **Inst stage values.** A stage set to `Inst` shows the sound's stored value
   on its knob, not the envelope the instrument actually uses. Sync could read
   the instrument file to show its real values.
