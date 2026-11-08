@@ -1,10 +1,12 @@
 import {MonoControls} from './MonoControls.tsx';
+import {PresetLibrary} from './PresetLibrary.tsx';
+import {isWavetablePreset,presetDraftKey} from './presetLibrary.ts';
 import {defaultMono, type MonoConfig} from './mono.ts';
 import {CurvedEnvelope} from './CurvedEnvelope.tsx';
 import {curveBend, curveWord} from './envelopeCurve.ts';
 import {factoryTables} from './wavetable/factory.ts';
 import {WavetableImporter} from './WavetableImporter.tsx';
-import {getTable,listTables,putTable,exportTable,importTable,type TableAsset,type TableRef} from './wavetable/library.ts';
+import {getTable,listTables,putTable,exportTable,importTable,presetTable,type TableAsset,type TableRef} from './wavetable/library.ts';
 import {FxRackEditor} from './FxRackEditor.tsx';
 import {useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode} from 'react';
 import type {MidiTransport} from '../../midi/types.ts';
@@ -28,9 +30,9 @@ import {targetingEscape, sourceClickTool} from './modulationTargeting.ts';
 import {RouteChip, RouteMenu, dropDepth, useSourceDrag} from './modulationGestures.tsx';
 import {type FxRack,modulationRate, modulationSeconds} from './schema.ts';
 import {
-  P, S, modSettingCount, osc2Names, coarseValue, coarseSemitones, factoryWavetablePresets, filterNames, modulatable, option, optionValue, parameterCount,
+  P, S, modSettingCount, osc2Names, coarseValue, coarseSemitones, filterNames, modulatable, option, optionValue, parameterCount,
   resonatorNames, tableCrc, routeDepth, routesUsed, sameWavetable, sourceCount, transientNames, warpAmountDescription, warpNames, wavetableEngine,
-  wavetableFromUnknown, wavetableParameters, wavetablePreset, wavetableSourceColors, wavetableSourceShort, wavetableSources, withRoute, bipolarSource, type WavetablePreset
+  wavetableParameters, wavetablePreset, wavetableSourceColors, wavetableSourceShort, wavetableSources, withRoute, bipolarSource, type WavetablePreset
 } from './wavetableSchema.ts';
 import {filterOpen, wavetableCapacityUs, wavetableCost, wavetableSourceCost, wavetableRouteLimit, type WavetableStage} from './wavetableBudget.ts';
 import {FilterCurve, ResonatorPartials, SignalFlow, TableTerrain, UnisonField, WarpScope} from './WavetableVisuals.tsx';
@@ -38,13 +40,9 @@ import './PhysicalSynthEditor.css';
 import './SynthIdentity.css';
 import './WavetableSynthEditor.css';
 
-const libraryKey = 'hexboard.wavetable.presets.v3';
 // Browser storage can be unavailable (private windows, tests); nothing here depends on it.
 const stored = (key: string) => { try { return localStorage.getItem(key); } catch { return null; } };
 const store = (key: string, value: unknown) => { try { writeStoredText(localStorage, key, JSON.stringify(value)); } catch { /* Keep working without persistence. */ } };
-function readLibrary(): WavetablePreset[] {
-  try { const raw = localStorage.getItem(libraryKey); return raw ? (JSON.parse(raw) as unknown[]).flatMap(p => { try { return [wavetableFromUnknown(p)]; } catch { return []; } }) : []; } catch { return []; }
-}
 // Controls whose neutral value is the centre (double-click resets there).
 const centredParameters = new Set<number>([P.Coarse, P.Fine, P.SubCoarse, P.SubFine, P.Osc2Coarse, P.Osc2Fine, P.FilterEnvelope, P.AmpAttackCurve, P.AmpDecayCurve, P.AmpReleaseCurve]);
 const stageOrder: {id: WavetableStage; label: string}[] = [
@@ -60,7 +58,7 @@ function modText(id: number, v: number) {
   const t = modulationSeconds(v); return t < 1 ? `${Math.round(t * 1000)} ms` : `${t.toFixed(1)} s`;
 }
 
-export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
+export function WavetableSynthEditor({ transport,onDeviceEngineLoaded }: { transport?: MidiTransport;onDeviceEngineLoaded?:(engine:2|4|5|7)=>void }) {
   const {value: preset, set: setPreset, reset: resetPreset, replace: replacePreset, undo, redo, canUndo, canRedo, begin: beginEdit, end: endEdit} = useEditHistory<WavetablePreset>(wavetableDraft, sameWavetable);
   const [tables,setTables]=useState<TableRef[]>([]),[selectedTable,setSelectedTable]=useState<TableAsset>(),[importing,setImporting]=useState<'new'|'edit'|undefined>();
   useEffect(()=>{void listTables().then(setTables).catch(()=>undefined);},[]);
@@ -74,8 +72,8 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
   const [previewPressure, setPreviewPressure] = useState(0);
   const [tool, setTool] = useState<'value' | 'modulate'>('value'), [locked, setLocked] = useState(false), [source, setSource] = useState<number>(S.Pressure);
   const [routeMenu, setRouteMenu] = useState<{target: number; source: number; x: number; y: number}>(), [sourceEditor, setSourceEditor] = useState<number>(), [budgetSource, setBudgetSource] = useState<number>(), [hoverTarget, setHoverTarget] = useState<number>();
-  const [library, setLibrary] = useState(readLibrary), [focused, setFocused] = useState<string>();
-  const edits = useRef(new Map<string, () => Promise<unknown>>()), flushing = useRef(false), alive = useRef(true), progressRef = useRef<Progress | undefined>(undefined), retainedDraft = useRef(stored(draftKey) !== null);
+  const [focused, setFocused] = useState<string>();
+  const edits = useRef(new Map<string, () => Promise<unknown>>()), flushing = useRef(false), libraryBusy=useRef(false), alive = useRef(true), progressRef = useRef<Progress | undefined>(undefined), retainedDraft = useRef(stored(draftKey) !== null);
   const deviceRef = useRef<PhysicalState | undefined>(undefined); deviceRef.current = device;
   const onDevice = ready && device?.instrument === wavetableEngine;
   const fail = (error: unknown) => { const text = synthErrorMessage(error); if (alive.current && text !== undefined) { setFailed(true); setMessage(text); } };
@@ -102,10 +100,10 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
         setMessage(state.instrument === wavetableEngine ? state.state === 'playing' ? 'Wavetable running. Play the keys.' : 'Wavetable selected. Start the synth to play.' : retainedDraft.current ? 'Draft retained. Start synth to hear it.' : 'Start synth to load this sound.');
       } catch (error) { if (!disposed) fail(error); } finally { statusPolling = false; }
     })();
-    const poll = setInterval(() => { if (disposed || statusPolling || document.hidden || progressRef.current || flushing.current) return; statusPolling = true; void c.status().then(s => { if (!disposed) { setDevice(s); setReady(true); } }).catch(error => { if (!disposed) fail(error); }).finally(() => { statusPolling = false; }); }, 2000);
-    const expression = setInterval(() => { if (polling || disposed || document.hidden || progressRef.current) return; polling = true; void c.expression().then(v => { if (!disposed) preview.setExpression(v); }).catch(() => undefined).finally(() => { polling = false; }); }, 60);
+    const poll = setInterval(() => { if (disposed || statusPolling || document.hidden || libraryBusy.current || progressRef.current || flushing.current) return; statusPolling = true; void c.status().then(s => { if (!disposed) { setDevice(s); setReady(true); } }).catch(error => { if (!disposed) fail(error); }).finally(() => { statusPolling = false; }); }, 2000);
+    const expression = setInterval(() => { if (polling || disposed || document.hidden || libraryBusy.current || progressRef.current) return; polling = true; void c.expression().then(v => { if (!disposed) preview.setExpression(v); }).catch(() => undefined).finally(() => { polling = false; }); }, 60);
     const flush = setInterval(() => {
-      if (flushing.current || !edits.current.size) return; flushing.current = true;
+      if (libraryBusy.current || flushing.current || !edits.current.size) return; flushing.current = true;
       void (async () => {
         try { while (edits.current.size && !disposed) { const [key, update] = edits.current.entries().next().value!; edits.current.delete(key); await update(); } if (!disposed) setFailed(false); }
         catch (error) { if (!disposed) { edits.current.clear(); fail(error); } }
@@ -133,7 +131,13 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
     await settle(); const state = await client.status();
     let tableChanged=state.instrument!==wavetableEngine;
     if(!tableChanged){const held=await client.readWavetable();tableChanged=tableCrc(held.patch)!==tableCrc(next);}
-    if(tableChanged||state.state==='stopped'){const asset=next.table?await getTable(next.table.id):undefined;if(tableCrc(next)&&(!asset||asset.crc!==tableCrc(next)))throw Error('Import the table belonging to this sound before loading it.');await client.selectWavetableTable(tableCrc(next),asset?.prepared);}
+    if(tableChanged||state.state==='stopped'){
+      const crc=tableCrc(next);
+      try{await client.selectWavetableTable(crc);}catch(error){
+        const asset=await presetTable(crc,next.table?.id);if(!asset)throw error;
+        await client.selectWavetableTable(crc,asset.prepared);
+      }
+    }
     // The board admits a patch against the rack it holds; clear the previous
     // sound's rack first so the new patch and rack are each checked once.
     await client.effects({...next.effects, order: [], routes: next.effects.routes?.map(() => 0)});
@@ -145,14 +149,16 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
     await client.effects(next.effects);
     return (start||restart||(tableChanged&&state.state==='playing')) && (await client.status()).state !== 'playing' ? client.start(wavetableEngine) : client.status();
   }, start ? 'Starting wavetable…' : 'Loading sound…') : Promise.resolve();
-  const apply = (next: WavetablePreset) => { retainedDraft.current = true; resetPreset(next); setTool('value'); setLocked(false); setRouteMenu(undefined); if (onDevice) void loadOnDevice(next, false); };
+  const apply = async (next: WavetablePreset) => { retainedDraft.current = true; resetPreset(next); setTool('value'); setLocked(false); setRouteMenu(undefined); setTables(await listTables().catch(()=>[])); if (onDevice) await loadOnDevice(next, false); };
   const restore = (direction: 'undo' | 'redo') => { setRouteMenu(undefined); const next = direction === 'undo' ? undo() : redo(); if (next && onDevice) void loadOnDevice(next, false); };
 
   const chooseTable=(asset?:TableAsset)=>{const crc=asset?.crc??0,parameters=[...preset.parameters];parameters[P.TableLow]=crc&65535;parameters[P.TableHigh]=crc>>>16;const next={...preset,parameters,table:asset?{id:asset.id,name:asset.name}:undefined};retainedDraft.current=true;setSelectedTable(asset);setPreset(next);setTool('value');setLocked(false);setRouteMenu(undefined);if(onDevice)void loadOnDevice(next,false);};
   const useTable=async(asset:TableAsset)=>{setTables(await listTables());chooseTable(asset);setImporting(undefined);};
   const download=(data:unknown,name:string)=>{const url=URL.createObjectURL(new Blob([JSON.stringify(data)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=name;a.click();URL.revokeObjectURL(url);};
-  const exportSound=async()=>{try{const asset=preset.table?await getTable(preset.table.id):undefined;if(tableCrc(preset)&&!asset)throw Error('Import this sound’s table to export a portable sound.');download({...preset,...(asset?{tableAsset:exportTable(asset)}:{})},`${preset.name||'wavetable'}.json`);}catch(error){fail(error);}};
-  const importSound=async(file:File)=>{const value=JSON.parse(await file.text());if(value.format==='hexboard.table.v1'){const asset={...importTable(value),id:crypto.randomUUID()};await putTable(asset);await useTable(asset);return;}const next=wavetableFromUnknown(value);if(tableCrc(next)){if(!value.tableAsset)throw Error('This sound is missing its table. Export it again with the table included.');const asset={...importTable(value.tableAsset),id:crypto.randomUUID()};if(asset.crc!==tableCrc(next))throw Error('The table does not match this sound.');await putTable(asset);next.table={id:asset.id,name:asset.name};setTables(await listTables());}apply(next);};
+  const importPresetAsset=async(value:unknown)=>{
+    if((value as {format?:string})?.format!=='hexboard.table.v1')return false;
+    const asset={...importTable(value),id:crypto.randomUUID()};await putTable(asset);await useTable(asset);return true;
+  };
   const setEffects = (effects:FxRack) => {
     retainedDraft.current=true;setPreset(p=>({...p,effects}));
     queue('fx',()=>client!.effects(effects));
@@ -233,7 +239,6 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
   const select = (id: string) => { setFocused(id); document.getElementById(`wt-stage-${id}`)?.scrollIntoView({behavior: 'smooth', block: 'nearest'}); window.setTimeout(() => setFocused(f => f === id ? undefined : f), 1200); };
   const editorBank = sourceEditor === undefined ? 0 : sourceEditor === S.Env1 || sourceEditor === S.Lfo1 ? 0 : 1;
   const hint = tool === 'modulate' ? `${wavetableSources[source]}${locked ? ' locked' : ''} → drag knobs · ${locked ? 'click it again or Esc to finish' : 'Shift-click to lock'}` : `Drag knobs or pictures · drag a source onto a knob · ⌥/Alt-drag adds ${wavetableSourceShort[source]} · drag a route ring or chip for depth`;
-  const userNames = new Set(library.map(x => x.name));
 
   return <PreviewContext.Provider value={preview}><section ref={root} className="card physical-editor wavetable-editor" aria-label="Wavetable synth editor" data-modulating={tool === 'modulate' || undefined}
     data-source-dragging={drag ? true : undefined} data-source-preview={(drag === undefined && budgetSource !== undefined) || undefined}
@@ -263,18 +268,15 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
     </div>
 
     <header className="instrument-title"><h2>Wavetable</h2><span>Stereo · 8 voices + 2 tails · {preset.table?.name??(tableCrc(preset)?'Custom':'Basic Shapes')} table</span>{activity ? <SynthProgress progress={activity}/> : <p role="status" className={failed ? 'error' : ''}>{message}</p>}</header>
-    <div className="wt-library" role="group" aria-label="Wavetable sounds">
-      <select aria-label="Load a sound" value="" disabled={busy} onChange={e => { const [kind, index] = e.target.value.split(':'); const next = kind === 'f' ? factoryWavetablePresets[Number(index)] : library[Number(index)]; if (next) apply(next); }}>
-        <option value="">Load a sound…</option>
-        <optgroup label="Factory">{factoryWavetablePresets.map((x, i) => <option key={x.name} value={`f:${i}`}>{x.name}</option>)}</optgroup>
-        {library.length > 0 && <optgroup label="Saved in this browser">{library.map((x, i) => <option key={x.name} value={`u:${i}`}>{x.name}</option>)}</optgroup>}
-      </select>
-      <input aria-label="Sound name" value={preset.name} maxLength={80} onChange={e => replacePreset(x => ({...x, name: e.target.value}))}/>
-      <button type="button" disabled={!preset.name.trim()} onClick={() => { const saved = {...preset, name: preset.name.trim()}; const next = [...library.filter(x => x.name !== saved.name), saved].sort((a, b) => a.name.localeCompare(b.name)); setLibrary(next); store(libraryKey, next); setFailed(false); setMessage(`Saved “${saved.name}” in this browser.`); }}>{userNames.has(preset.name.trim()) ? 'Update saved' : 'Save'}</button>
-      {userNames.has(preset.name.trim()) && <button type="button" onClick={() => { const next = library.filter(x => x.name !== preset.name.trim()); setLibrary(next); store(libraryKey, next); }}>Delete saved</button>}
-      <button type="button" onClick={()=>void exportSound()}>Export</button>
-      <label className="wt-import"><input type="file" accept="application/json,.json" onChange={async e => { const file = e.target.files?.[0]; e.target.value = ''; if (!file) return; try { await importSound(file); } catch (error) { fail(error); } }}/>Import…</label>
-    </div>
+    <PresetLibrary preset={preset} client={ready?client:undefined} disabled={busy}
+      onRename={name=>replacePreset(p=>({...p,name}))} onBusy={async busy=>{libraryBusy.current=busy;setLoading(busy);if(busy)await settle();}} onImportAsset={importPresetAsset}
+      onLoad={async p=>{if(!isWavetablePreset(p))throw Error('Select the matching engine.');await apply(p);}}
+      onDeviceLoad={async(engine,name)=>{
+        await settle();const value=await client!.readSound(name);
+        if(engine!==wavetableEngine){store(presetDraftKey(engine),value);onDeviceEngineLoaded?.((engine===3?2:engine) as 2|4|5);return;}
+        if(!isWavetablePreset(value))return;
+        retainedDraft.current=true;resetPreset(value);setDevice(await client!.status());
+      }}/>
     <div className="synth-activation" aria-label="Instrument playback">
       <div><strong>{!transport ? 'Connect Advanced to play' : !ready ? 'Synth connection unavailable' : playing ? 'Wavetable running' : device?.state === 'loading' ? 'Starting synth…' : device?.state === 'playing' ? 'Another engine is playing' : 'Synth stopped'}</strong>
         <small>{playing ? 'Edits apply on the next audio block.' : 'Start loads this sound and switches the board to Wavetable.'}</small></div>

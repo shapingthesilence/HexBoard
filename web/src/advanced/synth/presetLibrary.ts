@@ -1,12 +1,19 @@
 import {physicalPresetFromUnknown,defaultSample,type PhysicalPreset} from './schema.ts';
 import {classicFromUnknown,type ClassicPreset} from './classicSchema.ts';
-export type SoundPreset=PhysicalPreset|ClassicPreset;
+import {tableCrc,wavetableFromUnknown,wavetableFormat,type WavetablePreset} from './wavetableSchema.ts';
+import {exportTable,importTable,presetTable,putTable,tableReference} from './wavetable/library.ts';
+export type SoundPreset=PhysicalPreset|ClassicPreset|WavetablePreset;
+export const isWavetablePreset=(p:SoundPreset):p is WavetablePreset=>p.format===wavetableFormat;
+export const isPhysicalPreset=(p:SoundPreset):p is PhysicalPreset=>p.format==='hexboard.physical.v22';
+export const presetDraftKey=(engine:number)=>engine===7?'hexboard.wavetable.draft.v3':engine<4?'hexboard.physical.draft.v1':`hexboard.advanced.${engine}.draft`;
 export interface LibraryPreset {id:string;folder:string;favorite:boolean;updated:number;preset:SoundPreset}
-export const presetEngine=(p:SoundPreset):2|4|5=>p.format==='hexboard.advanced.v2'?p.engine:2;
+export const presetEngine=(p:SoundPreset):2|4|5|7=>isWavetablePreset(p)?7:p.format==='hexboard.advanced.v2'?p.engine:2;
 // Only the selected exciter owns a resident asset. Editing can retain an import
 // temporarily, but saving/loading a sound never carries an unused PCM buffer.
 export function storedPreset(value:unknown):SoundPreset {
- const p=(value as {format?:string})?.format==='hexboard.advanced.v2'?classicFromUnknown(value):physicalPresetFromUnknown(value);
+ const format=(value as {format?:unknown})?.format;
+ if(typeof format==='string'&&format.startsWith('hexboard.wavetable.'))return wavetableFromUnknown(value);
+ const p=format==='hexboard.advanced.v2'?classicFromUnknown(value):physicalPresetFromUnknown(value);
  if(p.format==='hexboard.advanced.v2')return p;
  return p.sample.enabled&&p.sample.frames.length&&p.parameters[21]<=32767?p:{...p,sample:defaultSample()};
 }
@@ -20,12 +27,49 @@ function open():Promise<IDBDatabase>{return new Promise((resolve,reject)=>{const
 async function transaction<T>(store:'presets',mode:IDBTransactionMode,run:(s:IDBObjectStore)=>IDBRequest<T>):Promise<T>{const db=await open();try{return await new Promise<T>((resolve,reject)=>{const tx=db.transaction(store,mode),request=run(tx.objectStore(store));let value:T;request.onsuccess=()=>{value=request.result;};tx.oncomplete=()=>resolve(value);tx.onerror=tx.onabort=()=>reject(Error('Preset storage failed. Check available browser storage.'));});}finally{db.close();}}
 export const putLibraryPreset=(entry:LibraryPreset)=>transaction('presets','readwrite',s=>s.put(libraryEntry(entry)));
 export const removeLibraryPreset=(id:string)=>transaction('presets','readwrite',s=>s.delete(id));
-export async function readLibrary():Promise<LibraryPreset[]>{return (await transaction('presets','readonly',s=>s.getAll())).map(libraryEntry);}
+let legacyWavetables:Promise<void>|undefined;
+async function moveLegacyWavetables(){
+ const key='hexboard.wavetable.presets.v3';let raw:string|null;
+ try{raw=localStorage.getItem(key);}catch{return;}
+ if(!raw)return;
+ let values:unknown;try{values=JSON.parse(raw);}catch{return;}
+ if(!Array.isArray(values))return;
+ const entries=values.flatMap((value,index)=>{
+  try{return [{id:`legacy-wavetable-${index}`,folder:'',favorite:false,updated:0,preset:wavetableFromUnknown(value)}];}
+  catch{return [];}
+ });
+ await transaction('presets','readwrite',s=>{for(const entry of entries){const saved=s.get(entry.id);saved.onsuccess=()=>{if(!saved.result)s.put(entry);};}return s.count();});
+ try{if(entries.length===values.length&&localStorage.getItem(key)===raw)localStorage.removeItem(key);}catch{/* The originals remain available. */}
+}
+export async function readLibrary():Promise<LibraryPreset[]>{
+ await (legacyWavetables??=moveLegacyWavetables().catch(error=>{legacyWavetables=undefined;throw error;}));
+ return (await transaction('presets','readonly',s=>s.getAll())).map(libraryEntry);
+}
 function download(data:unknown,name:string){const url=URL.createObjectURL(new Blob([JSON.stringify(data)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download=`${name.replace(/[^a-z0-9_-]/gi,'_')}.hexboard.json`;a.click();URL.revokeObjectURL(url);}
-export function downloadPreset(value:unknown){const p=storedPreset(value);download(p,p.name);}
-export function downloadPresets(values:unknown[],name:string){download(values.map(storedPreset),name);}
+async function portablePreset(value:unknown){
+ const p=storedPreset(value);
+ if(!isWavetablePreset(p)||!tableCrc(p))return p;
+ const asset=await presetTable(tableCrc(p),p.table?.id);
+ if(!asset)throw Error('Import the table into this browser before exporting a portable sound.');
+ return {...p,tableAsset:exportTable(asset)};
+}
+export async function downloadPreset(value:unknown){const p=await portablePreset(value);download(p,p.name);}
+export async function downloadPresets(values:unknown[],name:string){download(await Promise.all(values.map(portablePreset)),name);}
 // Import accepts a single exported sound or an exported selection (array).
 export function importedPresets(data:unknown):SoundPreset[]{return (Array.isArray(data)?data:[data]).map(storedPreset);}
+export async function importPortablePreset(value:unknown):Promise<SoundPreset>{
+ const p=storedPreset(value);
+ if(!isWavetablePreset(p)||!tableCrc(p))return p;
+ const packaged=(value as {tableAsset?:unknown}).tableAsset;
+ if(packaged){
+  const asset=importTable(packaged);
+  if(asset.crc!==tableCrc(p))throw Error('The table does not match this sound.');
+  return {...p,table:await putTable({...asset,id:crypto.randomUUID()})};
+ }
+ const table=await tableReference(tableCrc(p));
+ if(!table)throw Error('This sound is missing its table. Import the table or export the sound with its table included.');
+ return {...p,table:{id:table.id,name:table.name}};
+}
 // Pick an action, then fold the ••• menu away.
 export const closeMenu=(e:{currentTarget:Element})=>e.currentTarget.closest('details')?.removeAttribute('open');
 export const folderName=(folder:string)=>folder||'Unfiled';

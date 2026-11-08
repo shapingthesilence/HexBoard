@@ -1,4 +1,5 @@
-import {storedPreset,type SoundPreset} from './presetLibrary.ts';
+import {isPhysicalPreset,isWavetablePreset,presetEngine,storedPreset,type SoundPreset} from './presetLibrary.ts';
+import {presetTable,tableReference} from './wavetable/library.ts';
 import {samePhysicalSound} from './physicalHistory.ts';
 import {SynthRequestCancelledError} from "./requestError.ts";
 import {defaultMono,validateMono,type MonoConfig} from './mono.ts';
@@ -9,7 +10,7 @@ import {prepareEstimate,engineNames} from "./loadTiming.ts";
 import {attachVoiceBudget,validVoiceBudget,type VoiceBudgetProfile,type VoiceBudgetState} from "./voiceBudget.ts";
 import {advancedWords,advancedFromWords,validateAdvanced,initialAdvanced,advancedWordCount,type AdvancedPatch,type AdvancedEngine} from './advancedSchema.ts';
 import {classicFromUnknown,initialClassic,type ClassicPreset} from './classicSchema.ts';
-import {wavetableEngine,wavetableSchema,wavetableWords,wavetableFromWords,validWavetable,wordCount as wavetableWordCount,type WavetablePatch} from './wavetableSchema.ts';
+import {tableCrc,wavetablePreset,wavetableEngine,wavetableSchema,wavetableWords,wavetableFromWords,validWavetable,wordCount as wavetableWordCount,type WavetablePatch} from './wavetableSchema.ts';
 import type {SynthProgress} from './progress.ts';
 import type { MidiTransport } from "../../midi/types.ts";
 import { decodePresetSyncFrame, encodeDefaultPresetSyncFrame, encodeU14, encodeU21, decodeU14, decodeU21 } from "../../protocol/index.ts";
@@ -21,7 +22,7 @@ export interface DevicePresetLabel {engine:number;favorite:boolean;name:string;f
 /** Shared HexBoard favorites: at most 32 across every engine and storage medium. */
 export interface DeviceFavorite {slot:number;medium:1|2;engine:number;name:string}
 export const deviceFavoriteLimit=32;
-const presetErrors:Record<number,string>={2:'That HexBoard folder already holds 32 presets. Choose another folder.',3:'The HexBoard already has 32 folders for this engine. Choose an existing folder with space.',4:'The HexBoard already has 32 favorites. Remove one before adding another.'};
+const presetErrors:Record<number,string>={2:'That HexBoard folder already holds 32 presets. Choose another folder.',3:'The HexBoard already has 32 folders for this engine. Choose an existing folder with space.',4:'The HexBoard already has 32 favorites. Remove one before adding another.',5:'The wavetable is missing or corrupt on the HexBoard. Copy the prepared table to its SD card and retry.'};
 // 128-byte catalog label: engine/favorite bytes, then UTF-8 name and folder.
 function presetLabelBytes(engine:number,label:Omit<DevicePresetLabel,'engine'>){
  const bytes=new Uint8Array(128);bytes[8]=engine;bytes[9]=+label.favorite;
@@ -96,7 +97,11 @@ export class PhysicalSynthClient {
   private abort?: () => void;
   constructor(private transport: MidiTransport,private onProgress?:(progress?:SynthProgress)=>void,private advanced=false) {}
   close() { this.closed = true; this.abort?.(); }
-  async readSound(name:string){const state=await this.status();if(state.instrument===4||state.instrument===5){const r=await this.readAdvanced(),p={...initialClassic(state.instrument),name,patch:r.patch,effects:r.effects,velocityEngine:state.preset.velocityEngine};return r.budget.qualified?attachVoiceBudget(p,r.budget):p;}return {...(await this.read()).preset,name};}
+  async readSound(name:string){const state=await this.status();if(state.instrument===wavetableEngine){
+    const {patch}=await this.readWavetable(),effects=await this.readEffects(),mono=await this.monoSettings();
+    const table=await tableReference(tableCrc(patch)).catch(()=>undefined);
+    return wavetablePreset(name,{...patch,effects,mono,table} as Parameters<typeof wavetablePreset>[1]);
+  }if(state.instrument===4||state.instrument===5){const r=await this.readAdvanced(),p={...initialClassic(state.instrument),name,patch:r.patch,effects:r.effects,velocityEngine:state.preset.velocityEngine};return r.budget.qualified?attachVoiceBudget(p,r.budget):p;}return {...(await this.read()).preset,name};}
   async presetLabel(slot:number):Promise<DevicePresetLabel>{return this.request(59,encodeU14(slot));}
   async presetFolders():Promise<DevicePresetFolder[]>{const rows:DevicePresetFolder[]=[];for(let at=0;at<32;at+=4)rows.push(...await this.request<DevicePresetFolder[]>(60,[at,4]));return rows;}
   async presetCatalog(action:number,slot=0,medium=0,progress?:(state:PresetCatalogState)=>unknown,label?:number[]):Promise<PresetCatalogState>{
@@ -124,27 +129,42 @@ export class PhysicalSynthClient {
   /** Save a sound to the HexBoard without loading it. The playing sound is saved
    * directly; any other sound goes through a staged save that restores the live sound. */
   async saveDevicePreset(preset:SoundPreset,slot:number,label:Omit<DevicePresetLabel,'engine'>,medium=0,progress?:(state:PresetCatalogState)=>void,create=false){
-    const p=storedPreset(preset),engine=p.format==='hexboard.advanced.v2'?p.engine:2;
-    if(await this.devicePlays(p))return this.presetCatalog(create?4:1,slot,medium,progress,presetLabelBytes(engine,label));
+    const p=storedPreset(preset),engine=presetEngine(p);
+    if(await this.devicePlays(p)){
+      try{return await this.presetCatalog(create?4:1,slot,medium,progress,presetLabelBytes(engine,label));}
+      catch(error){if(!isWavetablePreset(p)||!(error instanceof Error)||error.message!==presetErrors[5])throw error;}
+    }
     return this.storeDevicePreset(p,slot,label,medium,progress,create);
   }
   /** True when the device's current sound already equals this one. */
   async devicePlays(preset:SoundPreset){
     const p=storedPreset(preset),state=await this.status();
+    if(isWavetablePreset(p)){
+      if(state.instrument!==wavetableEngine)return false;
+      const {patch}=await this.readWavetable();
+      return JSON.stringify(wavetableWords(patch))===JSON.stringify(wavetableWords(p))&&
+        JSON.stringify(await this.readEffects())===JSON.stringify(p.effects)&&JSON.stringify(await this.monoSettings())===JSON.stringify(p.mono);
+    }
     if(p.format==='hexboard.advanced.v2'){if(state.instrument!==p.engine)return false;const r=await this.readAdvanced();return JSON.stringify(r.patch)===JSON.stringify(p.patch)&&JSON.stringify(r.effects)===JSON.stringify(p.effects);}
-    if(state.instrument!==2&&state.instrument!==3)return false;const live=storedPreset((await this.read()).preset);return live.format!=='hexboard.advanced.v2'&&samePhysicalSound(live,p);
+    if(state.instrument!==2&&state.instrument!==3)return false;const live=storedPreset((await this.read()).preset);return isPhysicalPreset(live)&&samePhysicalSound(live,p);
   }
   /** Staged save: the device holds its live sound, takes this sound's settings while
    * stopped (never its sample), writes the sample streamed from here, then restores. */
   async storeDevicePreset(preset:SoundPreset,slot:number,label:Omit<DevicePresetLabel,'engine'>,medium=0,progress?:(state:PresetCatalogState)=>void,create=false){
-    const p=storedPreset(preset),engine=p.format==='hexboard.advanced.v2'?p.engine:2,before=await this.status(),resume=before.state!=='stopped';
+    const p=storedPreset(preset),engine=presetEngine(p),before=await this.status(),resume=before.state!=='stopped';
     if(resume)await this.stopAndWait();
     await this.request(71,[1]);
     try{
       this.onProgress?.({label:'Preparing preset…'});
-      if(p.format==='hexboard.advanced.v2'){await this.applyAdvanced(p.patch);await this.effects(p.effects);await this.presetVelocity(p.velocityEngine);await this.restoreVoiceBudget(p);}
+      if(isWavetablePreset(p)){
+        await this.ensurePresetTable(tableCrc(p),p.table?.id);
+        await this.effects({...p.effects,order:[],routes:p.effects.routes?.map(()=>0)});
+        await this.monoSettings(p.mono);
+        await this.applyWavetable(p);
+        await this.effects(p.effects);
+      }else if(p.format==='hexboard.advanced.v2'){await this.applyAdvanced(p.patch);await this.effects(p.effects);await this.presetVelocity(p.velocityEngine);await this.restoreVoiceBudget(p);}
       else await this.apply(p,false);
-      const sample=p.format==='hexboard.advanced.v2'?undefined:p.sample,frames=sample?.enabled?sample.frames:[],loop=sample?.loop??defaultSampleLoop();
+      const sample=isPhysicalPreset(p)?p.sample:undefined,frames=sample?.enabled?sample.frames:[],loop=sample?.loop??defaultSampleLoop();
       const meta=[+(frames.length>0),...encodeU21(frames.length),...u32(sampleChecksum(frames)),...encodeU21(sample?.gain??32768),...encodeU21(sample?.direct??65535),loop.mode,...encodeU21(loop.start),...encodeU21(loop.end),...encodeU21(loop.crossfade)];
       let state=await this.request<PresetCatalogState>(58,[create?7:8,...encodeU14(slot),medium,...presetLabelBytes(engine,label),...meta]);const started=Date.now();
       const poll=async()=>{await progress?.(state);this.onProgress?.({label:'Saving preset…',completed:state.progress,total:100});await new Promise(r=>setTimeout(r,25));state=await this.request<PresetCatalogState>(57);if(Date.now()-started>120000)throw Error('Preset operation timed out. Reconnect to inspect the device.');};
@@ -264,8 +284,17 @@ export class PhysicalSynthClient {
     await this.request(76);
     try{await select();return;}catch{}
     if(!bytes)throw Error('This table is not in the browser library. Import its WAV or a sound containing it.');
+    await this.transferWavetableTable(crc,bytes,false,progress);
+  }
+  private async ensurePresetTable(crc:number,id?:string){
+    try{if(await this.request<number>(78,u32(crc))===crc)return;}catch{/* A browser copy can supply a missing card asset. */}
+    const asset=await presetTable(crc,id);
+    if(!asset)throw Error('Copy the prepared table to the HexBoard SD card or import it into this browser.');
+    await this.transferWavetableTable(crc,asset.prepared,true);
+  }
+  private async transferWavetableTable(crc:number,bytes:Uint8Array,durableOnly=false,progress?:(done:number,total:number)=>void){
     const {crc32,validateAsset}=await import('./wavetable/prepare.mjs');if(validateAsset(bytes)!==crc)throw Error('The table does not match this sound.');
-    try {await this.request(73,[...u32(bytes.length),...u32(crc32(bytes))]);for(let at=0;at<bytes.length;at+=176){const chunk=bytes.subarray(at,at+176);const end=await this.request<number>(74,[...u32(at),...encodeU14(chunk.length),...Array.from(chunk).flatMap(b=>[b>>7,b&127])]);if(end!==at+chunk.length)throw Error('Table transfer offset mismatch.');progress?.(end,bytes.length);}if(await this.request<number>(75)!==crc)throw Error('The board received a different table.');}catch(error){try{await this.request(76);}catch{}throw error;}
+    try {await this.request(73,[...u32(bytes.length),...u32(crc32(bytes))]);for(let at=0;at<bytes.length;at+=176){const chunk=bytes.subarray(at,at+176);const end=await this.request<number>(74,[...u32(at),...encodeU14(chunk.length),...Array.from(chunk).flatMap(b=>[b>>7,b&127])]);if(end!==at+chunk.length)throw Error('Table transfer offset mismatch.');progress?.(end,bytes.length);}if(await this.request<number>(75,durableOnly?[1]:[])!==crc)throw Error('The board received a different table.');}catch(error){try{await this.request(76);}catch{}throw error;}
   }
   editWavetable(index:number,value:number){return this.retryAdvanced(34,[...encodeU21(index),...encodeU21(value),wavetableEngine]);}
   routeWavetable(index:number,source:number,destination:number,depth:number){return this.retryAdvanced(35,[...encodeU21(index),...encodeU21(source*256+destination),...encodeU21(depth+65536),wavetableEngine]);}
@@ -377,10 +406,10 @@ export class PhysicalSynthClient {
           if (frame.message === 7) {
             finish(Error(operation===41?"Update Advanced main firmware to use the global arpeggiator.":frame.payload[1] === 3 ? operation>=16?"Update Advanced firmware for envelope and LFO modulation.":"Update Advanced main firmware for preset velocity engines." : frame.payload[1] === 9 ? "DSP budget full. Reduce another effect, feature or modulation first." : frame.payload[1] === 8 ? "Stop Learn or Calibration and release keys before changing the velocity engine or loading a sound." : operation===21?"Release the keys and stop the synth before importing a sample.":operation===25?"Release the keys before sample preview.":operation===42?"Release the keys before switching Arp on/off or changing its output. If playback is being tested, wait for it to finish.":operation===44?"Stop the synth, clear held arp notes, and release the keys before saving performance settings.":"The board rejected this synth operation."));
           } else if((operation===57||operation===58)&&frame.message===0x43){
-            const p=frame.payload;if(p.length<27||p.length>29||p[0]!==17||p[1]!==2||p[2]>3||p[3]>8||decodeU14(p.slice(4,6))>=3072||p[6]>2||p[7]>100||![2,4,5].includes(p[19])||p[20]>=32||decodeU14(p.slice(21,23))!==3072||p[23]!==32)throw Error('Update Advanced firmware for the folder preset library.');const mask=p.slice(8,13).reduce((a,b)=>a*128+b,0);if(mask>0xffffffff)throw Error('Invalid preset folder mask.');finish(undefined,{phase:p[2],action:p[3],slot:decodeU14(p.slice(4,6)),medium:p[6],progress:p[7],mask,elapsedMs:decodeU21(p.slice(13,16)),maxSliceUs:decodeU21(p.slice(16,19)),engine:p[19],folder:p[20],capacity:3072,folderCapacity:32,heapMin:decodeU21(p.slice(24,27)),error:p.length>27?p[27]:0,awaiting:p[28]===1} as T);
+            const p=frame.payload,capacity=decodeU14(p.slice(21,23)),slot=decodeU14(p.slice(4,6));if(p.length<27||p.length>29||p[0]!==17||p[1]!==2||p[2]>3||p[3]>8||![3072,4096].includes(capacity)||slot>=capacity||p[6]>2||p[7]>100||p[19]!==[2,4,5,7][Math.floor(slot/1024)]||p[20]>=32||p[23]!==32)throw Error('Update Advanced firmware for the folder preset library.');const mask=p.slice(8,13).reduce((a,b)=>a*128+b,0);if(mask>0xffffffff)throw Error('Invalid preset folder mask.');finish(undefined,{phase:p[2],action:p[3],slot:decodeU14(p.slice(4,6)),medium:p[6],progress:p[7],mask,elapsedMs:decodeU21(p.slice(13,16)),maxSliceUs:decodeU21(p.slice(16,19)),engine:p[19],folder:p[20],capacity,folderCapacity:32,heapMin:decodeU21(p.slice(24,27)),error:p.length>27?p[27]:0,awaiting:p[28]===1} as T);
           } else if(operation===59&&frame.message===0x44){
-            const p=frame.payload;if(p.length!==259||p[0]!==17||p[1]!==data[0]||p[2]!==data[1])throw Error('Invalid preset label.');const bytes=Uint8Array.from({length:128},(_,i)=>{if(p[3+i*2]>1)throw Error('Invalid preset label byte.');return (p[3+i*2]<<7)|p[4+i*2];});const text=(offset:number,n:number)=>{const b=bytes.slice(offset,offset+n),end=b.indexOf(0);return new TextDecoder('utf-8',{fatal:true}).decode(b.slice(0,end<0?n:end));};if(![2,3,4,5].includes(bytes[8])||bytes[9]>1)throw Error('Invalid preset engine.');finish(undefined,{engine:bytes[8],favorite:!!bytes[9],name:text(12,76),folder:text(88,40)} as T);
-          } else if(operation>=73&&operation<=77&&frame.message===0x4d){
+            const p=frame.payload;if(p.length!==259||p[0]!==17||p[1]!==data[0]||p[2]!==data[1])throw Error('Invalid preset label.');const bytes=Uint8Array.from({length:128},(_,i)=>{if(p[3+i*2]>1)throw Error('Invalid preset label byte.');return (p[3+i*2]<<7)|p[4+i*2];});const text=(offset:number,n:number)=>{const b=bytes.slice(offset,offset+n),end=b.indexOf(0);return new TextDecoder('utf-8',{fatal:true}).decode(b.slice(0,end<0?n:end));};if(![2,3,4,5,7].includes(bytes[8])||bytes[9]>1)throw Error('Invalid preset engine.');finish(undefined,{engine:bytes[8],favorite:!!bytes[9],name:text(12,76),folder:text(88,40)} as T);
+          } else if(operation>=73&&operation<=78&&frame.message===0x4d){
             const p=frame.payload;if(p.length!==6||p[0]!==17||p[1]>15)throw Error('Invalid table transfer acknowledgement.');finish(undefined,p.slice(1).reduce((n,b)=>n*128+b,0) as T);
           } else if(operation===71&&frame.message===0x4c){
             const p=frame.payload;if(p.length!==2||p[0]!==17||p[1]>1)throw Error('Update Advanced firmware to save without loading.');finish(undefined,{staged:p[1]===1} as T);

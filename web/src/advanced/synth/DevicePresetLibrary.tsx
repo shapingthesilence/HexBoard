@@ -1,13 +1,13 @@
 import {useEffect,useRef,useState} from 'react';
 import {deviceFavoriteLimit,type PhysicalSynthClient,type DevicePresetLabel,type DevicePresetFolder,type DeviceFavorite} from './client.ts';
 import {folderName,closeMenu} from './presetLibrary.ts';
-export const deviceEngineBase=(engine:number)=>(engine===4?1:engine===5?2:0)*1024;
+export const deviceEngineBase=(engine:number)=>(engine===4?1:engine===5?2:engine===7?3:0)*1024;
 export const folderFull=(mask:number)=>mask===0xffffffff;
 const occupied=(mask:number)=>{let n=0;for(let m=mask>>>0;m;m&=m-1)n++;return n;};
 export type DeviceMedium=0|1|2;
 export const deviceFolderLimit=32,devicePresetsPerFolder=32;
 export interface DeviceRow {id:number;label:DevicePresetLabel;medium:1|2}
-const engineLabel=(engine:number)=>engine===4?'Juno':engine===5?'DX7':'Physical Strings';
+const engineLabel=(engine:number)=>engine===4?'Juno':engine===5?'DX7':engine===7?'Wavetable':'Physical Strings';
 /** Every HexBoard library holds up to 32 folders of 32 items; explain a save that would exceed either limit. */
 export function deviceFolderProblem(folders:DevicePresetFolder[],path:string){
  const used=folders.filter(f=>f.mask),target=used.find(f=>f.name===path);

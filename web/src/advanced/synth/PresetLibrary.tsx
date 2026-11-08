@@ -6,10 +6,11 @@ import {DevicePresetLibrary,useDeviceLibrary,deviceEngineBase,type DeviceMedium,
 import {deviceFavoriteLimit,type PhysicalSynthClient,type DeviceFavorite} from './client.ts';
 import {factoryPhysicalPresets} from './schema.ts';
 import {factoryClassicPresets} from './classicSchema.ts';
+import {factoryWavetablePresets} from './wavetableSchema.ts';
 import {importDx7} from './dx7Import.ts';
 import {LibraryBulkActions} from '../../components/LibraryBulkActions.tsx';
 import {OrganizeLibraryItemDialog} from '../../components/OrganizeLibraryItemDialog.tsx';
-import {storedPreset,presetEngine,libraryFolder,readLibrary,putLibraryPreset,removeLibraryPreset,downloadPreset,downloadPresets,importedPresets,folderName,presetName,favoritesFilter,filterEntries,folderCounts,sameName,browserSaveTarget,closeMenu,type SoundPreset,type LibraryPreset} from './presetLibrary.ts';
+import {storedPreset,presetEngine,libraryFolder,readLibrary,putLibraryPreset,removeLibraryPreset,downloadPreset,downloadPresets,importPortablePreset,isPhysicalPreset,folderName,presetName,favoritesFilter,filterEntries,folderCounts,sameName,browserSaveTarget,closeMenu,type SoundPreset,type LibraryPreset} from './presetLibrary.ts';
 import './PresetLibrary.css';
 
 interface Link {browser?:string;device?:{slot:number;folder:string;medium:1|2}}
@@ -17,7 +18,7 @@ interface Identity {link:Link;folder:string}
 const identityKey=(engine:number)=>`hexboard.advanced.library.${engine}`;
 function readIdentity(engine:number):Identity{try{const v=JSON.parse(localStorage.getItem(identityKey(engine))??'null');if(v&&typeof v.folder==='string'&&typeof v.link==='object')return v;}catch{/* Private windows may refuse storage. */}return {link:{},folder:''};}
 function writeIdentity(engine:number,value:Identity){try{writeStoredText(localStorage,identityKey(engine),JSON.stringify(value));}catch{/* The current page still holds the identity. */}}
-const engineName=(engine:number)=>engine===2?'Physical Strings':engine===4?'Juno':'DX7';
+const engineName=(engine:number)=>engine===2?'Physical Strings':engine===4?'Juno':engine===7?'Wavetable':'DX7';
 const folderOf=(slot:number)=>Math.floor(slot/32)%32;
 const browserFavoriteLimit=32; // Shared across engines, like HexBoard favorites.
 
@@ -30,7 +31,7 @@ function FolderChips({label,rows,folder,favorites,onFolder}:{label:string;rows:L
  </div>;
 }
 
-export function PresetLibrary({preset,client,disabled,onLoad,onDeviceLoad,onBusy,onRename}:{preset:SoundPreset;client?:PhysicalSynthClient;disabled?:boolean;onLoad:(p:SoundPreset)=>Promise<void>;onDeviceLoad:(engine:number,name:string)=>Promise<void>;onBusy?:(v:boolean)=>void;onRename:(name:string)=>void}){
+export function PresetLibrary({preset,client,disabled,onLoad,onDeviceLoad,onBusy,onRename,onImportAsset}:{preset:SoundPreset;client?:PhysicalSynthClient;disabled?:boolean;onLoad:(p:SoundPreset)=>Promise<void>;onDeviceLoad:(engine:number,name:string)=>Promise<void>;onBusy?:(v:boolean)=>void|Promise<void>;onRename:(name:string)=>void;onImportAsset?:(value:unknown)=>Promise<boolean>}){
  const engine=presetEngine(preset),label=engineName(engine);
  const [open,setOpen]=useState(false),[entries,setEntries]=useState<LibraryPreset[]>([]),[extra,setExtra]=useState<SoundPreset[]>([]),[identity,setIdentity]=useState(()=>readIdentity(engine)),[medium,setMedium]=useState<DeviceMedium>(0),[working,setWorking]=useState(false),[notice,setNotice]=useState(''),[error,setError]=useState('');
  const [browserFolder,setBrowserFolder]=useState<string|null>(null),[browserQuery,setBrowserQuery]=useState(''),[factoryFolder,setFactoryFolder]=useState<string|null>(null),[factoryQuery,setFactoryQuery]=useState(''),[selected,setSelected]=useState<string[]>([]),[organizing,setOrganizing]=useState<LibraryPreset>(),[organizingDevice,setOrganizingDevice]=useState<DeviceRow>();
@@ -42,10 +43,10 @@ export function PresetLibrary({preset,client,disabled,onLoad,onDeviceLoad,onBusy
  useAutosave(()=>writeIdentity(engine,identity),[engine,identity]);
  useEffect(()=>{void readLibrary().then(setEntries).catch(e=>setError(String(e)));},[]);
  useEffect(()=>{if(!open)return;const d=dialog.current;d?.showModal();void readLibrary().then(setEntries).catch(e=>setError(String(e)));return()=>{d?.close();launcher.current?.focus();};},[open]);
- const operation=async(fn:()=>Promise<void>)=>{setWorking(true);onBusy?.(true);setError('');setNotice('');try{await fn();}catch(e){setError(e instanceof Error?e.message:String(e));}finally{onBusy?.(false);setWorking(false);}};
+ const operation=async(fn:()=>Promise<void>)=>{setWorking(true);setError('');setNotice('');try{await onBusy?.(true);await fn();}catch(e){setError(e instanceof Error?e.message:String(e));}finally{onBusy?.(false);setWorking(false);}};
  const run=(fn:()=>Promise<void>)=>void operation(fn);
  const mine=entries.filter(e=>presetEngine(e.preset)===engine),linked=mine.find(e=>e.id===link.browser);
- const factory:LibraryPreset[]=[...(engine===2?factoryPhysicalPresets:factoryClassicPresets.filter(p=>p.engine===engine)),...extra].map((p,i)=>({id:`factory-${i}`,preset:p,folder:'factoryBank' in p?p.factoryBank??'Factory':'Factory',favorite:false,updated:0}));
+ const factory:LibraryPreset[]=[...(engine===2?factoryPhysicalPresets:engine===7?factoryWavetablePresets:factoryClassicPresets.filter(p=>p.engine===engine)),...extra].map((p,i)=>({id:`factory-${i}`,preset:p,folder:'factoryBank' in p?p.factoryBank??'Factory':'Factory',favorite:false,updated:0}));
  const current=()=>storedPreset({...preset,name:presetName(preset.name)});
  // A device audition is only read back (with any PCM) when it is needed.
  const sound=async()=>pendingDevice.current&&client?storedPreset(await client.readSound(pendingDevice.current.name)):current();
@@ -57,7 +58,7 @@ export function PresetLibrary({preset,client,disabled,onLoad,onDeviceLoad,onBusy
   const entry:LibraryPreset={id:t.id??crypto.randomUUID(),preset:p,folder:path,favorite:t.favorite,updated:Date.now()};
   await putLibraryPreset(entry);if(t.remove)await removeLibraryPreset(t.remove);await refreshEntries();return entry;
  };
- const saveCurrentToBrowser=(asNew:boolean)=>run(async()=>{const p=current(),path=libraryFolder(folder),entry=await saveBrowser(p,path,asNew?undefined:link.browser);if(!entry)return;updateIdentity({folder:path,link:{...link,browser:entry.id}});setNotice(`Saved “${p.name}” in this browser${p.format!=='hexboard.advanced.v2'&&p.sample.enabled?', including its sample':''}.`);});
+ const saveCurrentToBrowser=(asNew:boolean)=>run(async()=>{const p=current(),path=libraryFolder(folder),entry=await saveBrowser(p,path,asNew?undefined:link.browser);if(!entry)return;updateIdentity({folder:path,link:{...link,browser:entry.id}});setNotice(`Saved “${p.name}” in this browser${isPhysicalPreset(p)&&p.sample.enabled?', including its sample':''}.`);});
  const saveCurrentToHexBoard=()=>run(async()=>{
   if(!client)return;const p=current(),path=libraryFolder(folder),d=link.device,replace=d&&d.folder===path?d:undefined;
   const favorite=!!replace&&!!library.catalog?.rows.find(row=>row.id===replace.slot)?.label.favorite;
@@ -108,7 +109,13 @@ export function PresetLibrary({preset,client,disabled,onLoad,onDeviceLoad,onBusy
   let added=0,skipped=0;
   for(const file of list){
    if(file.name.toLowerCase().endsWith('.syx')){if(engine!==5){skipped++;continue;}const bank=importDx7(new Uint8Array(await file.arrayBuffer())).map(p=>({...p,factoryBank:file.name.replace(/\.syx$/i,'')}));setExtra(v=>[...v,...bank]);setFactoryFolder(null);setNotice(`${bank.length} DX7 voices are under Factory. Load one, then save it to keep it.`);continue;}
-   for(const p of importedPresets(JSON.parse(await file.text()))){if(presetEngine(p)!==engine){skipped++;continue;}await putLibraryPreset({id:crypto.randomUUID(),folder:'Imports',favorite:false,updated:Date.now(),preset:p});added++;}
+   const value:unknown=JSON.parse(await file.text());
+   if(await onImportAsset?.(value))continue;
+   for(const raw of Array.isArray(value)?value:[value]){
+    if(presetEngine(storedPreset(raw))!==engine){skipped++;continue;}
+    const p=await importPortablePreset(raw);
+    await putLibraryPreset({id:crypto.randomUUID(),folder:'Imports',favorite:false,updated:Date.now(),preset:p});added++;
+   }
   }
   await refreshEntries();if(added){setBrowserFolder('Imports');setNotice(`Imported ${added} preset${added===1?'':'s'} into Imports${skipped?`; skipped ${skipped} for another engine`:''}.`);}else if(skipped)setError(`No ${label} presets found. Open the matching engine to import those files.`);
  });
@@ -132,7 +139,7 @@ export function PresetLibrary({preset,client,disabled,onLoad,onDeviceLoad,onBusy
     <button type="button" className="primary" disabled={disabled||working||!client} title={client?undefined:'Connect HexBoard Advanced to save on the instrument'} onClick={saveCurrentToHexBoard}>Save to HexBoard</button>
     <details className="presetOverflowMenu"><summary aria-label="Sound actions" title="More actions">•••</summary><div className="presetOverflowActions" onClick={closeMenu}>
      <button type="button" disabled={disabled||working} onClick={()=>saveCurrentToBrowser(true)}>Save as new in Browser</button>
-     <button type="button" disabled={disabled||working} onClick={()=>downloadPreset(current())}>Export file</button>
+     <button type="button" disabled={disabled||working} onClick={()=>run(()=>downloadPreset(current()))}>Export file</button>
      <button type="button" disabled={disabled||working} onClick={()=>files.current?.click()}>Import files…</button>
     </div></details>
    </div>
@@ -155,17 +162,17 @@ export function PresetLibrary({preset,client,disabled,onLoad,onDeviceLoad,onBusy
       <div className="librarySpaceHeader"><div><h3>Browser Library</h3><span className="muted">Saved in this browser</span></div><span className="countBadge">{visibleBrowser.length}</span></div>
       <input type="search" aria-label="Search browser presets" placeholder="Search presets" value={browserQuery} onChange={e=>setBrowserQuery(e.target.value)}/>
       <FolderChips label="Browser" rows={mine} folder={browserFolder} favorites onFolder={setBrowserFolder}/>
-      <LibraryBulkActions selectedCount={selectedRows.length} visibleCount={visibleIds.length} allVisibleSelected={visibleIds.length>0&&visibleIds.every(id=>selected.includes(id))} transferLabel="Copy selected to HexBoard" transferDisabled={!client} busy={working} onSelectVisible={on=>setSelected(v=>on?[...new Set([...v,...visibleIds])]:v.filter(id=>!visibleIds.includes(id)))} onClear={()=>setSelected([])} onTransfer={()=>run(()=>copyToHexBoard(selectedRows))} onExport={()=>downloadPresets(selectedRows.map(r=>r.preset),`${label} presets`)}/>
+      <LibraryBulkActions selectedCount={selectedRows.length} visibleCount={visibleIds.length} allVisibleSelected={visibleIds.length>0&&visibleIds.every(id=>selected.includes(id))} transferLabel="Copy selected to HexBoard" transferDisabled={!client} busy={working} onSelectVisible={on=>setSelected(v=>on?[...new Set([...v,...visibleIds])]:v.filter(id=>!visibleIds.includes(id)))} onClear={()=>setSelected([])} onTransfer={()=>run(()=>copyToHexBoard(selectedRows))} onExport={()=>run(()=>downloadPresets(selectedRows.map(r=>r.preset),`${label} presets`))}/>
       <ul className="list">
        {visibleBrowser.length===0?<li className="emptyListItem">{browserQuery.trim()?`No presets match “${browserQuery.trim()}”`:mine.length?'No presets in this folder':'Use Save to Browser to keep your first sound, or start from Factory'}</li>:visibleBrowser.map(row=><li key={row.id} className={`listItem presetListItem${row.id===link.browser?' activeListItem':''}`}>
         <label className="libraryItemSelection" title={`Select ${row.preset.name}`}><input type="checkbox" aria-label={`Select ${row.preset.name}`} checked={selected.includes(row.id)} onChange={e=>setSelected(v=>e.target.checked?[...v,row.id]:v.filter(id=>id!==row.id))}/></label>
-        <button className="presetNameButton" type="button" disabled={working} title={`Load ${row.preset.name}`} onClick={()=>run(()=>loadBrowser(row))}><strong>{row.preset.name}</strong><span>{folderName(row.folder)}{row.preset.format!=='hexboard.advanced.v2'&&row.preset.sample.enabled?' · Sample':''}</span></button>
+        <button className="presetNameButton" type="button" disabled={working} title={`Load ${row.preset.name}`} onClick={()=>run(()=>loadBrowser(row))}><strong>{row.preset.name}</strong><span>{folderName(row.folder)}{isPhysicalPreset(row.preset)&&row.preset.sample.enabled?' · Sample':''}</span></button>
         <button type="button" className="iconButton soundFavorite" aria-pressed={row.favorite} aria-label={`${row.favorite?'Unfavorite':'Favorite'} ${row.preset.name}`} disabled={working} onClick={()=>run(async()=>{if(!row.favorite&&entries.filter(e=>e.favorite).length>=browserFavoriteLimit)throw Error(`This browser already has ${browserFavoriteLimit} favorites across all engines. Remove one before adding another.`);await putLibraryPreset({...row,favorite:!row.favorite});await refreshEntries();})}>{row.favorite?'★':'☆'}</button>
         <details className="presetOverflowMenu"><summary aria-label={`More actions for ${row.preset.name}`} title="More actions">•••</summary><div className="presetOverflowActions" onClick={closeMenu}>
          <button type="button" disabled={working} onClick={()=>run(()=>loadBrowser(row))}>Load</button>
          <button type="button" disabled={working} onClick={()=>setOrganizing(row)}>Rename / Move</button>
          <button type="button" disabled={working||!client} onClick={()=>run(()=>copyToHexBoard([row]))}>Copy to HexBoard</button>
-         <button type="button" onClick={()=>downloadPreset(row.preset)}>Export file</button>
+         <button type="button" onClick={()=>run(()=>downloadPreset(row.preset))}>Export file</button>
          <button type="button" className="warning" disabled={working} onClick={()=>run(()=>deleteBrowser(row))}>Delete</button>
         </div></details>
        </li>)}
@@ -182,7 +189,7 @@ export function PresetLibrary({preset,client,disabled,onLoad,onDeviceLoad,onBusy
         <details className="presetOverflowMenu"><summary aria-label={`More actions for ${row.preset.name}`} title="More actions">•••</summary><div className="presetOverflowActions" onClick={closeMenu}>
          <button type="button" disabled={working} onClick={()=>run(()=>loadFactory(row))}>Load</button>
          <button type="button" disabled={working} onClick={()=>run(async()=>{const entry=await saveBrowser(storedPreset(row.preset),'Factory copies');if(entry){setBrowserFolder('Factory copies');setNotice(`Copied ${row.preset.name} to Factory copies.`);}})}>Copy to Browser</button>
-         <button type="button" onClick={()=>downloadPreset(row.preset)}>Export file</button>
+         <button type="button" onClick={()=>run(()=>downloadPreset(row.preset))}>Export file</button>
         </div></details>
        </li>)}
       </ul>

@@ -1,4 +1,4 @@
-import {DevicePresetLibrary,deviceFolderProblem} from './DevicePresetLibrary.tsx';
+import {DevicePresetLibrary,deviceFolderProblem,deviceEngineBase} from './DevicePresetLibrary.tsx';
 import {SynthRequestCancelledError,synthErrorMessage} from "./requestError.ts";
 import {SynthProgress} from './SynthProgress.tsx';
 import type {SynthProgress as Progress} from './progress.ts';
@@ -38,7 +38,7 @@ class Transport implements MidiTransport {
     if(frame.payload[1]===61||frame.payload[1]===62){queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x45,frame.transactionId,[17])))));return;}
     if((frame.payload[1]===57||frame.payload[1]===58)&&this.catalogReplies){const reply=this.catalogReplies.shift()!;queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x43,frame.transactionId,reply)))));return;}
     if(frame.payload[1]===57||frame.payload[1]===58){const phase=frame.payload[1]===58?1:2,reply=[17,2,phase,0,0,0,phase===1?0:2,phase===1?0:100,0,0,0,0,phase===1?0:1,...encodeU21(phase===1?0:100),...encodeU21(phase===1?0:400),2,0,...encodeU14(3072),32,...encodeU21(8000)];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x43,frame.transactionId,reply)))));return;}
-    if(frame.payload[1]===59){const b=new Uint8Array(128);b[8]=5;b.set(new TextEncoder().encode('High ID sound'),12);const reply=[17,...frame.payload.slice(2,4),...Array.from(b).flatMap(v=>[v>>7,v&127])];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x44,frame.transactionId,reply)))));return;}
+    if(frame.payload[1]===59){const b=new Uint8Array(128);b[8]=frame.payload[2]>=24?7:5;b.set(new TextEncoder().encode('High ID sound'),12);const reply=[17,...frame.payload.slice(2,4),...Array.from(b).flatMap(v=>[v>>7,v&127])];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x44,frame.transactionId,reply)))));return;}
     if(frame.payload[1]===60){const b=new Uint8Array(48);new DataView(b.buffer).setUint32(0,0x80000000,true);b.set(new TextEncoder().encode('Glass'),4);const reply=[17,...frame.payload.slice(2,4),...Array.from({length:frame.payload[3]},()=>Array.from(b).flatMap(v=>[v>>7,v&127])).flat()];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x46,frame.transactionId,reply)))));return;}
     const modulation=frame.payload[1]>=16;
     if(frame.payload[1]===17)this.modulation=decodeModulation([17,...frame.payload.slice(2)]);
@@ -342,6 +342,16 @@ it('explicitly clears a previous device sample even with a fresh browser client'
 it('polls an automatic-storage catalog operation through completion',async()=>{const t=new Transport(),c=new PhysicalSynthClient(t),progress:number[]=[];try{const result=await c.presetCatalog(0,0,0,s=>progress.push(s.progress));expect(result).toMatchObject({phase:2,medium:2,mask:1,elapsedMs:100});expect(progress).toEqual([0,100]);expect(t.listeners.size).toBe(0);}finally{c.close();}});
 
 it('uses wide device IDs and preserves the top occupancy bit in folder pages',async()=>{const t=new Transport(),c=new PhysicalSynthClient(t);try{await c.presetCatalog(0,2080,1);expect(decodePresetSyncFrame(t.sent[0]).payload).toEqual([17,58,0,...encodeU14(2080),1]);expect(await c.presetLabel(3071)).toMatchObject({engine:5,name:'High ID sound'});const folders=await c.presetFolders();expect(folders).toHaveLength(32);expect(folders[31]).toEqual({index:31,name:'Glass',mask:0x80000000});}finally{c.close();}});
+
+it('reads wavetable catalog slots above the original three groups',async()=>{
+ const t=new Transport(),c=new PhysicalSynthClient(t);
+ t.catalogReplies=[[17,2,2,0,...encodeU14(4095),1,100,8,0,0,0,0,...encodeU21(0),...encodeU21(0),7,31,...encodeU14(4096),32,...encodeU21(8000)]];
+ try{
+  expect(deviceEngineBase(7)).toBe(3072);
+  expect(await c.presetCatalog(0,4095,1)).toMatchObject({slot:4095,engine:7,capacity:4096});
+  expect(await c.presetLabel(4095)).toMatchObject({engine:7});
+ }finally{c.close();}
+});
 
 it('keeps device library controls disabled while the parent is busy',()=>{const t=new Transport(),c=new PhysicalSynthClient(t);const html=renderToStaticMarkup(createElement(DevicePresetLibrary,{client:c,library:{catalog:undefined,favorites:[],reading:'',refresh:async()=>{},refreshFavorites:async()=>{}},medium:0,onMedium:()=>{},busy:true,run:()=>{},onLoad:async()=>{},onLoadFavorite:async()=>{},onCopy:async()=>{},onReplace:async()=>{},onDelete:async()=>{},onOrganize:()=>{},onFavorite:async()=>{},onUnfavorite:async()=>{}}));expect(html).toContain('aria-busy="true"');expect(html).toMatch(/<select[^>]*disabled=""/);c.close();});
 it('explains HexBoard saves beyond 32 folders or 32 presets per folder',()=>{const folders=Array.from({length:32},(_,i)=>({index:i,name:`F${i}`,mask:i===3?0xffffffff:1}));expect(deviceFolderProblem(folders,'F3')).toMatch(/32 presets/);expect(deviceFolderProblem(folders,'F4')).toBeUndefined();expect(deviceFolderProblem(folders,'New')).toMatch(/32 folders/);expect(deviceFolderProblem(folders.map(f=>f.index===31?{...f,mask:0}:f),'New')).toBeUndefined();});

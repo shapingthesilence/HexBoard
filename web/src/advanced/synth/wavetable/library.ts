@@ -1,4 +1,4 @@
-import {getFactoryTable} from './factory.ts';
+import {factoryTables,getFactoryTable} from './factory.ts';
 import {validateAsset,assetBytes,type TableOptions} from './prepare.mjs';
 export interface TableRef {id:string;name:string;crc?:number}
 export interface TableAsset extends TableRef {crc:number;source:Uint8Array;options:TableOptions;prepared:Uint8Array}
@@ -8,6 +8,16 @@ async function request<T>(mode:IDBTransactionMode,action:(store:IDBObjectStore)=
 export async function listTables():Promise<TableRef[]>{const db=await database();return new Promise((resolve,reject)=>{const rows:TableRef[]=[],tx=db.transaction('tables','readonly'),r=tx.objectStore('tables').openCursor();r.onsuccess=()=>{const cursor=r.result;if(cursor){const a=cursor.value as TableAsset;rows.push({id:a.id,name:a.name,crc:a.crc});cursor.continue();}};tx.oncomplete=()=>{db.close();resolve(rows);};tx.onerror=()=>{db.close();reject(Error('Could not read the table library.'));};});}
 function remember(a:TableAsset){if(cache.size>=4)cache.delete(cache.keys().next().value!);cache.set(a.id,a);}
 export async function getTable(id:string):Promise<TableAsset|undefined>{if(cache.has(id))return cache.get(id);const row=await getFactoryTable(id)??await request('readonly',s=>s.get(id));if(row){validateTable(row);remember(row);}return row;}
+export async function tableReference(crc:number):Promise<TableRef|undefined>{
+ if(!crc)return undefined;
+ return factoryTables.find(table=>table.crc===crc)??(await listTables()).find(table=>table.crc===crc);
+}
+export async function presetTable(crc:number,id?:string):Promise<TableAsset|undefined>{
+ if(!crc)return undefined;
+ const requested=id?await getTable(id):undefined;
+ if(requested?.crc===crc)return requested;
+ const ref=await tableReference(crc);return ref?getTable(ref.id):undefined;
+}
 export async function putTable(asset:TableAsset){validateTable(asset);await request('readwrite',s=>s.put(asset));remember(asset);return {id:asset.id,name:asset.name};}
 function validateTable(a:TableAsset){if(!a||typeof a.id!=='string'||!a.id||a.id.length>100||typeof a.name!=='string'||!a.name.trim()||a.name.length>80||!(a.source instanceof Uint8Array)||a.source.length>32*1024*1024||validateAsset(a.prepared)!==a.crc)throw Error('Invalid wavetable library entry.');}
 function base64(bytes:Uint8Array){let text='';for(let at=0;at<bytes.length;at+=8192)text+=String.fromCharCode(...bytes.subarray(at,at+8192));return btoa(text);}

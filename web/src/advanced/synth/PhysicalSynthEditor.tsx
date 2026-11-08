@@ -1,3 +1,4 @@
+import {isPhysicalPreset,presetDraftKey} from './presetLibrary.ts';
 import {PresetLibrary} from './PresetLibrary.tsx';
 import {useAutosave} from '../../editor/useAutosave.ts';
 import {writeStoredText} from '../../editor/autosave.ts';
@@ -44,7 +45,7 @@ function readDraft(): PhysicalPreset | undefined {
 function PadLabels({corners,x,y}:{corners:[string,string,string,string];x:string;y:string}){
  return <><span className="pad-corner top-left">{corners[0]}</span><span className="pad-corner top-right">{corners[1]}</span><span className="pad-corner bottom-left">{corners[2]}</span><span className="pad-corner bottom-right">{corners[3]}</span><span className="pad-axis-x">{x}</span><span className="pad-axis-y">{y}</span></>;
 }
-export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoaded }: { transport?: MidiTransport;advanced?:boolean;onDeviceEngineLoaded?:(engine:2|4|5)=>void }) {
+export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoaded }: { transport?: MidiTransport;advanced?:boolean;onDeviceEngineLoaded?:(engine:2|4|5|7)=>void }) {
   const performance=usePerformance(),performanceTempo=usePerformanceTempo();
   const [client, setClient] = useState<PhysicalSynthClient>();
   const [connectionAttempt, setConnectionAttempt] = useState(0);
@@ -336,7 +337,7 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
     {routeMenu&&routeDepth(preset,routeMenu.target,routeMenu.source)!==0&&<RouteMenu title={`${physicalSources[routeMenu.source]} → ${physicalParameters[routeMenu.target].name}`} color={sourceColors[routeMenu.source]} depth={routeDepth(preset,routeMenu.target,routeMenu.source)} x={routeMenu.x} y={routeMenu.y} onDepth={d=>setRoute(routeMenu.target,routeMenu.source,d)} onClose={()=>setRouteMenu(undefined)}/>}
     {blockedTip && tool==="modulate"&&<div className="mod-limit-tooltip" role="tooltip" style={{left:Math.min(blockedTip.x,window.innerWidth-220),top:blockedTip.y}}>DSP budget full · reduce another feature</div>}
     <header className="instrument-title"><h2>Physical Strings</h2><span>Stereo</span>{activity?<SynthProgress progress={activity}/>:<p role="status" className={failed ? "error" : ""}>{message}</p>}</header>
-    <PresetLibrary preset={namedPreset} client={ready?client:undefined} disabled={busy} onRename={value=>replacePreset(p=>({...p,name:value}))} onBusy={v=>{if(v){edits.current.clear();clearTimeout(fxTimer.current);setFxWaiting(false);}setLoading(v);}} onLoad={async p=>{if(p.format==='hexboard.advanced.v2')throw Error('Select the matching engine.');await apply(p);}} onDeviceLoad={async(engine,name)=>{edits.current.clear();clearTimeout(fxTimer.current);retainedDraft.current=true;const value=await client!.readSound(name);if(engine!==2&&engine!==3){writeStoredText(localStorage, `hexboard.advanced.${engine}.draft`,JSON.stringify(value));onDeviceEngineLoaded?.(engine as 4|5);return;}if(value.format==='hexboard.advanced.v2')return;setDevice(await client!.status());resetPreset(value);}}/>
+    <PresetLibrary preset={namedPreset} client={ready?client:undefined} disabled={busy} onRename={value=>replacePreset(p=>({...p,name:value}))} onBusy={v=>{if(v){edits.current.clear();clearTimeout(fxTimer.current);setFxWaiting(false);}setLoading(v);}} onLoad={async p=>{if(!isPhysicalPreset(p))throw Error('Select the matching engine.');await apply(p);}} onDeviceLoad={async(engine,name)=>{edits.current.clear();clearTimeout(fxTimer.current);retainedDraft.current=true;const value=await client!.readSound(name);if(engine!==2&&engine!==3){writeStoredText(localStorage, presetDraftKey(engine),JSON.stringify(value));onDeviceEngineLoaded?.(engine as 4|5|7);return;}if(!isPhysicalPreset(value))return;setDevice(await client!.status());resetPreset(value);}}/>
     <div className="synth-activation" aria-label="Instrument playback">
       <div><strong>{!transport ? "Connect Advanced to play" : !ready ? "Synth connection unavailable" : device?.state === "loading" ? "Starting synth…" : device?.state === "playing" ? "Synth running" : "Synth stopped"}</strong>
         <small>{!transport ? "Use Connect HexBoard above, then start the synth here." : !ready ? "Waiting for the synth controls. Retry if the connection was interrupted." : device?.state === "playing" ? "Play the keys. Preview draft applies your current sound." : "Start loads your current draft and enables the instrument’s audio."}</small></div>
