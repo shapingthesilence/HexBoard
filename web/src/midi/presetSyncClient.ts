@@ -90,14 +90,14 @@ export class PresetSyncClient {
     this.transport = transport;this.wideGeometry=!!(capabilities&CapabilityFlag.AdvancedContentLibrary);
   }
 
-  async compactSampler(operation: number, slot?: number): Promise<number[]> {
-    const frame = await this.requestFrame(MessageType.CompactSamplerRequest,
-      slot === undefined ? [operation] : [operation, slot],
+  async compactSampler(operation: number): Promise<number[]> {
+    const frame = await this.requestFrame(MessageType.CompactSamplerRequest, [operation],
       candidate => candidate.message === MessageType.CompactSamplerResponse, 10000);
     if (frame.payload[0] !== operation) throw Error("Invalid sampler response");
     return frame.payload;
   }
-  async readCompactSampler(slot: number) { return this.readObject(ObjectType.CompactSampler, slot); }
+  /** A Classic sampler sound with its instrument (`.hexsound`), by preset handle. */
+  async readSamplerSound(handle: number) { return this.readObject(ObjectType.CompactSampler, handle); }
 
   async calibration(command: 0 | 1 | 2 = 0): Promise<{ state: number; validKeys: number; totalKeys: number }> {
     const frame = await this.requestFrame(MessageType.CalibrationRequest, [command], candidate => candidate.message === MessageType.CalibrationResponse);

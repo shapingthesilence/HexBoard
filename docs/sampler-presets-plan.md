@@ -1,7 +1,7 @@
 # Sampler Presets And Larger Library — Plan
 
-Every phase below is implemented. This page records the plan and its
-measurements; current behavior lives in the guides linked here.
+Phases 1–6 are implemented except Phase 6's comparison set. This page records the plan
+and its measurements; current behavior lives in the guides linked here.
 Current behavior is described in the [user manual](user-manual.md), the
 [developer guide](developer-guide.md#settings-and-persistence),
 [preset sync](preset-sync-sysex.md) and the [Classic sampler](compact-sampler.md).
@@ -131,6 +131,49 @@ boards updating from released firmware hold at most 128 presets.
 - No firmware change: Sync reads every preset body already, so the sampler
   reference is known without a new list flag.
 
+## Done: Phase 6 — Instrument Inside The Sound, Sharing
+
+A sampler instrument and its sound become one object. Small playback edits do
+not justify several sounds per instrument, and one file is what people share.
+
+- **One file per sampler sound.** On flash a sampler sound is its preset file
+  (`/presets/<bucket>/<id>.hsp`: header and record) followed by the complete
+  HBC1 instrument. The record CRC covers the record; the instrument keeps its
+  own CRCs. `samplerName` holds the instrument's name for display and marks the
+  engine. The `/sampler/NN.hbc` slots, name lookup, instrument list, select and
+  delete requests and the auto-created sounds go away.
+- **Limit.** Up to 128 sampler sounds within the 512-sound library, checked
+  when a new one is stored. Storage space is the practical limit (about 50 KiB
+  each).
+- **Playback.** Loading a sampler sound loads the instrument from that sound's
+  file. Profile drafts keep the source sound's object id, so an edited sound
+  keeps its instrument. Rewriting a sound (rename, move, favorite, edits)
+  copies its instrument into the new file; **Save as new** copies it into the
+  new sound. Deleting the sound deletes the instrument.
+- **Sharing format (`.hexsound`).** `HXS1`, a 16-bit little-endian body length,
+  the synth preset object body (the same TLVs Sync sends), then the HBC1
+  instrument to the end of the file. Sync transfers sampler sounds as this
+  body (object `0x0E`) and the browser exports and imports it; library JSON
+  exports embed each instrument. The Browser Library keeps instruments in
+  IndexedDB, since they are too big for local storage. Factory sampler sounds
+  are preset JSON naming an `.hbc` beside it; the generator appends it to the
+  sound file. Wavetable sounds keep their JSON export for now; embedding the
+  wavetable in a shared file is a later step.
+- **Sync app.** **Send to HexBoard** in Instruments creates or updates a sound.
+  A sampler sound's editor offers **Edit instrument**, which opens its
+  instrument in Instruments; sending it back replaces the instrument in that
+  sound. **New sampler sound** and the instrument library list are gone.
+- **Existing boards.** Sampler formats are unreleased, so no maintained
+  migration. The development board was converted once (instruments and sounds
+  exported, old files removed, firmware flashed, 31 sounds re-sent with their
+  instruments and verified byte for byte).
+- **Stack.** The sampler-sound commit runs deep in the SysEx handler on Core
+  0's 4 KiB stack. The first build overflowed it and froze the board; the
+  preset copies and copy buffer now live on the heap or in static storage.
+- **Comparison set (not done yet).** Convert a broad General MIDI selection
+  from FluidR3 and MuseScore General (both MIT) with the Sync converter and
+  install them in `FluidR3 …` and `MuseScore …` folders for listening.
+
 ## Verification
 
 - Host: `python3 scripts/test_host.py` (includes the index codec test and the
@@ -150,18 +193,9 @@ Known gaps after Phase 5. None is implemented; each needs a decision first.
 - **Factory instruments.** The factory build can ship instruments and sampler
   sounds, but `factory-library/` has none, so a fresh board has no sampler
   sounds. Needs freely licensed source recordings (see Open Questions).
-- **Renamed or deleted instruments.** Sounds find their instrument by name.
-  Re-sending it under a new name, or deleting it, leaves its sounds on
-  **Upload instrument**. The delete warning names them but cannot delete them
-  or point them at another instrument. Pointing a sound at another instrument
-  would relax the rule that a sound keeps its instrument.
-- **Sharing sounds between boards.** A sampler sound saved in the Browser
-  Library or exported as a file carries only the instrument's name. A bundle of
-  sound plus instrument would let it move to a board without that instrument.
-- **Delete warning speed.** Sync reads every sound body to find the ones using
-  an instrument. That took a few seconds at 49 sounds and will be slower near
-  512. A sampler flag in the board's list replies would let Sync read only
-  sampler sounds (firmware and protocol change).
+- **Renamed or deleted instruments, sharing, delete warning speed.** Solved
+  by Phase 6: the instrument lives inside its sound.
+- **Wavetable sounds** still export their wavetable as a separate `.hexwav`.
 - **Inst stage values.** A stage set to `Inst` shows the sound's stored value
   on its knob, not the envelope the instrument actually uses. Sync could read
   the instrument file to show its real values.

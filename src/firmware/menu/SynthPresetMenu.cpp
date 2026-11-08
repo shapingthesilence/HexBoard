@@ -315,9 +315,6 @@ void openSynthPresetMenu(SynthPresetMenuMode mode, SynthPresetMenuReturn destina
   // After a firmware-only update, build the index on first use. This writes
   // flash once and then makes every folder load a single sequential read.
   ensureSynthPresetCatalogIndexed(false);
-  if (mode == SynthPresetMenuMode::Load) {
-    addSoundsForInstalledInstruments();
-  }
   snprintf(synthPresetMenuCurrentFolder, sizeof(synthPresetMenuCurrentFolder), "%s", SYNTH_PRESET_ROOT_FOLDER);
   synthPresetMenuShowingFavorites = false;
   rebuildSynthPresetVirtualList();

@@ -1,14 +1,12 @@
 import { PresetSyncClient } from "../../../midi/presetSyncClient.ts";
 import type { MidiTransport } from "../../../midi/types.ts";
-import { ObjectType, WriteFlag, decodeU21, decodeU28 } from "../../../protocol/index.ts";
-import { createSynthPresetObject, samplerNameFromSynthPresetBody } from "../../../catalogs/synthPresets.ts";
+import { NEW_OBJECT_HANDLE, ObjectType, WriteFlag, decodeU21, decodeU28 } from "../../../protocol/index.ts";
+import { createSynthPresetObject, type SynthPresetValues } from "../../../catalogs/synthPresets.ts";
 import { deterministicObjectId } from "../../../catalogs/objectId.ts";
 import { HEXBOARD_PRESET_NAME_MAX_BYTES } from "../../../catalogs/hexboardPresetCapacity.ts";
+import { encodeHexSound } from "../../../catalogs/hexSound.ts";
 
-// Slot 127 means the wavetable engine on the wire, so slots stay below it.
-export const MAX_CLASSIC_SAMPLER_SLOTS = 127;
-
-export interface ClassicInstrument { id: number; name: string; bytes: number }
+/** HexBoard Classic sampler sounds. Each sound file holds its own instrument. */
 export class ClassicSamplerClient {
   private client: PresetSyncClient;
   /** Pass the page's own client to share its transaction numbers. */
@@ -16,58 +14,37 @@ export class ClassicSamplerClient {
   async status() {
     const p = await this.client.compactSampler(0);
     if (p.length < 12 || p.length !== 12 + p[11]) throw Error("Invalid Classic sampler status");
-    return { slot:p[1], assets:p[2], zones:p[3], pcmBytes:decodeU21(p.slice(4,7)), freeHeap:decodeU28(p.slice(7,11)), name:String.fromCharCode(...p.slice(12)) };
+    return { active: p[1] !== 127, assets:p[2], zones:p[3], pcmBytes:decodeU21(p.slice(4,7)), freeHeap:decodeU28(p.slice(7,11)), name:String.fromCharCode(...p.slice(12)) };
   }
-  /** Slots the connected board has: firmware rejects slot info past its last slot. */
-  slotCount = 0;
-  async library() {
-    const records: ClassicInstrument[] = [];
-    let id = 0;
-    for (; id < MAX_CLASSIC_SAMPLER_SLOTS; ++id) {
-      let p: number[];
-      try { p = await this.client.compactSampler(1, id); }
-      catch (error) {
-        if (id > 0 && error instanceof Error && error.message.startsWith("HexBoard rejected")) break;
-        throw error;
-      }
-      if (p.length < 7 || p[1] !== id || p.length !== 7 + p[6]) throw Error("Invalid Classic sampler entry");
-      if (p[2]) records.push({id,name:String.fromCharCode(...p.slice(7)),bytes:decodeU21(p.slice(3,6))});
-    }
-    this.slotCount = id;
-    return records;
+  /** Stores a `.hexsound` on the board: a new sound, or the sound with the same
+   *  object id with its instrument replaced. With play, the board loads it. */
+  async sendSound(sound: Uint8Array, options: { play?: boolean; progress?: (sent: number, total: number) => void } = {}) {
+    await this.client.sendObjectWriteConfirmed({objectType:ObjectType.CompactSampler,handle:NEW_OBJECT_HANDLE,body:sound,
+      writeFlags:WriteFlag.SaveToFlash | (options.play ? WriteFlag.ApplyToRuntime : 0),
+      onProgress:p=>options.progress?.(p.transferredBytes,p.totalBytes)});
   }
-  async upload(bytes: Uint8Array, progress?: (n:number,total:number)=>void) {
-    const entries = await this.library(), slot = Array.from({length:this.slotCount},(_,i)=>i).find(i=>!entries.some(e=>e.id===i));
-    if (slot === undefined) throw Error(`All ${this.slotCount} sampler slots are occupied. Delete an instrument first.`);
-    await this.client.sendObjectWriteConfirmed({objectType:ObjectType.CompactSampler,handle:slot,body:bytes,writeFlags:WriteFlag.SaveToFlash,
-      onProgress:p=>progress?.(p.transferredBytes,p.totalBytes)});
-    return slot;
-  }
-  /** Saves a synth preset that plays an installed instrument. The id comes from
-   *  the folder and name, so saving the same name again updates that preset. */
-  async savePreset(preset: { name: string; folderPath: string; instrumentName: string; envelopeOverride?: number }) {
-    const name = clampBytes(preset.name.trim() || preset.instrumentName, HEXBOARD_PRESET_NAME_MAX_BYTES);
-    const folderPath = preset.folderPath.trim().replace(/^\/+|\/+$/g, "") || "/";
-    const encoded = createSynthPresetObject({
-      objectId: deterministicObjectId(`hexboard.classicSamplerPreset\0${folderPath}\0${name}`),
-      name, folderPath, favorite: false, values: {},
-      sampler: { name: preset.instrumentName, envelopeOverride: preset.envelopeOverride ?? 0 }
-    });
-    await this.client.sendSynthPresetSaveConfirmed(encoded);
-    return { name, folderPath };
-  }
-  /** Names of the board's sounds that play this instrument. Reads every sound. */
-  async soundsUsing(instrumentName: string) {
-    const names: string[] = [];
-    for (const record of await this.client.listSynthPresets()) {
-      if (samplerNameFromSynthPresetBody(await this.client.readSynthPreset(record.handle)) === instrumentName) names.push(record.name);
-    }
-    return names;
-  }
-  async select(slot: number) { await this.client.compactSampler(2,slot); }
+  /** The board's sampler sound at this preset handle, as a `.hexsound`. */
+  async readSound(handle: number) { return this.client.readSamplerSound(handle); }
   async saveStartup() { await this.client.compactSampler(4); }
-  async remove(slot: number) { await this.client.compactSampler(3,slot); }
-  async read(slot: number) { return this.client.readCompactSampler(slot); }
+}
+
+/** Values a new sampler sound starts with: modulation the sampler ignores is off. */
+export const newSamplerSoundValues: SynthPresetValues = {
+  SynthModTarget: 0, EffectEnvelopeTarget: 0, EffectEnvelope2Target: 0, SynthLfoTarget: 0
+};
+
+/** A new sampler sound for this instrument. Its id follows its folder and name,
+ *  so sending the same name again replaces that sound's instrument. */
+export function newSamplerSound(instrument: Uint8Array, sound: { name: string; folderPath: string }) {
+  const instrumentName = instrumentNameFromHbc(instrument);
+  const name = clampBytes(sound.name.trim() || instrumentName, HEXBOARD_PRESET_NAME_MAX_BYTES);
+  const folderPath = sound.folderPath.trim().replace(/^\/+|\/+$/g, "") || "/";
+  const encoded = createSynthPresetObject({
+    objectId: deterministicObjectId(`hexboard.classicSamplerPreset\0${folderPath}\0${name}`),
+    name, folderPath, favorite: false, values: newSamplerSoundValues,
+    sampler: { name: instrumentName, envelopeOverride: 0 }
+  });
+  return { name, folderPath, sound: encodeHexSound(encoded.body, instrument) };
 }
 
 function clampBytes(value: string, maxBytes: number): string {

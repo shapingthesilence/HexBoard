@@ -1443,30 +1443,43 @@ encoding. `ascii` is one u7 byte count followed by at most 31 ASCII bytes.
 | Operation | Request payload | Response payload |
 | --- | --- | --- |
 | Status | `0` | `0, active:u7, assets:u7, zones:u7, pcmBytes:u21, freeHeap:u28, name:ascii` |
-| Slot info | `1, slot:u7` | `1, slot:u7, exists:u7, fileBytes:u21, name:ascii` |
-| Select | `2, slot:u7` | `2, slot:u7` |
-| Delete | `3, slot:u7` | `3, slot:u7` |
 | Save startup settings | `4` | `4` |
 
-Current firmware has slots 0–63; slot info for a slot past the last one is
-NACKed, which hosts use to find the slot count. Selection/status value 127
-denotes the wavetable engine. Empty
-slot info reports `exists=0`, zero bytes and an empty name. Status reports limits,
-not the current patch's counts. Invalid requests use normal NACKs. Operations
-are busy during read/write transfers or the explicit audio benchmark. Select makes
-the instrument the current sound's engine; saving a preset or profile then
-records its name. Save startup settings uses the ordinary settings writer and
-profile 1; it does not change AutoSave.
+Status `active` is 0 while a sampler sound's instrument plays and 127 for the
+wavetable engine; `name` is the playing instrument or `Wavetable`. Status
+reports limits, not the current patch's counts. Invalid requests use normal
+NACKs. Operations are busy during read/write transfers or the explicit audio
+benchmark. Save startup settings uses the ordinary settings writer and profile
+1; it does not change AutoSave.
 
-Object type `0x0e` transfers raw HBC files through the existing WRITE_BEGIN /
-DATA_CHUNK / TRANSFER_END / WRITE_COMMIT exchange, schema 1.0. The handle is the
-actual destination slot, flags must be exactly SaveToFlash (2), and the file limit
-is 51,264 bytes. It supports ACK-paced writes and streamed READ_REQ for export.
-There is no apply-only or overwrite operation. Generic object-list messages do
-not enumerate these slots; use slot info. Install validates the staged file before
-renaming into an unused slot, then removes any other slot holding an instrument
-of the same name, because synth presets reference instruments by name. Failure, abort and the existing transfer timeout
-leave installed instruments intact and restore the muted audio transport.
+Object type `0x0e` is a **sampler sound**: one sound with its instrument, in the
+`.hexsound` layout that HexBoard Sync also exports and imports:
+
+| Offset | Size | Content |
+| --- | --- | --- |
+| 0 | 4 | `HXS1` |
+| 4 | 2 | Synth preset object body length *n*, little-endian (1–2048) |
+| 6 | *n* | Synth preset object body (`HBS1`, type `0x07`, the TLVs above) |
+| 6 + *n* | to the end | HBC1 instrument (below), at most 51,264 bytes |
+
+Writes use the existing WRITE_BEGIN / DATA_CHUNK / TRANSFER_END / WRITE_COMMIT
+exchange, schema 1.0, with handle `0x3FFF`. Flags must include SaveToFlash (2);
+ApplyToRuntime (1) also loads the stored sound, and DryRun is refused. The
+object streams into the temporary file. Commit validates the preset body and
+the complete instrument (metadata and PCM CRCs), takes `SynthSamplerName` from
+the instrument's own name, and stores the sound like a synth preset write: a
+sound with the same object id is replaced in place, otherwise it is appended to
+its folder. Library, folder and sampler-sound limits NACK with STORAGE_FULL
+before anything is written. READ_REQ for `0x0e` takes a synth preset handle and
+streams that sampler sound in the same layout; a wavetable sound or a sound
+without an instrument NACKs with OBJECT_MISSING. Failure, abort and the
+transfer timeout leave stored sounds intact and restore the muted audio
+transport.
+
+A synth preset write (type `0x07`) for a sampler sound keeps the instrument
+already stored under its object id, so settings edits, renames and moves do not
+resend it. A sampler sound that is not on the board yet NACKs with
+OBJECT_MISSING; send it as object `0x0e` instead.
 
 ### HBC1 File Layout
 

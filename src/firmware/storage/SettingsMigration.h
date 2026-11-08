@@ -12,13 +12,6 @@ constexpr size_t persistedSettingsWidth(uint8_t version) {
 }
 // The widest supported profile, for sizing read buffers.
 constexpr size_t MAX_PERSISTED_SETTINGS_WIDTH = 61;
-// Version 36 stored the selected Classic sampler slot (255 = wavetable) as each
-// profile's last byte. Boot turns the boot profile's slot into an instrument
-// name for the current sound instead of dropping it.
-constexpr uint8_t NO_LEGACY_SAMPLER_SLOT = 255;
-inline uint8_t persistedLegacySamplerSlot(uint8_t version, const uint8_t* source, size_t profile) {
-  return version == 36 ? source[profile * 61 + 60] : NO_LEGACY_SAMPLER_SLOT;
-}
 
 // Versions 32 through 37 share the same ordered prefix. Destination profiles have
 // already been initialized with current factory defaults. References follow

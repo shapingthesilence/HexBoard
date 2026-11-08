@@ -271,9 +271,8 @@ references come from the referenced named preset or hidden profile draft.
 widths for supported versions: 57 non-synth bytes for version 32, 60 for versions
 33 through 35 and 37, and 61 for version 36. Version 36's final byte was a
 sampler slot; version 37 drops it, because the profile's synth preset or draft
-now records the engine and instrument. Boot turns the boot profile's version 36
-slot into the current sound's instrument name (read-only lookup), so the next
-normal save keeps it; other profiles fall back to their preset's engine.
+now records the engine and instrument (a sampler sound's file holds its
+instrument); profiles fall back to their preset's engine.
 Wheel depths retain their legacy positive bytes; negative depths use previously
 unused bytes, so supported older settings and preset values remain unchanged.
 The loader checks the exact size and original CRC before expanding each profile

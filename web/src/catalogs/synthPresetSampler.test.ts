@@ -33,12 +33,19 @@ describe("Classic sampler presets", () => {
 });
 
 describe("Classic sampler sounds in Sync", () => {
-  it("reads the instrument a preset body plays", async () => {
-    const { samplerNameFromSynthPresetBody } = await import("./synthPresets.ts");
-    const sampler = createSynthPresetObject({ objectId, name: "Felt Keys", folderPath: "Keys", values: {}, sampler: { name: "Felt Piano", envelopeOverride: 0 } });
-    const wavetable = createSynthPresetObject({ objectId, name: "Pad", folderPath: "Pads", values: {} });
-    expect(samplerNameFromSynthPresetBody(sampler.body)).toBe("Felt Piano");
-    expect(samplerNameFromSynthPresetBody(wavetable.body)).toBe("");
+  it("keeps a sound and its instrument together in a .hexsound file", async () => {
+    const { decodeHexSound, encodeHexSound, hexSoundTitle } = await import("./hexSound.ts");
+    const sound = createSynthPresetObject({ objectId, name: "Felt Keys", folderPath: "Keys", values: {}, sampler: { name: "Felt Piano", envelopeOverride: 0 } });
+    const instrument = new Uint8Array([0x48, 0x42, 0x43, 0x31, 1, 2, 3]);
+    const file = encodeHexSound(sound.body, instrument);
+    // Header: magic, then the preset body length (little endian).
+    expect(Array.from(file.slice(0, 6))).toEqual([0x48, 0x58, 0x53, 0x31, sound.body.length & 0xff, sound.body.length >> 8]);
+    const decoded = decodeHexSound(file);
+    expect(decoded.presetBody).toEqual(sound.body);
+    expect(decoded.instrument).toEqual(instrument);
+    expect(hexSoundTitle(decoded.presetBody)).toEqual({ name: "Felt Keys", folderPath: "Keys" });
+    expect(() => decodeHexSound(file.slice(0, 6 + sound.body.length))).toThrow("incomplete");
+    expect(() => decodeHexSound(new Uint8Array([1, 2, 3, 4, 5, 6, 7]))).toThrow("Not a HexBoard sound file");
   });
 
   it("shows Inst for stages that follow the instrument and no wavetable controls", async () => {
@@ -47,23 +54,14 @@ describe("Classic sampler sounds in Sync", () => {
     const { ClassicSamplerSoundEditor } = await import("../views/classicSynth/ClassicSamplerSoundEditor.tsx");
     const [preset] = presetsFromUnknown({ name: "Felt Keys", folderPath: "Keys", values: {}, sampler: { name: "Felt Piano", envelopeOverride: 0b00001 } });
     const html = renderToStaticMarkup(createElement(ClassicSamplerSoundEditor, {
-      values: preset.values, onChange: () => {}, instrumentName: "Felt Piano", instrumentStatus: "missing",
+      values: preset.values, onChange: () => {}, instrumentName: "Felt Piano", onEditInstrument: () => {},
       envelopeOverride: 0b00001, onEnvelopeOverrideChange: () => {}, modWheel: 0
     }));
     expect(html).toContain("Felt Piano");
-    expect(html).toContain("not on HexBoard");
+    expect(html).toContain("Edit instrument");
     // Attack is replaced; hold, decay, sustain and release follow the instrument.
     expect(html.match(/<output>Inst<\/output>/g)?.length).toBe(4);
     for (const hidden of ["Wavetable", "Motion sources", "LFO"]) expect(html).not.toContain(hidden);
     for (const shown of ["Amp envelope", "Vibrato", "Wheel amount", "Drive", "Synth mode"]) expect(html).toContain(shown);
-  });
-
-  it("names the sounds that lose their instrument before a delete", async () => {
-    const { deleteMessage } = await import("../advanced/synth/sampler/ClassicSamplerLibrary.tsx");
-    expect(deleteMessage("Felt Piano", [])).toBe("Delete “Felt Piano” from the HexBoard? This cannot be undone.");
-    const message = deleteMessage("Felt Piano", ["A", "B", "C", "D", "E", "F", "G"]);
-    expect(message).toContain("7 sounds use “Felt Piano”");
-    expect(message).toContain("…and 1 more");
-    expect(message).toContain("play the wavetable engine");
   });
 });

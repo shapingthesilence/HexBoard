@@ -10,8 +10,8 @@ import { hzForMidi } from "./sampler/analysis.ts";
 import type { LoopCandidate } from "./sampler/analysis.ts";
 import { useTuningTargets } from "../../editor/tuningTargets.ts";
 import { readCompactPatch, compactLimits } from "./sampler/compact.mjs";
-import { ClassicSamplerLibrary } from "./sampler/ClassicSamplerLibrary.tsx";
-import { ClassicSamplerClient, instrumentNameFromHbc } from "./sampler/classicClient.ts";
+import { ClassicSamplerClient, newSamplerSound } from "./sampler/classicClient.ts";
+import { decodeHexSound, encodeHexSound, hexSoundTitle, HEXSOUND_EXTENSION } from "../../catalogs/hexSound.ts";
 import { HEXBOARD_PRESET_NAME_MAX_BYTES } from "../../catalogs/hexboardPresetCapacity.ts";
 import {
   useEffect,
@@ -116,11 +116,15 @@ const bytes = (n: number) =>
   n >= 1048576
     ? `${(n / 1048576).toFixed(1)} MiB`
     : `${Math.round(n / 1024)} KiB`;
-export function SamplerEditor({ transport, target = "advanced" }: { transport?: MidiTransport; target?: "advanced" | "classic" }) {
+/** A Classic sampler sound whose instrument the editor replaces: its settings
+ *  stay, and sending or saving keeps its name, folder and object id. */
+export interface SamplerSoundTarget { name: string; folderPath: string; presetBody: Uint8Array; instrument: Uint8Array }
+
+export function SamplerEditor({ transport, target = "advanced", sound }: { transport?: MidiTransport; target?: "advanced" | "classic"; sound?: SamplerSoundTarget }) {
   const classic = target === "classic";
   const compactClient = useMemo(() => classic && transport ? new ClassicSamplerClient(transport) : undefined, [classic, transport]);
-  const [libraryRevision, setLibraryRevision] = useState(0);
-  // Classic: every instrument sent to the HexBoard is saved as a sound.
+  // Classic: an instrument lives inside its sound. Sending makes or updates one sound.
+  const [soundTarget, setSoundTarget] = useState<SamplerSoundTarget | undefined>(sound);
   const [presetName, setPresetName] = useState("");
   const [presetFolder, setPresetFolder] = useState("Instruments");
   const [presetStatus, setPresetStatus] = useState("");
@@ -285,6 +289,12 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
     setHistory((h) => h.slice(0, -1));
     setPrepared(undefined);
   };
+  // Opening a sound's instrument from Sounds.
+  useEffect(() => {
+    if (!classic || !sound) return;
+    setSoundTarget(sound);
+    restore({ ...readCompactPatch(sound.instrument), report: [`Opened the instrument of “${sound.name}”.`] });
+  }, [sound]);
   const restore = (p: ImportedPatch) => {
     preview.current!.clear();
     edit(p);
@@ -440,8 +450,16 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
         setChooserSearch("");
         return;
       }
+      const hexSound = classic ? all.find((f) => f.name.toLowerCase().endsWith(HEXSOUND_EXTENSION)) : undefined;
+      if (hexSound) {
+        const decoded = decodeHexSound(new Uint8Array(await hexSound.arrayBuffer()));
+        const title = hexSoundTitle(decoded.presetBody);
+        setSoundTarget({ ...title, ...decoded });
+        restore({ ...readCompactPatch(decoded.instrument), report: [`Opened the instrument of “${title.name}”.`] });
+        return;
+      }
       const hbc = all.find((f) => /\.hbc$/i.test(f.name));
-      if (hbc) { restore({ ...readCompactPatch(new Uint8Array(await hbc.arrayBuffer())), report: ["Opened Classic mono instrument."] }); return; }
+      if (hbc) { setSoundTarget(undefined); restore({ ...readCompactPatch(new Uint8Array(await hbc.arrayBuffer())), report: ["Opened Classic mono instrument."] }); return; }
       const hbs = all.find((f) => /\.hbs$/i.test(f.name));
       if (hbs) {
         restore({
@@ -529,7 +547,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
       setBusy("");
     }
   }
-  async function exportPatch(usb = false, prepareOnly = false, savePreset = false) {
+  async function exportPatch(usb = false, prepareOnly = false) {
     if (!patch.assets.length) return;
     const preparingPatch = patch;
     setBusy(classic ? "Preparing instrument…" : "Preparing pitch protection…");
@@ -543,19 +561,15 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
       setReport((r) => [...new Set([...r, ...result.warnings])]);
       if (prepareOnly) return;
       if (classic) {
+        const made = soundTarget
+          ? { name: soundTarget.name, folderPath: soundTarget.folderPath, sound: encodeHexSound(soundTarget.presetBody, result.bytes) }
+          : newSamplerSound(result.bytes, { name: presetName || patch.name || "", folderPath: presetFolder });
         if (usb) {
           if (!compactClient) throw Error("Connect HexBoard first.");
-          const slot = await compactClient.upload(result.bytes, (n,total)=>setBusy(`Copying instrument · ${Math.round(n/total*100)}%`));
-          await compactClient.select(slot);
-          setLibraryRevision(n=>n+1);
           setPresetStatus("");
-          if (savePreset) {
-            setBusy("Saving sound…");
-            const instrumentName = instrumentNameFromHbc(result.bytes);
-            const saved = await compactClient.savePreset({ name: presetName || instrumentName, folderPath: presetFolder, instrumentName });
-            setPresetStatus(`Saved sound “${saved.name}” in ${saved.folderPath === "/" ? "the root folder" : saved.folderPath} on HexBoard.`);
-          }
-        } else download(result.bytes, filename(patch.name ?? "Instrument"));
+          await compactClient.sendSound(made.sound, { play: true, progress: (n,total)=>setBusy(`Copying sound · ${Math.round(n/total*100)}%`) });
+          setPresetStatus(`Saved sound “${made.name}” in ${made.folderPath === "/" ? "the root folder" : made.folderPath} on HexBoard.`);
+        } else download(made.sound, `${made.name.replace(/[\\/:*?"<>|]/g, "_") || "Sound"}${HEXSOUND_EXTENSION}`);
         return;
       }
       if (usb) {
@@ -1230,7 +1244,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
             aria-label="Add recordings or instrument"
             type="file"
             multiple
-            accept={classic ? ".sf2,.sf3,.sfz,.wav,.hbs,.hbc" : ".sf2,.sf3,.sfz,.wav,.hbs"}
+            accept={classic ? `.sf2,.sf3,.sfz,.wav,.hbs,.hbc,${HEXSOUND_EXTENSION}` : ".sf2,.sf3,.sfz,.wav,.hbs"}
             disabled={!!busy}
             onChange={(e) => {
               void importFiles(e.target.files);
@@ -1282,13 +1296,18 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
         </div>
         <div className="sampler-fields">
           {preparationError && <button disabled={!!busy} onClick={() => setPreparationRevision(value => value + 1)}>Retry conversion</button>}
-          <button className={prepared ? "primary" : ""} disabled={!transport || !prepared || !!busy} onClick={() => void exportPatch(true, false, true)}>Send to HexBoard</button>
-          <button disabled={!prepared || !!busy} onClick={() => void exportPatch()}>Save HBC file</button>
+          <button className={prepared ? "primary" : ""} disabled={!transport || !prepared || !!busy} onClick={() => void exportPatch(true)}>Send to HexBoard</button>
+          <button disabled={!prepared || !!busy} onClick={() => void exportPatch()}>Save sound file</button>
         </div>
-        <div className="sampler-fields" aria-label="HexBoard sound">
-          <label>Sound name<input aria-label="HexBoard sound name" value={presetName} placeholder={patch.name ?? "Instrument"} maxLength={HEXBOARD_PRESET_NAME_MAX_BYTES} onChange={e=>setPresetName(e.target.value)}/></label>
-          <label>Folder<input aria-label="HexBoard sound folder" value={presetFolder} maxLength={47} placeholder="Root" onChange={e=>setPresetFolder(e.target.value)}/></label>
-        </div>
+        {soundTarget
+          ? <div className="sampler-fields" aria-label="HexBoard sound">
+              <p>Replaces the instrument in “{soundTarget.name}” ({soundTarget.folderPath === "/" ? "root folder" : soundTarget.folderPath}); its settings stay.</p>
+              <button disabled={!!busy} onClick={() => { setSoundTarget(undefined); setPresetName(soundTarget.name); }}>Make a new sound instead</button>
+            </div>
+          : <div className="sampler-fields" aria-label="HexBoard sound">
+              <label>Sound name<input aria-label="HexBoard sound name" value={presetName} placeholder={patch.name ?? "Instrument"} maxLength={HEXBOARD_PRESET_NAME_MAX_BYTES} onChange={e=>setPresetName(e.target.value)}/></label>
+              <label>Folder<input aria-label="HexBoard sound folder" value={presetFolder} maxLength={47} placeholder="Root" onChange={e=>setPresetFolder(e.target.value)}/></label>
+            </div>}
         {presetStatus && <p role="status">{presetStatus}</p>}
       </section>}
       {(error || preparationError) && <p className="sampler-error" role="alert">{error || preparationError}</p>}
@@ -1366,7 +1385,6 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
             folder holds up to 32 instruments.
           </p>
         </fieldset>}
-        {classic && <ClassicSamplerLibrary transport={transport} revision={libraryRevision} download={download} locked={!!busy}/>}
         {!classic && <fieldset>
           <legend>HexBoard library</legend>
           <div className="sampler-fields">

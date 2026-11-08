@@ -782,17 +782,19 @@ not replace your open sound. Previewing or saving to HexBoard requires a connect
 
 Both engines share one library. A small wave icon marks wavetable sounds and a
 sample icon marks Classic sampler sounds, as in the HexBoard's `Sounds` list.
-**New sampler sound** (connection needed) lists the instruments installed on
-the HexBoard; pick one and **Make sound** opens a new sound in `Instruments`
-that plays it. A sampler sound keeps its instrument; make a new one to use
-another instrument. Its editor offers what the board offers: Playback, an
-**Amp envelope** whose stages start at `Inst` (the instrument's own values),
-**Vibrato** (`Wheel amount`, `Vibrato speed`) and **Drive**. Turning a stage
-replaces it for the whole instrument; tick `Inst` to restore it. The browser
-can't play instruments, so the test keyboard is hidden; use **Preview on
-HexBoard**. Saving or previewing a sampler sound first checks that its
-instrument is on the HexBoard, and stops with a message if it is not; send the
-instrument from **Instruments** first.
+A sampler sound holds its instrument, so copying it between the HexBoard and
+Browser Library, exporting it or importing it always takes the instrument
+along. **Export file** saves a sampler sound as one `.hexsound` file to share;
+a library export of several sounds embeds each instrument; import accepts both.
+Sampler sounds are made in **Instruments** (**Send to HexBoard**). The sound
+editor offers what the board offers: Playback, an **Amp envelope** whose
+stages start at `Inst` (the instrument's own values), **Vibrato** (`Wheel
+amount`, `Vibrato speed`) and **Drive**. Turning a stage replaces it for the
+whole instrument; tick `Inst` to restore it. **Edit instrument** opens the
+sound's instrument in **Instruments**; sending it back replaces it in that
+sound. The browser can't play instruments, so the test keyboard is hidden;
+**Preview on HexBoard** works once the sound is saved on the HexBoard. The
+Browser Library keeps instruments in the browser's IndexedDB storage.
 
 Preset names are limited to 23 characters, the length the HexBoard's preset
 list shows. The HexBoard Library holds up to 512 presets in up to 32 folders,
@@ -1186,12 +1188,10 @@ with controls limited to Classic playback. Import and edits automatically
 prepare the Classic conversion. Compare original and converted recordings, then
 use **Send to HexBoard**. Region ADSR is in Mapping with sliders, exact
 time/percent fields and selected/all-region editing. Review size and sound
-changes before copying to the board. The Classic library exports and deletes
-installed instruments; choosing one there does not play it, since the loaded
-sound decides what plays. Before a delete it lists the sounds that use the
-instrument, which then play the wavetable engine until it is sent again. **Save
-startup settings** saves current settings to profile 1 and respects the existing
-AutoSave preference.
+changes before copying to the board. **Send to HexBoard** saves the instrument
+inside a sampler sound (name and folder fields beside it) and plays it; **Save
+sound file** saves that sound as a `.hexsound` file. An instrument opened with
+**Edit instrument** replaces the instrument in its sound instead.
 
 See [Classic sampler](compact-sampler.md) for supported sources, eight-voice and
 48 KiB limits, loop behavior, conversion and device controls.

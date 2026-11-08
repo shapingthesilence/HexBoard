@@ -1,10 +1,13 @@
 #include "../FirmwareModule.h"
+#include <memory>
+#include <new>
 #include "../app/DiagnosticsTiming.h"
 #include "../app/RuntimeDefaults.h"
 #include "../menu/MenuAndDisplay.h"
 #include "../menu/SynthPresetMenu.h"
 #include "../menu/SynthWavetableMenu.h"
 #include "../synth/BuiltinWavetables.h"
+#include "../synth/CompactSamplerCodec.h"
 #include "../synth/SynthAudio.h"
 #include "../synth/SynthDefaults.h"
 #include "PresetSync.h"
@@ -592,7 +595,7 @@ std::vector<uint8_t> buildSynthWavetableObjectPrefix(const SynthWavetableSlot& w
 }
 
 void applyParsedSynthWavetableToRuntime(const SynthWavetableSlot& wavetable, const uint8_t* samples, size_t sampleLength) {
-  if (compactSamplerActive() && !selectCompactSampler(255)) return;
+  if (compactSamplerActive() && !useCompactSamplerWavetableEngine()) return;
   synthWaveTableLoadInProgress = true;
   loadActiveSynthWavetableSamples(samples, sampleLength);
   setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
@@ -634,7 +637,7 @@ bool loadActiveSynthWavetableSamplesFromFile(const char* samplePath, size_t samp
 }
 
 bool applyParsedSynthWavetableFileToRuntime(const SynthWavetableSlot& wavetable, const char* samplePath, size_t sampleLength) {
-  if (compactSamplerActive() && !selectCompactSampler(255)) return false;
+  if (compactSamplerActive() && !useCompactSamplerWavetableEngine()) return false;
   synthWaveTableLoadInProgress = true;
   bool loaded = loadActiveSynthWavetableSamplesFromFile(samplePath, sampleLength);
   if (!loaded) {
@@ -849,7 +852,7 @@ size_t presetSyncMaxRawObjectBytesForType(uint8_t objectType) {
     case PRESET_SYNC_OBJECT_TYPE_USER_SCALE:
       return GEOMETRY_OBJECT_MAX_RAW_BYTES;
     case PRESET_SYNC_OBJECT_TYPE_COMPACT_SAMPLER:
-      return 51264;
+      return 6 + PRESET_SYNC_MAX_SYNTH_PRESET_BYTES + CompactSampler::kFileBytes;
     case PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET:
       return PRESET_SYNC_MAX_SYNTH_PRESET_BYTES;
     case PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE:
@@ -883,6 +886,67 @@ int chooseSynthPresetWriteSlot(uint16_t handle, const SynthPresetSlot& preset) {
     return SYNTH_PRESET_CATALOG_NEW_HANDLE;
   }
   return -1;
+}
+
+uint8_t presetSyncStoreError(SynthPresetStoreResult result) {
+  switch (result) {
+    case SynthPresetStoreResult::Stored: return 0;
+    case SynthPresetStoreResult::MissingInstrument: return PRESET_SYNC_ERROR_OBJECT_MISSING;
+    case SynthPresetStoreResult::HandleMismatch: return PRESET_SYNC_ERROR_VALIDATION_FAILED;
+    default: return PRESET_SYNC_ERROR_STORAGE_FULL;
+  }
+}
+
+uint8_t storeSamplerSoundObjectFile(const char* path, uint16_t handle, uint8_t writeFlags) {
+  File f = LittleFS.open(path, "r");
+  uint8_t head[6] = {};
+  if (!f || f.read(head, sizeof(head)) != sizeof(head) || memcmp(head, "HXS1", 4) != 0) {
+    return PRESET_SYNC_ERROR_VALIDATION_FAILED;
+  }
+  const size_t bodyLength = head[4] | (static_cast<size_t>(head[5]) << 8);
+  const uint32_t fileLength = f.size();
+  if (!bodyLength || bodyLength > PRESET_SYNC_MAX_SYNTH_PRESET_BYTES || fileLength <= sizeof(head) + bodyLength) {
+    return PRESET_SYNC_ERROR_BAD_LENGTH;
+  }
+  std::vector<uint8_t> body(bodyLength);
+  const bool read = f.read(body.data(), bodyLength) == bodyLength;
+  f.close();
+  // This runs deep in the SysEx handler on Core 0's 4 KiB stack: keep the
+  // preset record on the heap.
+  std::unique_ptr<SynthPresetSlot> parsed(new (std::nothrow) SynthPresetSlot);
+  if (!parsed) {
+    return PRESET_SYNC_ERROR_STORAGE_FULL;
+  }
+  SynthPresetSlot& preset = *parsed;
+  std::string error;
+  if (!read || !parseSynthPresetObjectBody(body, preset, error)) {
+    sendToLog("Preset sync rejected sampler sound: " + error);
+    return PRESET_SYNC_ERROR_VALIDATION_FAILED;
+  }
+  SynthPresetInstrumentSource instrument;
+  instrument.path = path;
+  instrument.offset = static_cast<uint32_t>(sizeof(head) + bodyLength);
+  instrument.length = fileLength - instrument.offset;
+  // The instrument names itself; the sound's sampler name follows it.
+  if (!validateCompactSamplerInstrument(path, instrument.offset, instrument.length,
+                                        preset.samplerName, sizeof(preset.samplerName))) {
+    return PRESET_SYNC_ERROR_VALIDATION_FAILED;
+  }
+  const int slot = chooseSynthPresetWriteSlot(handle, preset);
+  if (slot < 0) {
+    return PRESET_SYNC_ERROR_STORAGE_FULL;
+  }
+  uint16_t storedHandle = 0;
+  const SynthPresetStoreResult result =
+    writeSynthPresetToCatalogSlot(static_cast<uint16_t>(slot), preset, &storedHandle, &instrument);
+  if (result != SynthPresetStoreResult::Stored) {
+    return presetSyncStoreError(result);
+  }
+  requestSynthPresetMenuRebuild();
+  if (writeFlags & PRESET_SYNC_WRITE_APPLY_TO_RUNTIME) {
+    loadSynthPresetFromSlot(storedHandle);
+  }
+  return 0;
 }
 
 void applySynthPresetRuntimeOnly(const SynthPresetSlot& preset) {

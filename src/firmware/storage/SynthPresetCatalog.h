@@ -26,6 +26,10 @@ constexpr char SYNTH_PRESET_INDEX_PENDING_PATH[] = "/preset_index/pending";
 constexpr uint16_t SYNTH_PRESET_HANDLE_STRIDE = 256;
 constexpr uint16_t SYNTH_PRESET_CATALOG_NEW_HANDLE = 0xFFFFu;
 
+// A sampler sound's preset file is the header and record followed by its whole
+// HBC1 instrument; the record CRC covers only the record.
+constexpr uint8_t SYNTH_PRESET_MAX_SAMPLER_COUNT = 128;
+
 constexpr uint8_t SYNTH_PRESET_CATALOG_FLAG_FAVORITE = 0x01;
 constexpr uint8_t SYNTH_PRESET_CATALOG_ENGINE_MASK = 0x0E;
 constexpr uint8_t SYNTH_PRESET_CATALOG_ENGINE_SAMPLER = 0x02;
@@ -52,7 +56,17 @@ enum class SynthPresetStoreResult : uint8_t {
   FolderFull,
   TooManyFolders,
   HandleMismatch,
+  SamplerLimit,
+  MissingInstrument,
   StorageError
+};
+
+// Where a stored sampler sound's instrument bytes come from: an uploaded file,
+// or another sound's file. Validate uploads before storing them.
+struct SynthPresetInstrumentSource {
+  const char* path = nullptr;
+  uint32_t offset = 0;
+  uint32_t length = 0;
 };
 
 void loadSynthPresetCatalog();
@@ -83,13 +97,20 @@ bool ensureSynthPresetCatalogIndexed(bool userInitiated);
 
 // Writes the preset file and updates the index. With
 // SYNTH_PRESET_CATALOG_NEW_HANDLE, an existing preset with the same object id
-// is replaced; otherwise the preset is appended to its folder.
+// is replaced; otherwise the preset is appended to its folder. A sampler sound
+// takes its instrument from `instrument`, or else keeps the one already stored
+// under its object id.
 SynthPresetStoreResult storeSynthPresetInCatalog(uint16_t handle,
                                                  const SynthPresetSlot& preset,
-                                                 uint16_t& storedHandle);
+                                                 uint16_t& storedHandle,
+                                                 const SynthPresetInstrumentSource* instrument = nullptr);
 bool removeSynthPresetFromCatalog(uint16_t handle);
 
 bool synthPresetStoragePath(const uint8_t* objectId, char* output, size_t outputLength);
+// The instrument bytes inside a stored sampler sound's file.
+bool synthPresetInstrumentRange(const uint8_t* objectId, char* path, size_t pathLength,
+                                uint32_t& offset, uint32_t& length);
+uint16_t synthPresetCatalogSamplerCount();
 bool readSynthPresetPayload(File& file, SynthPresetSlot& preset);
 bool readSynthPresetFileByObjectId(const uint8_t* objectId, SynthPresetSlot& preset);
 const char* synthPresetStoreResultMessage(SynthPresetStoreResult result);

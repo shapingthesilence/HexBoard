@@ -6,7 +6,7 @@ instruments in HexBoard Sync.
 
 ## Playing And Importing
 
-Connect an updated Classic board, open Synth, then choose **Sampler**. The sample
+Connect an updated Classic board, open Synth, then choose **Instruments**. The sample
 editor, SoundFont preset chooser, waveform/loop tools and pitch/velocity map are
 shared with Advanced. Classic hides unsupported engine and expression controls.
 Classic keeps source recordings and reports omitted source motion. Simultaneous
@@ -14,19 +14,21 @@ source layers need a rendered adaptation and can exceed Classic capacity.
 
 Importing or editing automatically prepares the Classic instrument. Compare
 **Original recordings** and **Converted for HexBoard** on the audition keyboard.
-**Send to HexBoard** installs and selects the current prepared instrument and
-saves a sampler sound that plays it, using the sound name (23 characters,
-default the instrument name) and folder (default `Instruments`) fields beside
-it; sending again with the same name and folder updates that sound.
-**Save HBC file** downloads it. Sending and export wait for preparation to finish.
+An instrument lives inside its sound: there are no separate instrument files.
+**Send to HexBoard** stores a sampler sound holding the current prepared
+instrument and plays it, using the sound name (23 characters, default the
+instrument name) and folder (default `Instruments`) fields beside it; sending
+again with the same name and folder replaces that sound's instrument.
+**Save sound file** downloads the same sound as a `.hexsound` file. **Edit
+instrument** in a sampler sound's editor opens its instrument here; sending it
+back replaces the instrument in that sound and keeps the sound's settings
+(**Make a new sound instead** sends it as a new sound). Sending and export wait
+for preparation to finish.
 Envelope edits reuse the fitted samples for immediate audition. Sample edits wait
 for their new conversion. Browser interpolation and output
-protection differ from the board, so compare on the device too. Existing slots
-are protected; delete an instrument explicitly to reclaim one.
-Choosing an instrument in the board library plays it immediately. The library
-also supports export and deletion; deleting asks first and names the sounds
-that use the instrument. Exported `.hbc` files
-can be reopened in the shared editor. Advanced `.hbs` export remains unchanged.
+protection differ from the board, so compare on the device too. `.hexsound`
+files and older `.hbc` instruments can be reopened in the shared editor.
+Advanced `.hbs` export remains unchanged.
 Waveform, loop, mapping and **Region ADSR** controls remain visible. ADSR sliders
 give finer control over short times; type exact milliseconds or sustain percent,
 then press Enter or leave the field. **Edit all regions** changes each region at
@@ -36,13 +38,11 @@ region inspector. The conversion report lists adaptations and playable-range cha
 The shared [loop-editing guide](web-app-guide.md#sampler-loop-editing) covers
 sample-level zoom, zero-crossing tools, length locking, crossfades and tuning.
 
-On the board, the loaded synth preset chooses the engine: a sampler preset names
-an installed instrument, and any other preset uses the wavetable engine. Sending
-an instrument from the browser plays it and saves its sound; **Save Sound** on
-the board also stores the instrument that is playing. Once per board, the first
-time `Sounds` opens, every installed instrument that no sound uses gets one in
-`Instruments` (then `Instruments 2`, ...); `/sampler/sounds.done` records that
-this ran, so deleted sounds are not recreated. Changes briefly mute playback and clear
+On the board, the loaded sound chooses the engine: a sampler sound plays the
+instrument stored inside it, and any other sound uses the wavetable engine.
+**Save Sound** over another sound, or **Save as new**, copies the playing
+instrument into that sound; deleting a sampler sound deletes its instrument.
+Changes briefly mute playback and clear
 voices. Keys held through the change require a fresh press. Tuning, layout,
 pitch bend, the board arpeggiator, volume and jack/piezo routing remain available.
 Sampler envelopes come from the converted instrument, unless the sound's `Amp
@@ -52,17 +52,15 @@ The mod wheel always adds vibrato (`Wheel Amt` sets the depth, `Vib Speed` the
 rate, at the wavetable engine's depth); the wavetable LFO, FX envelopes and
 other wheel targets do not apply. The shared output drive still applies.
 
-Presets name their instrument, so instrument names are unique on the board:
-installing an instrument with the name of an installed one replaces it once the
-new file is safely stored, and presets that use the name keep working. A preset
-whose instrument is missing shows **Upload instrument** and plays the wavetable
-engine with the preset's wavetable.
+Because the instrument travels inside the sound, a sampler sound can be copied
+between HexBoards and browsers, exported and shared as one `.hexsound` file. If
+a sound's instrument cannot be read, the board shows **Upload instrument** and
+plays the wavetable engine with the sound's wavetable.
 
 The current engine follows the normal settings/profile save policy through the
-profile's synth preset or draft. AutoSave is respected. **Save startup settings**
-in the browser copies current settings to profile 1 through the normal settings
-writer without enabling AutoSave. Named instrument files are installed
-immediately and survive firmware-only updates.
+profile's synth preset or draft; a sampler draft names the sound whose
+instrument it plays. AutoSave is respected. Sounds are stored immediately and
+survive firmware-only updates.
 
 ## Capacity And Conversion
 
@@ -72,7 +70,7 @@ immediately and survive firmware-only updates.
 | Mono signed PCM16 sample pool | 49,152 bytes / 24,576 frames |
 | Recordings per instrument | 16 |
 | Non-overlapping pitch/velocity regions | 32 |
-| Stored instrument slots | 64 |
+| Sampler sounds (each holds its instrument) | 128 of the 512 sounds |
 
 Recordings are shared by voices. File size also includes bounded metadata;
 the maximum complete file is 51,264 bytes. Original low sample rates are retained
@@ -137,32 +135,33 @@ rendering performs no allocation or filesystem I/O. Rotary polling continues
 while rendering is paused. Voice-freed notifications carry generation identity
 so an ended old sample cannot release a newly assigned owner.
 
-The installed files are `/sampler/00.hbc` through `/sampler/63.hbc`. Transfers
-stream into the existing temporary-file mechanism, validate metadata and PCM,
-then rename into an unused slot. An interrupted or rejected install cannot
-replace an existing instrument. Abandoned transfers use the existing preset-sync
-timeout and restore muted output. File loading is read-only. Mount and content
-failures retain normal operation and report exact paths/stages; boot never formats
-or repairs storage. Invalid boot selections use the wavetable fallback.
-
-Synth preset records (HSP v13) carry the instrument name, empty for wavetable
-presets, and the amp envelope override mask; `CompactSampler.cpp` keeps the
-requested name and loads it from `syncCompactSamplerSelection()`. Settings
-version 37 dropped version 36's `SamplerSlot` byte; boot keeps the boot
-profile's old choice by name. See
+A sampler sound's preset file (`/presets/<bucket>/<id>.hsp`) is the header and
+HSP v13 record followed by the complete HBC1 instrument; the record CRC covers
+only the record and the instrument keeps its own CRCs. The record carries the
+instrument's name (empty for wavetable sounds) and the amp envelope override
+mask. `CompactSampler.cpp` keeps the requested name and the object id of the
+sound file holding the instrument, and loads it from
+`syncCompactSamplerSelection()`. Every rewrite of a sound copies its instrument
+into the new file before the atomic rename; at most 128 sounds may hold one.
+Transfers stream into the existing temporary-file mechanism and are validated
+before the sound is stored, so an interrupted or rejected transfer leaves the
+stored sound intact. Abandoned transfers use the existing preset-sync timeout
+and restore muted output. Loading is read-only. Mount and content failures
+retain normal operation and report exact paths/stages; boot never formats or
+repairs storage. Invalid boot selections use the wavetable fallback. Settings
+version 37 dropped version 36's `SamplerSlot` byte. See
 [settings ownership](developer-guide.md#settings-and-persistence) and the
 [wire/format contract](preset-sync-sysex.md#classic-compact-sampler).
 
 ## Verification Tools
 
-`scripts/compact_sampler.py` installs user-supplied HBC files with ACK pacing,
-checks byte-for-byte readback, lists slots and stresses engine changes. It requires
+`scripts/compact_sampler.py` installs user-supplied `.hexsound` files with ACK
+pacing, plays each one and checks its instrument byte for byte on readback. It requires
 `mido` and `python-rtmidi`; `scripts/test_synth_performance.py` additionally needs
 `pyserial`. Files and output reports can live outside the repository:
 
 ```sh
-python3 scripts/compact_sampler.py --install /path/to/Instrument.hbc --output /tmp/install.json
-python3 scripts/compact_sampler.py --select 0 --switch-cycles 30 --output /tmp/switching.json
+python3 scripts/compact_sampler.py --install /path/to/Sound.hexsound --output /tmp/install.json
 python3 scripts/test_synth_performance.py --output /tmp/sampler-performance.json --max-cpu-percent 90
 ```
 

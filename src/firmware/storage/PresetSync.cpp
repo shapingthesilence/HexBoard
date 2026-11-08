@@ -464,11 +464,22 @@ bool presetSyncReadTransferBytes(uint32_t offset, uint8_t* output, size_t length
     return false;
   }
   if (presetSyncReadTransfer.streamRawFile) {
+    // An optional prefix from rawData, then the file from rawFileOffset.
+    const size_t prefixLength = presetSyncReadTransfer.rawData.size();
+    size_t copied = 0;
+    if (offset < prefixLength) {
+      copied = std::min<size_t>(length, prefixLength - offset);
+      memcpy(output, presetSyncReadTransfer.rawData.data() + offset, copied);
+    }
+    if (copied == length) {
+      return true;
+    }
+    const uint32_t fileOffset = presetSyncReadTransfer.rawFileOffset + offset + copied - prefixLength;
     if (!presetSyncReadRawFile
-        || (presetSyncReadRawFile.position() != offset && !presetSyncReadRawFile.seek(offset))) {
+        || (presetSyncReadRawFile.position() != fileOffset && !presetSyncReadRawFile.seek(fileOffset))) {
       return false;
     }
-    return presetSyncReadRawFile.read(output, length) == length;
+    return presetSyncReadRawFile.read(output + copied, length - copied) == length - copied;
   }
   if (!presetSyncReadTransfer.streamSynthWavetableSamples) {
     if (offset + length > presetSyncReadTransfer.rawData.size()) {
@@ -681,6 +692,52 @@ void presetSyncSendStreamedSynthWavetableObject(uint16_t transactionId,
   presetSyncSendReadBegin();
 }
 
+// Sampler sound object: "HXS1", the synth preset object body's length (16-bit
+// little endian), the body, then the instrument streamed from the sound file.
+uint8_t presetSyncSendSamplerSound(uint16_t transactionId, uint16_t handle) {
+  SynthPresetCatalogEntry entry;
+  SynthPresetSlot preset = {};
+  char path[SYNTH_PRESET_STORAGE_PATH_LENGTH] = {};
+  uint32_t offset = 0;
+  uint32_t length = 0;
+  if (!readSynthPresetCatalogEntry(handle, entry) || !readSynthPresetFileByObjectId(entry.objectId, preset)
+      || !preset.samplerName[0] || !synthPresetInstrumentRange(entry.objectId, path, sizeof(path), offset, length)) {
+    return PRESET_SYNC_ERROR_OBJECT_MISSING;
+  }
+  const std::vector<uint8_t> body = buildSynthPresetObjectBody(preset);
+  std::vector<uint8_t> prefix{'H', 'X', 'S', '1', static_cast<uint8_t>(body.size()), static_cast<uint8_t>(body.size() >> 8)};
+  prefix.insert(prefix.end(), body.begin(), body.end());
+  File f = LittleFS.open(path, "r");
+  if (!f || !f.seek(offset)) {
+    return PRESET_SYNC_ERROR_OBJECT_MISSING;
+  }
+  uint32_t crc = presetSyncCrc32Update(0xFFFFFFFFu, prefix.data(), prefix.size());
+  uint8_t buffer[128];
+  for (uint32_t remaining = length; remaining;) {
+    const size_t n = f.read(buffer, std::min<uint32_t>(sizeof(buffer), remaining));
+    if (!n) {
+      return PRESET_SYNC_ERROR_VALIDATION_FAILED;
+    }
+    crc = presetSyncCrc32Update(crc, buffer, n);
+    remaining -= n;
+  }
+  presetSyncCloseReadFile();
+  presetSyncReadRawFile = f;
+  presetSyncReadTransfer = PresetSyncReadTransfer{};
+  presetSyncReadTransfer.active = presetSyncReadTransfer.streamRawFile = true;
+  presetSyncReadTransfer.objectType = PRESET_SYNC_OBJECT_TYPE_COMPACT_SAMPLER;
+  presetSyncReadTransfer.handle = handle;
+  presetSyncReadTransfer.transactionId = transactionId;
+  presetSyncReadTransfer.transferId = presetSyncAllocateTransferId();
+  presetSyncReadTransfer.schemaMajor = 1;
+  presetSyncReadTransfer.rawByteLength = static_cast<uint32_t>(prefix.size()) + length;
+  presetSyncReadTransfer.rawFileOffset = offset;
+  presetSyncReadTransfer.objectCrc32 = presetSyncCrc32Finish(crc);
+  presetSyncReadTransfer.rawData = std::move(prefix);
+  presetSyncSendReadBegin();
+  return 0;
+}
+
 void presetSyncHandleReadRequest(uint16_t transactionId, const uint8_t* payload, size_t payloadLength) {
   if (payloadLength != 4) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_BAD_LENGTH);
@@ -699,23 +756,9 @@ void presetSyncHandleReadRequest(uint16_t transactionId, const uint8_t* payload,
   }
   uint16_t handle = presetSyncDecodeU14(payload + 1);
   if (objectType == PRESET_SYNC_OBJECT_TYPE_COMPACT_SAMPLER) {
-    char path[32]; compactSamplerPath(handle, path, sizeof(path));
-    File f = handle < CompactSampler::kSlots ? LittleFS.open(path, "r") : File();
-    if (!f) { presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING); return; }
-    if (f.size() < CompactSampler::kHeader || f.size() > CompactSampler::kFileBytes) {
-      presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_BAD_LENGTH); return;
-    }
-    uint8_t buffer[128]; uint32_t crc = 0xFFFFFFFFu;
-    while (f.available()) { const size_t n = f.read(buffer, sizeof(buffer)); if (!n) break; crc = presetSyncCrc32Update(crc, buffer, n); }
-    const uint32_t bytes = f.size();
-    if (f.position() != bytes) { presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_VALIDATION_FAILED); return; }
-    f.seek(0); presetSyncCloseReadFile(); presetSyncReadRawFile = f;
-    presetSyncReadTransfer = PresetSyncReadTransfer{};
-    presetSyncReadTransfer.active = presetSyncReadTransfer.streamRawFile = true;
-    presetSyncReadTransfer.objectType = objectType; presetSyncReadTransfer.handle = handle;
-    presetSyncReadTransfer.transactionId = transactionId; presetSyncReadTransfer.transferId = presetSyncAllocateTransferId();
-    presetSyncReadTransfer.schemaMajor = 1; presetSyncReadTransfer.rawByteLength = bytes;
-    presetSyncReadTransfer.objectCrc32 = presetSyncCrc32Finish(crc); presetSyncSendReadBegin(); return;
+    const uint8_t error = presetSyncSendSamplerSound(transactionId, handle);
+    if (error) presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, error);
+    return;
   }
   if (objectType == PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE) {
     if (!presetSyncSendGeometryBundleFile(transactionId, handle)) {
@@ -836,7 +879,7 @@ void presetSyncHandleWriteBegin(uint16_t transactionId, const uint8_t* payload, 
   uint16_t handle = presetSyncDecodeU14(payload + 1);
   uint8_t writeFlags = payload[18];
   if (objectType == PRESET_SYNC_OBJECT_TYPE_COMPACT_SAMPLER
-      && (handle >= CompactSampler::kSlots || writeFlags != PRESET_SYNC_WRITE_SAVE_TO_FLASH || !fileSystemExists)) {
+      && (!(writeFlags & PRESET_SYNC_WRITE_SAVE_TO_FLASH) || (writeFlags & PRESET_SYNC_WRITE_DRY_RUN) || !fileSystemExists)) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_BEGIN, PRESET_SYNC_ERROR_VALIDATION_FAILED); return;
   }
   if ((objectType == PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE
@@ -989,11 +1032,12 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
   }
 
   if (presetSyncWriteTransfer.objectType == PRESET_SYNC_OBJECT_TYPE_COMPACT_SAMPLER) {
-    const bool ok = presetSyncWriteTransfer.streamRawToFile
-      && installCompactSampler(presetSyncWriteTransfer.streamRawPath, presetSyncWriteTransfer.handle);
+    const uint8_t error = presetSyncWriteTransfer.streamRawToFile
+      ? storeSamplerSoundObjectFile(presetSyncWriteTransfer.streamRawPath, presetSyncWriteTransfer.handle, commitFlags)
+      : PRESET_SYNC_ERROR_VALIDATION_FAILED;
     presetSyncCancelWriteTransfer();
-    if (ok) presetSyncSendAck(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT);
-    else presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_VALIDATION_FAILED);
+    if (!error) presetSyncSendAck(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT);
+    else presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, error);
     return;
   }
   std::string parseError;
@@ -1017,9 +1061,11 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
           presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_STORAGE_FULL);
           return;
         }
-        if (!writeSynthPresetToCatalogSlot(static_cast<uint16_t>(slotIndex), parsedPreset)) {
+        const SynthPresetStoreResult stored =
+          writeSynthPresetToCatalogSlot(static_cast<uint16_t>(slotIndex), parsedPreset);
+        if (stored != SynthPresetStoreResult::Stored) {
           presetSyncCancelWriteTransfer();
-          presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_STORAGE_FULL);
+          presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, presetSyncStoreError(stored));
           return;
         }
         requestSynthPresetMenuRebuild();

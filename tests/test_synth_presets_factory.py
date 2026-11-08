@@ -118,7 +118,7 @@ int main(int argc, char** argv) {
         factory.build_preset_index(Path('presets'), entries[:-1])
 
 
-    def test_factory_sampler_presets_reference_installed_instruments(self):
+    def test_factory_sampler_sounds_carry_their_instrument(self):
         def instrument(name):
             frames = 5
             asset = struct.pack('<IIIIff', 0, frames, 1, 4, 22050.0, 440.0) + bytes([1]) + bytes(7)
@@ -136,8 +136,7 @@ int main(int argc, char** argv) {
             work = Path(temporary)
             library = work / 'library'
             shutil.copytree(ROOT / 'factory-library', library)
-            (library / 'sampler').mkdir()
-            (library / 'sampler' / 'Felt.hbc').write_bytes(instrument('Felt Piano'))
+            (library / 'presets/Pads/Felt.hbc').write_bytes(instrument('Felt Piano'))
             # The firmware's own decoder accepts the generated test instrument.
             checker = work / 'hbc_checker.cpp'
             checker.write_text(
@@ -151,11 +150,11 @@ int main(int argc, char** argv) {
                 '  return metadata <= n && d.decode(data, metadata) && d.total == n ? 0 : 1;\n'
                 '}\n')
             subprocess.run(['c++', *cxx_flags(), '-I', str(ROOT), str(checker), '-o', str(work / 'hbc_checker')], check=True)
-            subprocess.run([str(work / 'hbc_checker'), str(library / 'sampler' / 'Felt.hbc')], check=True)
+            subprocess.run([str(work / 'hbc_checker'), str(library / 'presets/Pads/Felt.hbc')], check=True)
 
             document = json.loads((library / 'presets/Pads/Glassy Bow.json').read_text())
             preset = document.get('preset', document)
-            preset.update(name='Felt Keys', sampler={'name': 'Felt Piano', 'envelopeOverride': 0b10001})
+            preset.update(name='Felt Keys', sampler={'instrument': 'Felt.hbc', 'envelopeOverride': 0b10001})
             preset.pop('objectId', None)
             preset.pop('wavetable', None)
             felt = library / 'presets/Pads/Felt Keys.json'
@@ -163,22 +162,21 @@ int main(int argc, char** argv) {
             output = work / 'filesystem'
             with contextlib.redirect_stdout(io.StringIO()):
                 factory.build_library(library, output)
-            self.assertEqual((output / 'sampler/00.hbc').read_bytes(), instrument('Felt Piano'))
-            records = [path.read_bytes()[8:] for path in (output / 'presets').rglob('*.hsp')]
-            sampler_records = [record for record in records if record[213:245].rstrip(bytes(1)) == b'Felt Piano']
-            self.assertEqual(len(sampler_records), 1)
-            self.assertEqual(sampler_records[0][245], 0b10001)
-            self.assertTrue(all(record[213:246] == bytes(33) for record in records if record not in sampler_records))
+            files = [path.read_bytes()[8:] for path in (output / 'presets').rglob('*.hsp')]
+            width = factory.SYNTH_PRESET_RECORD_WIDTH
+            # A sampler sound's file is its record followed by the whole instrument.
+            sampler_files = [data for data in files if data[213:245].rstrip(bytes(1)) == b'Felt Piano']
+            self.assertEqual(len(sampler_files), 1)
+            self.assertEqual(sampler_files[0][245], 0b10001)
+            self.assertEqual(sampler_files[0][width:], instrument('Felt Piano'))
+            self.assertTrue(all(len(data) == width and data[213:246] == bytes(33)
+                                for data in files if data not in sampler_files))
+            self.assertFalse((output / 'sampler').exists())
 
-            preset['sampler'] = {'name': 'Missing Instrument'}
+            preset['sampler'] = {'instrument': 'Missing.hbc'}
             felt.write_text(json.dumps(document))
             with self.assertRaises(factory.LibraryError):
                 factory.build_library(library, work / 'missing')
-            preset['sampler'] = {'name': 'Felt Piano'}
-            felt.write_text(json.dumps(document))
-            (library / 'sampler' / 'Copy.hbc').write_bytes(instrument('Felt Piano'))
-            with self.assertRaises(factory.LibraryError):
-                factory.build_library(library, work / 'duplicate')
 
 if __name__ == '__main__':
     unittest.main()

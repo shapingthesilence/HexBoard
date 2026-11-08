@@ -17,14 +17,12 @@ const stages: readonly { label: string; key: EditableSynthValueKey; level?: bool
   { label: "Release", key: "EnvelopeReleaseIndex" }
 ];
 
-/** Whether the connected board has the sound's instrument; unknown while offline. */
-export type SamplerInstrumentStatus = "installed" | "missing" | "unknown";
-
 export interface ClassicSamplerSoundEditorProps {
   values: EditableSynthValues;
   onChange: (key: EditableSynthValueKey, value: number) => void;
   instrumentName: string;
-  instrumentStatus: SamplerInstrumentStatus;
+  /** Opens the sound's instrument in the Instruments editor. */
+  onEditInstrument?: () => void;
   /** Set bits replace the instrument's own stage (bit 0 attack … bit 4 release). */
   envelopeOverride: number;
   onEnvelopeOverrideChange: (mask: number) => void;
@@ -33,7 +31,7 @@ export interface ClassicSamplerSoundEditorProps {
 }
 
 /** HexBoard Classic sampler sound: the instrument stays fixed; only the controls the board offers are edited. */
-export function ClassicSamplerSoundEditor({ values: v, onChange, instrumentName, instrumentStatus, envelopeOverride, onEnvelopeOverrideChange, modWheel }: ClassicSamplerSoundEditorProps) {
+export function ClassicSamplerSoundEditor({ values: v, onChange, instrumentName, onEditInstrument, envelopeOverride, onEnvelopeOverrideChange, modWheel }: ClassicSamplerSoundEditorProps) {
   const wheelPercent = wheelAmountByteToPercent(v.SynthModAmount);
   const stageControl = (stage: (typeof stages)[number], bit: number) => {
     const own = (envelopeOverride & bit) === 0;
@@ -58,10 +56,9 @@ export function ClassicSamplerSoundEditor({ values: v, onChange, instrumentName,
     <div className="wt-stages classic-stages">
       <fieldset className="wt-stage classic-oscillator" data-active><legend>Instrument <span className="wt-cost">Classic sampler</span></legend>
         <p className="classic-sampler-instrument"><strong>{instrumentName}</strong>
-          {instrumentStatus === "installed" && <span className="muted"> · on HexBoard</span>}
-          {instrumentStatus === "missing" && <span role="alert"> · not on HexBoard. Send it from the Instruments tab before saving this sound.</span>}
+          {onEditInstrument && <button type="button" onClick={onEditInstrument}>Edit instrument</button>}
         </p>
-        <p className="panel-note">A sampler sound always plays the instrument it was made with. To use another instrument, make a new sampler sound. The browser test keyboard can't play instruments; use Preview on HexBoard.</p>
+        <p className="panel-note">The instrument is stored inside this sound, so copying or exporting the sound takes it along. Edit instrument opens it in Instruments; sending it back replaces it in this sound. The browser test keyboard can't play instruments; use Preview on HexBoard.</p>
       </fieldset>
 
       <fieldset className="wt-stage classic-oscillator" data-active><legend>Amp envelope <span className="wt-cost">each note</span></legend>

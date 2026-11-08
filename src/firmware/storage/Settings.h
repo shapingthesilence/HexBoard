@@ -19,8 +19,6 @@ void storeCurrentKeyStepsInSettings(int stepsFromA);
 
 extern bool settingsDirty;
 extern bool fileSystemExists;
-// Boot profile sampler slot from a version 36 settings file, or 255.
-extern uint8_t migratedSamplerSlot;
 extern bool autoSave;
 extern const uint8_t factoryDefaults[NUM_SETTINGS];
 

@@ -15,7 +15,9 @@ bool restoreSynthStateForProfile(uint8_t profileIndex);
 void saveSynthPresetToSlot(uint16_t presetIndex);
 void saveSynthPresetAsNew(const char* folderPath);
 // presetIndex may be SYNTH_PRESET_CATALOG_NEW_HANDLE.
-bool writeSynthPresetToCatalogSlot(uint16_t presetIndex, const SynthPresetSlot& preset);
+SynthPresetStoreResult writeSynthPresetToCatalogSlot(uint16_t presetIndex, const SynthPresetSlot& preset,
+                                                     uint16_t* storedHandle = nullptr,
+                                                     const SynthPresetInstrumentSource* instrument = nullptr);
 bool deleteSynthPresetFromCatalog(uint16_t presetIndex);
 void loadSynthPresetFromSlot(uint16_t presetIndex);
 void loadBlankSynthPreset();
@@ -30,6 +32,3 @@ void normalizeSynthPresetFolderPath(char* folderPath, size_t folderPathLength);
 void normalizeSynthPresetValues(SynthPresetSlot& preset);
 void normalizeSynthPresetMetadata(SynthPresetSlot& preset, uint16_t fallbackIndex);
 void generateSynthPresetObjectId(SynthPresetSlot& preset, uint16_t fallbackIndex);
-// Once per board: gives every installed sampler instrument without a sound one
-// in "Instruments" (then "Instruments 2", ...). Writes flash; never at boot.
-void addSoundsForInstalledInstruments();

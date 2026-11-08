@@ -3,6 +3,7 @@
 #include "../FirmwareModule.h"
 #include "PersistentDataModels.h"
 #include "PresetSyncPacking.h"
+#include "SynthPresetCatalog.h"
 #include "../synth/SynthDefaults.h"
 
 constexpr uint8_t PRESET_SYNC_OBJECT_TYPE_COMPACT_SAMPLER = 0x0E;
@@ -207,6 +208,8 @@ struct PresetSyncReadTransfer {
   uint32_t nextChunkIndex = 0;
   char streamSamplePath[SYNTH_WAVETABLE_SAMPLE_PATH_LENGTH] = {};
   size_t streamSampleLength = 0;
+  // With streamRawFile: rawData is sent first, then the file from rawFileOffset.
+  uint32_t rawFileOffset = 0;
   std::vector<uint8_t> rawData;
 };
 
@@ -323,6 +326,9 @@ bool updateSynthWavetableMetadata(uint16_t handle, const ParsedSynthWavetableObj
 size_t presetSyncMaxRawObjectBytesForType(uint8_t objectType);
 int chooseSynthPresetWriteSlot(uint16_t handle, const SynthPresetSlot& preset);
 void applySynthPresetRuntimeOnly(const SynthPresetSlot& preset);
+// Stores an uploaded sampler sound object; returns 0 or a PRESET_SYNC_ERROR.
+uint8_t storeSamplerSoundObjectFile(const char* path, uint16_t handle, uint8_t writeFlags);
+uint8_t presetSyncStoreError(SynthPresetStoreResult result);
 void presetSyncHandleSynthParamSet(uint16_t transactionId, const uint8_t* payload, size_t payloadLength);
 void presetSyncHandleSynthWavetableSelect(uint16_t transactionId, const uint8_t* payload, size_t payloadLength);
 bool processPresetSyncSysEx(const uint8_t* data, const unsigned int len);

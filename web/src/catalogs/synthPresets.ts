@@ -31,12 +31,6 @@ export interface SynthPresetSampler {
 
 export const SAMPLER_ENVELOPE_OVERRIDE_ALL = 0x1f;
 
-/** The instrument a synth preset body plays, or "" for a wavetable preset. */
-export function samplerNameFromSynthPresetBody(body: Uint8Array): string {
-  const record = decodeObjectBody(body).records.find((item) => item.tag === SynthPresetTlv.SamplerName);
-  return record ? textFromBytes(record.value) : "";
-}
-
 export const SynthSettingKey = {
   PlaybackMode: 26,
   Waveform: 27,

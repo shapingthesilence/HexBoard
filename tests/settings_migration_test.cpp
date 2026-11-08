@@ -32,14 +32,6 @@ int main() {
     }
     assert(destination.front()==0xa5 && destination.back()==0x5a);
   }
-  {
-    std::array<uint8_t, 9 * 61> v36{};
-    v36[60] = 9; v36[61 + 60] = 3;
-    assert(persistedLegacySamplerSlot(36, v36.data(), 0) == 9);
-    assert(persistedLegacySamplerSlot(36, v36.data(), 1) == 3);
-    assert(persistedLegacySamplerSlot(37, v36.data(), 0) == NO_LEGACY_SAMPLER_SLOT);
-    assert(persistedLegacySamplerSlot(35, v36.data(), 0) == NO_LEGACY_SAMPLER_SLOT);
-  }
   static_assert(persistedSynthPresetWidth(11) == 212);
   static_assert(persistedSynthPresetWidth(12) == 213);
   static_assert(persistedSynthPresetWidth(13) == 246);

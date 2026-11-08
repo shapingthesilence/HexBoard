@@ -1,4 +1,6 @@
 #include "../FirmwareModule.h"
+#include <memory>
+#include <new>
 #include "../app/DiagnosticsTiming.h"
 #include "../app/RuntimeDefaults.h"
 #include "../menu/MenuAndDisplay.h"
@@ -302,6 +304,8 @@ bool currentRuntimeMatchesSynthPresetValues(const SynthPresetSlot& preset) {
   // without changing the selected source or modifying the patch.
   return strncmp(currentSynthWavetableName, preset.wavetableName, sizeof(preset.wavetableName)) == 0
          && strncmp(compactSamplerRequestedName(), preset.samplerName, sizeof(preset.samplerName)) == 0
+         && (!preset.samplerName[0]
+             || memcmp(compactSamplerRequestedSource(), preset.objectId, sizeof(preset.objectId)) == 0)
          && compactSamplerEnvelopeOverride() == preset.samplerEnvelopeOverride;
 }
 
@@ -419,7 +423,7 @@ void applyBlankSynthPresetToSettings() {
     settings[keyIndex] = factoryDefaults[keyIndex];
   }
   selectFallbackSynthWavetable();
-  requestCompactSampler("");
+  requestCompactSampler("", nullptr);
   setCompactSamplerEnvelopeOverride(0);
 }
 
@@ -527,6 +531,10 @@ void queueCurrentSynthStateForProfile(uint8_t profileIndex) {
              "Profile %u Draft",
              static_cast<unsigned>(profileIndex + 1));
     snprintf(pendingSynthProfileDraft.folderPath, sizeof(pendingSynthProfileDraft.folderPath), "/");
+    // A sampler draft names the sound file that holds its instrument.
+    if (pendingSynthProfileDraft.samplerName[0]) {
+      memcpy(pendingSynthProfileDraft.objectId, compactSamplerRequestedSource(), sizeof(pendingSynthProfileDraft.objectId));
+    }
   }
   pendingSynthProfileReference = reference;
   pendingSynthProfileIndex = profileIndex;
@@ -621,7 +629,8 @@ void applySynthPresetToSettings(const SynthPresetSlot& preset) {
     settings[static_cast<uint8_t>(synthPresetKeys[i])] = value;
   }
   setCurrentSynthWavetableReference(preset.wavetableFolderPath, preset.wavetableName);
-  requestCompactSampler(preset.samplerName);
+  // A sampler sound plays the instrument stored in its own file.
+  requestCompactSampler(preset.samplerName, preset.objectId);
   setCompactSamplerEnvelopeOverride(preset.samplerName[0] ? preset.samplerEnvelopeOverride : 0);
 }
 
@@ -703,11 +712,50 @@ void showBoardSaveRefusal(SynthPresetStoreResult result) {
       reason = "Too many folders";
       snprintf(detail, sizeof(detail), "%u folders maximum", static_cast<unsigned>(SYNTH_PRESET_FOLDER_MAX_COUNT));
       break;
+    case SynthPresetStoreResult::SamplerLimit:
+      reason = "Too many samplers";
+      snprintf(detail, sizeof(detail), "%u sampler sounds max", static_cast<unsigned>(SYNTH_PRESET_MAX_SAMPLER_COUNT));
+      break;
+    case SynthPresetStoreResult::MissingInstrument:
+      showSynthPresetSaveRefusedNotice("No instrument", "", "Send it with", "HexBoard Sync");
+      return;
     default:
       showSynthPresetSaveRefusedNotice(reason, "", "See Settings >", "Storage Status");
       return;
   }
   showSynthPresetSaveRefusedNotice(reason, detail, "Free space with", "HexBoard Sync");
+}
+}  // namespace
+
+namespace {
+// The current sampler instrument as a copy source. False when the current
+// sound is a sampler whose instrument file is gone.
+bool currentInstrumentSource(SynthPresetInstrumentSource& source, char* path, size_t pathLength,
+                             const SynthPresetInstrumentSource*& result) {
+  result = nullptr;
+  if (!compactSamplerRequestedName()[0]) {
+    return true;
+  }
+  if (!synthPresetInstrumentRange(compactSamplerRequestedSource(), path, pathLength, source.offset, source.length)) {
+    return false;
+  }
+  source.path = path;
+  result = &source;
+  return true;
+}
+
+SynthPresetStoreResult storeCurrentSynthPreset(uint16_t handle, const SynthPresetSlot& preset, uint16_t& storedHandle) {
+  SynthPresetInstrumentSource source;
+  char path[SYNTH_PRESET_STORAGE_PATH_LENGTH] = {};
+  const SynthPresetInstrumentSource* instrument = nullptr;
+  if (!currentInstrumentSource(source, path, sizeof(path), instrument)) {
+    return SynthPresetStoreResult::MissingInstrument;
+  }
+  const SynthPresetStoreResult result = storeSynthPresetInCatalog(handle, preset, storedHandle, instrument);
+  if (result == SynthPresetStoreResult::Stored) {
+    retargetCompactSamplerSource(preset.objectId);
+  }
+  return result;
 }
 }  // namespace
 
@@ -720,7 +768,7 @@ void saveSynthPresetToSlot(uint16_t presetIndex) {
   captureCurrentSynthPreset(preset);
   normalizeSynthPresetMetadata(preset, presetIndex);
   uint16_t storedHandle = 0;
-  SynthPresetStoreResult result = storeSynthPresetInCatalog(presetIndex, preset, storedHandle);
+  SynthPresetStoreResult result = storeCurrentSynthPreset(presetIndex, preset, storedHandle);
   if (result != SynthPresetStoreResult::Stored) {
     showBoardSaveRefusal(result);
     return;
@@ -756,7 +804,7 @@ void saveSynthPresetAsNew(const char* folderPath) {
   }
   uint16_t storedHandle = 0;
   SynthPresetStoreResult result =
-    storeSynthPresetInCatalog(SYNTH_PRESET_CATALOG_NEW_HANDLE, preset, storedHandle);
+    storeCurrentSynthPreset(SYNTH_PRESET_CATALOG_NEW_HANDLE, preset, storedHandle);
   if (result != SynthPresetStoreResult::Stored) {
     showBoardSaveRefusal(result);
     return;
@@ -765,20 +813,34 @@ void saveSynthPresetAsNew(const char* folderPath) {
   sendToLog("Saved new synth preset " + std::string(preset.name));
 }
 
-bool writeSynthPresetToCatalogSlot(uint16_t presetIndex, const SynthPresetSlot& preset) {
-  SynthPresetSlot normalized = preset;
+SynthPresetStoreResult writeSynthPresetToCatalogSlot(uint16_t presetIndex, const SynthPresetSlot& preset,
+                                                     uint16_t* storedHandle,
+                                                     const SynthPresetInstrumentSource* instrument) {
+  // Sync saves reach here deep in the SysEx handler: keep the copy off the stack.
+  std::unique_ptr<SynthPresetSlot> copy(new (std::nothrow) SynthPresetSlot(preset));
+  if (!copy) {
+    return SynthPresetStoreResult::StorageError;
+  }
+  SynthPresetSlot& normalized = *copy;
   normalizeSynthPresetValues(normalized);
   normalizeSynthPresetMetadata(normalized,
                                presetIndex == SYNTH_PRESET_CATALOG_NEW_HANDLE
                                  ? synthPresetCatalogCount()
                                  : presetIndex);
-  uint16_t storedHandle = 0;
-  SynthPresetStoreResult result = storeSynthPresetInCatalog(presetIndex, normalized, storedHandle);
+  uint16_t handle = 0;
+  SynthPresetStoreResult result = storeSynthPresetInCatalog(presetIndex, normalized, handle, instrument);
   if (result != SynthPresetStoreResult::Stored) {
     sendToLog(synthPresetStoreResultMessage(result));
-    return false;
+    return result;
   }
-  return true;
+  if (storedHandle) {
+    *storedHandle = handle;
+  }
+  // A new instrument in the sound that is playing replaces what plays.
+  if (instrument && normalized.samplerName[0]) {
+    reloadCompactSamplerSource(normalized.objectId);
+  }
+  return result;
 }
 
 bool deleteSynthPresetFromCatalog(uint16_t presetIndex) {
@@ -796,8 +858,6 @@ void loadSynthPresetFromSlot(uint16_t presetIndex) {
     return;
   }
   const bool samplerPreset = preset.samplerName[0] != '\0';
-  uint8_t instrumentSlot = 0;
-  const bool missingInstrument = samplerPreset && !compactSamplerSlotForName(preset.samplerName, instrumentSlot);
   const bool missingWavetable = !samplerPreset && !synthWavetableNameIsAvailable(preset.wavetableName);
   char missingName[SYNTH_PRESET_NAME_LENGTH] = {};
   snprintf(missingName, sizeof(missingName), "%s", samplerPreset ? preset.samplerName : preset.wavetableName);
@@ -805,106 +865,10 @@ void loadSynthPresetFromSlot(uint16_t presetIndex) {
   markSettingsDirty();
   trackCurrentSynthPreset(presetIndex, preset);
   syncSynthSettingsToRuntime();
-  if (missingInstrument) {
+  if (samplerPreset && !compactSamplerActive()) {
     showMissingSamplerInstrumentNotice(missingName);
   } else if (missingWavetable) {
     showMissingWavetableNotice(missingName);
   }
   sendToLog("Loaded synth preset " + std::string(preset.name));
-}
-
-namespace {
-constexpr char INSTRUMENT_SOUNDS_MARKER_PATH[] = "/sampler/sounds.done";
-constexpr char INSTRUMENT_SOUNDS_FOLDER[] = "Instruments";
-
-// The first "Instruments", "Instruments 2", ... folder with room for one more.
-bool instrumentSoundsFolder(char* folder, size_t folderLength) {
-  for (unsigned n = 1; n <= SYNTH_PRESET_FOLDER_MAX_COUNT; ++n) {
-    if (n == 1) {
-      snprintf(folder, folderLength, "%s", INSTRUMENT_SOUNDS_FOLDER);
-    } else {
-      snprintf(folder, folderLength, "%s %u", INSTRUMENT_SOUNDS_FOLDER, n);
-    }
-    if (synthPresetCatalogMatchCount(folder) < SYNTH_PRESET_FOLDER_MAX_PRESETS) {
-      return true;
-    }
-  }
-  return false;
-}
-}  // namespace
-
-void addSoundsForInstalledInstruments() {
-  if (!fileSystemExists || !LittleFS.exists("/sampler") || LittleFS.exists(INSTRUMENT_SOUNDS_MARKER_PATH)
-      || !ensureSynthPresetCatalogIndexed(false)) {
-    return;
-  }
-  // Instruments some sound already plays.
-  uint64_t covered = 0;
-  auto markCovered = [&](const SynthPresetCatalogEntry& entry) {
-    SynthPresetSlot preset = {};
-    uint8_t slot = 0;
-    if (synthPresetCatalogEntryIsSampler(entry)
-        && readSynthPresetFileByObjectId(entry.objectId, preset)
-        && compactSamplerSlotForName(preset.samplerName, slot)) {
-      covered |= uint64_t(1) << slot;
-    }
-    return true;
-  };
-  visitSynthPresetCatalogWith(markCovered);
-  uint64_t missing = 0;
-  uint16_t total = 0;
-  for (uint8_t slot = 0; slot < COMPACT_SAMPLER_SLOT_COUNT; ++slot) {
-    char name[SYNTH_PRESET_NAME_LENGTH] = {};
-    uint32_t bytes = 0;
-    if (!(covered & (uint64_t(1) << slot)) && compactSamplerFileInfo(slot, name, sizeof(name), bytes)) {
-      missing |= uint64_t(1) << slot;
-      ++total;
-    }
-  }
-
-  uint16_t added = 0;
-  if (total > 0) {
-    beginFlashSafeWrite();
-    for (uint8_t slot = 0; slot < COMPACT_SAMPLER_SLOT_COUNT; ++slot) {
-      if (!(missing & (uint64_t(1) << slot))) {
-        continue;
-      }
-      showFlashSaveProgress("Adding sounds", added, total);
-      SynthPresetSlot preset = {};
-      uint32_t bytes = 0;
-      if (!compactSamplerFileInfo(slot, preset.samplerName, sizeof(preset.samplerName), bytes)
-          || !instrumentSoundsFolder(preset.folderPath, sizeof(preset.folderPath))) {
-        break;
-      }
-      preset.valid = 1;
-      for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
-        preset.values[i] = factoryDefaults[static_cast<uint8_t>(synthPresetKeys[i])];
-      }
-      snprintf(preset.name, sizeof(preset.name), "%s", preset.samplerName);
-      normalizeSynthPresetValues(preset);
-      normalizeSynthPresetMetadata(preset, synthPresetCatalogCount());
-      uint16_t existing = 0;
-      uint16_t salt = synthPresetCatalogCount();
-      for (uint8_t attempt = 0; attempt < 8 && findSynthPresetCatalogHandle(preset.objectId, existing); ++attempt) {
-        generateSynthPresetObjectId(preset, ++salt);
-      }
-      uint16_t storedHandle = 0;
-      const SynthPresetStoreResult result =
-        storeSynthPresetInCatalog(SYNTH_PRESET_CATALOG_NEW_HANDLE, preset, storedHandle);
-      if (result != SynthPresetStoreResult::Stored) {
-        sendToLog(synthPresetStoreResultMessage(result));
-        break;
-      }
-      ++added;
-    }
-    showFlashSaveProgress("Adding sounds", added, total);
-    endFlashSafeWrite();
-  }
-  // Once only: later instruments get their sound when HexBoard Sync sends
-  // them, and a sound the user deletes is not recreated.
-  File marker = LittleFS.open(INSTRUMENT_SOUNDS_MARKER_PATH, "w");
-  if (marker) {
-    marker.close();
-  }
-  sendToLog("Added sounds for installed instruments (" + std::to_string(added) + "/" + std::to_string(total) + ").");
 }

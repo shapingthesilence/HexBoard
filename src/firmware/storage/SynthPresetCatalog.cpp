@@ -101,15 +101,33 @@ bool readSynthPresetFile(const char* path, SynthPresetSlot& preset) {
   return readOk && !objectIdIsEmpty(preset.objectId);
 }
 
+bool copyFileRange(File& output, const SynthPresetInstrumentSource& source) {
+  File input = LittleFS.open(source.path, "r");
+  if (!input || uint64_t(source.offset) + source.length > input.size() || !input.seek(source.offset)) {
+    return false;
+  }
+  static uint8_t buffer[256];  // Core 0 only; saves stack in deep save paths
+  for (uint32_t remaining = source.length; remaining;) {
+    const size_t n = remaining < sizeof(buffer) ? remaining : sizeof(buffer);
+    if (input.read(buffer, n) != n || output.write(buffer, n) != n) {
+      return false;
+    }
+    remaining -= n;
+  }
+  return true;
+}
+
 bool writeFileAtomic(const char* path, const uint8_t* first, size_t firstLength,
-                     const uint8_t* second, size_t secondLength) {
+                     const uint8_t* second, size_t secondLength,
+                     const SynthPresetInstrumentSource* tail = nullptr) {
   char tempPath[SYNTH_PRESET_STORAGE_PATH_LENGTH + 4] = {};
   snprintf(tempPath, sizeof(tempPath), "%s.tmp", path);
   LittleFS.remove(tempPath);
   File output = LittleFS.open(tempPath, "w");
   bool ok = output
             && output.write(first, firstLength) == firstLength
-            && (!second || output.write(second, secondLength) == secondLength);
+            && (!second || output.write(second, secondLength) == secondLength)
+            && (!tail || copyFileRange(output, *tail));
   if (output) {
     output.close();
   }
@@ -128,7 +146,7 @@ bool ensureDirectory(const char* path) {
   return false;
 }
 
-bool writeSynthPresetFileAtomic(const SynthPresetSlot& preset) {
+bool writeSynthPresetFileAtomic(const SynthPresetSlot& preset, const SynthPresetInstrumentSource* instrument) {
   char path[SYNTH_PRESET_STORAGE_PATH_LENGTH] = {};
   char bucket[16] = {};
   if (!synthPresetStoragePath(preset.objectId, path, sizeof(path))) {
@@ -144,7 +162,8 @@ bool writeSynthPresetFileAtomic(const SynthPresetSlot& preset) {
   }
   if (!writeFileAtomic(path,
                        reinterpret_cast<const uint8_t*>(&header), sizeof(header),
-                       reinterpret_cast<const uint8_t*>(&preset), sizeof(preset))) {
+                       reinterpret_cast<const uint8_t*>(&preset), sizeof(preset),
+                       instrument)) {
     reportStorageHealthIssue(path, "write failed");
     sendToLog("Error: Unable to atomically save synth preset " + std::string(path) + ".");
     return false;
@@ -735,13 +754,47 @@ bool readSynthPresetPayload(File& file, SynthPresetSlot& preset) {
       || strncmp(header.magic, "HSP", 3) != 0) return false;
   const size_t width = persistedSynthPresetWidth(header.version);
   if (width == 0 || width > sizeof(preset)) return false;
-  if (file.size() != sizeof(header) + width
+  if (file.size() < sizeof(header) + width
       || file.read(reinterpret_cast<uint8_t*>(&preset), width) != width
       || !preset.valid
       || header.crc32 != crc32(reinterpret_cast<const uint8_t*>(&preset), width)) return false;
+  // Only current sampler sounds carry an instrument after the record.
+  if (file.size() != sizeof(header) + width
+      && (header.version != SYNTH_PRESET_FILE_VERSION || !preset.samplerName[0])) return false;
   return expandPersistedSynthPreset(reinterpret_cast<uint8_t*>(&preset), sizeof(preset),
       reinterpret_cast<const uint8_t*>(&preset), width,
       factoryDefaults[static_cast<uint8_t>(SettingKey::ArpeggiatorNoteLength)]);
+}
+
+bool synthPresetInstrumentRange(const uint8_t* objectId, char* path, size_t pathLength,
+                                uint32_t& offset, uint32_t& length) {
+  if (!objectId || !fileSystemExists || !synthPresetStoragePath(objectId, path, pathLength)) {
+    return false;
+  }
+  File file = LittleFS.open(path, "r");
+  SynthPresetFileHeaderBase header = {};
+  if (!file || file.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) != sizeof(header)
+      || strncmp(header.magic, "HSP", 3) != 0 || header.version != SYNTH_PRESET_FILE_VERSION) {
+    return false;
+  }
+  offset = sizeof(header) + sizeof(SynthPresetSlot);
+  if (file.size() <= offset) {
+    return false;
+  }
+  length = file.size() - offset;
+  return true;
+}
+
+uint16_t synthPresetCatalogSamplerCount() {
+  uint16_t count = 0;
+  auto visit = [&](const SynthPresetCatalogEntry& entry) {
+    if (synthPresetCatalogEntryIsSampler(entry)) {
+      ++count;
+    }
+    return true;
+  };
+  visitSynthPresetCatalogWith(visit);
+  return count;
 }
 
 bool readSynthPresetFileByObjectId(const uint8_t* objectId, SynthPresetSlot& preset) {
@@ -1005,7 +1058,8 @@ bool ensureSynthPresetCatalogIndexed(bool userInitiated) {
 
 SynthPresetStoreResult storeSynthPresetInCatalog(uint16_t handle,
                                                  const SynthPresetSlot& preset,
-                                                 uint16_t& storedHandle) {
+                                                 uint16_t& storedHandle,
+                                                 const SynthPresetInstrumentSource* instrument) {
   if (!fileSystemExists) {
     reportStorageHealthIssue(SYNTH_PRESET_STORAGE_ROOT, "filesystem unavailable");
     return SynthPresetStoreResult::StorageError;
@@ -1020,6 +1074,27 @@ SynthPresetStoreResult storeSynthPresetInCatalog(uint16_t handle,
   }
   if (!replacing && synthPresetCatalogCount() >= SYNTH_PRESET_MAX_COUNT) {
     return SynthPresetStoreResult::LibraryFull;
+  }
+  // A sampler sound keeps the instrument already in its file unless given one.
+  static char keptPath[SYNTH_PRESET_STORAGE_PATH_LENGTH];  // Core 0 only
+  SynthPresetInstrumentSource kept;
+  const bool sampler = preset.samplerName[0] != '\0';
+  if (!sampler) {
+    instrument = nullptr;
+  } else if (!instrument) {
+    if (!synthPresetInstrumentRange(preset.objectId, keptPath, sizeof(keptPath), kept.offset, kept.length)) {
+      return SynthPresetStoreResult::MissingInstrument;
+    }
+    kept.path = keptPath;
+    instrument = &kept;
+  }
+  if (sampler) {
+    SynthPresetCatalogEntry previous;
+    const bool wasSampler = replacing && readSynthPresetCatalogEntry(existing, previous)
+                            && synthPresetCatalogEntryIsSampler(previous);
+    if (!wasSampler && synthPresetCatalogSamplerCount() >= SYNTH_PRESET_MAX_SAMPLER_COUNT) {
+      return SynthPresetStoreResult::SamplerLimit;
+    }
   }
   const int oldSlot = replacing ? existing / SYNTH_PRESET_HANDLE_STRIDE : -1;
   const uint8_t oldPosition = static_cast<uint8_t>(existing % SYNTH_PRESET_HANDLE_STRIDE);
@@ -1040,7 +1115,7 @@ SynthPresetStoreResult storeSynthPresetInCatalog(uint16_t handle,
   beginFlashSafeWrite();
   bool ok = markPending();
   const bool changed = ok;
-  ok = ok && writeSynthPresetFileAtomic(preset);
+  ok = ok && writeSynthPresetFileAtomic(preset, instrument);
   if (ok && replacing && !moving) {
     ok = editFolderFile(static_cast<uint8_t>(oldSlot), FolderEdit::Replace, oldPosition, &record);
     storedHandle = existing;
@@ -1121,6 +1196,8 @@ const char* synthPresetStoreResultMessage(SynthPresetStoreResult result) {
     case SynthPresetStoreResult::FolderFull: return "Synth preset folder is full.";
     case SynthPresetStoreResult::TooManyFolders: return "Too many synth preset folders.";
     case SynthPresetStoreResult::HandleMismatch: return "Synth preset handle does not match its object id.";
+    case SynthPresetStoreResult::SamplerLimit: return "The library already holds 128 sampler sounds.";
+    case SynthPresetStoreResult::MissingInstrument: return "The sampler sound has no instrument.";
     case SynthPresetStoreResult::StorageError: return "Unable to save the synth preset.";
   }
   return "Unable to save the synth preset.";

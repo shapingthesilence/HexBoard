@@ -388,16 +388,15 @@ wavetable.
 
 Sampler presets play an imported mono instrument instead of a wavetable; the
 preset you load chooses the engine. Use HexBoard Sync's Synth → Instruments editor
-to convert and install your own SoundFonts or recordings: **Send to HexBoard**
-installs the instrument and saves a sound for it (in `Instruments` unless you
-choose another folder), and `Save Sound` on the HexBoard also keeps the
-instrument that is playing. Instruments installed before this firmware get a
-sound each in `Instruments` the first time `Sounds` opens; the HexBoard counts
-`Adding sounds` while it does this once. In the `Sounds` list, a small wave icon
-marks wavetable sounds and a sample icon marks sampler sounds; the diamond on
-the right marks the loaded sound. Sync's **New sampler sound** makes more
-sounds for an installed instrument, and Sync edits sampler sounds with the same
-controls as the board.
+to convert your own SoundFonts or recordings: **Send to HexBoard** saves a
+sampler sound with the instrument inside it (in `Instruments` unless you choose
+another folder). Each sampler sound holds its own instrument, so copying or
+sharing the sound takes the instrument along, and deleting the sound deletes
+it. `Save Sound` and `Save as new` on the HexBoard copy the playing instrument
+into the saved sound. The HexBoard holds up to 128 sampler sounds. In the
+`Sounds` list, a small wave icon marks wavetable sounds and a sample icon marks
+sampler sounds; the diamond on the right marks the loaded sound. Sync edits
+sampler sounds with the same controls as the board.
 
 With a sampler preset loaded, the `Synth` page shows `Inst: <name>` (fixed by
 the preset), and hides the wavetable, `WT Pos`, `Wheel FX`, `FX Env` and `LFO`
@@ -405,8 +404,8 @@ items. Its `Amp Env` page starts every stage at `Inst`, the instrument's own
 envelope; choosing a value replaces that stage for the whole instrument, and
 choosing `Inst` again restores it. New notes use the change. The mod wheel adds
 vibrato to sampler sounds: `Wheel Amt` sets how deep and `Vib Speed` how fast.
-Engine changes briefly mute audio; held keys need a fresh press afterward. If a sampler preset's instrument is
-not installed, the HexBoard shows `Upload instrument` and plays the wavetable
+Engine changes briefly mute audio; held keys need a fresh press afterward. If a sampler sound's instrument
+can't be read, the HexBoard shows `Upload instrument` and plays the wavetable
 engine instead. See [Classic sampler](compact-sampler.md) for importing and limits.
 
 `Drive` adds soft saturation after the voices are mixed:

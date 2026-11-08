@@ -49,7 +49,7 @@ SYNTH_PRESET_FOLDER_MAX_COUNT = source_integer_constant("SYNTH_PRESET_FOLDER_MAX
 SYNTH_PRESET_FOLDER_MAX_PRESETS = source_integer_constant("SYNTH_PRESET_FOLDER_MAX_PRESETS")
 PRESET_INDEX_DIRECTORY = "preset_index"
 SYNTH_PRESET_RECORD_WIDTH = 246
-SAMPLER_SLOT_COUNT = 64
+SYNTH_PRESET_MAX_SAMPLER_COUNT = 128
 SYNTH_WAVETABLE_MAX_COUNT = 32
 GEOMETRY_FACTORY_BUNDLE_MAX_COUNT = 64
 GEOMETRY_BUNDLE_RECORD_MAX_COUNT = 255
@@ -725,26 +725,6 @@ def parse_compact_sampler(path: Path) -> str:
     return name
 
 
-def build_samplers(root: Path, output: Path) -> set[str]:
-    """Installs factory Classic sampler instruments into /sampler slots."""
-    if not root.is_dir():
-        return set()
-    paths = sorted(root.rglob("*.hbc"))
-    if len(paths) > SAMPLER_SLOT_COUNT:
-        raise fail(root, "sampler", f"found {len(paths)} instruments; capacity is {SAMPLER_SLOT_COUNT}")
-    names: set[str] = set()
-    if paths:
-        (output / "sampler").mkdir()
-    for slot, path in enumerate(paths):
-        name = parse_compact_sampler(path)
-        # Presets name their instrument, so names must be unique.
-        if name in names:
-            raise fail(path, "sampler", f"duplicate instrument name {name!r}")
-        names.add(name)
-        shutil.copyfile(path, output / "sampler" / f"{slot:02d}.hbc")
-    return names
-
-
 def validate_synth_values(values: dict, path: Path) -> None:
     if not 0 <= values["SynthModAmount"] <= 254:
         raise fail(path, "synth values", "SynthModAmount must be 0..254")
@@ -760,10 +740,10 @@ def validate_synth_values(values: dict, path: Path) -> None:
 
 
 def parse_preset(path: Path, root: Path,
-                 wavetable_references: set[tuple[str, str]],
-                 sampler_names: set[str] = frozenset()) -> tuple[
-                     bytes, str, bytes, dict[str, int], tuple[str, str]
+                 wavetable_references: set[tuple[str, str]]) -> tuple[
+                     bytes, str, bytes, dict[str, int], tuple[str, str], bytes
                  ]:
+    """Returns the preset record and, for a sampler sound, its instrument bytes."""
     document = read_json(path, "preset")
     source = document.get("preset") if document.get("format") == "hexboard.synthPreset.v1" else document
     if not isinstance(source, dict):
@@ -778,13 +758,17 @@ def parse_preset(path: Path, root: Path,
     name = str(name_value)
     sampler = source.get("sampler")
     sampler_name = ""
+    instrument = b""
     envelope_override = 0
     if sampler is not None:
-        if not isinstance(sampler, dict) or not str(sampler.get("name", "")).strip():
-            raise fail(path, "preset", "sampler must be an object with an instrument name")
-        sampler_name = str(sampler["name"]).strip()
-        if sampler_name not in sampler_names:
-            raise fail(path, "preset", f"sampler instrument {sampler_name!r} is not in factory-library/sampler")
+        # A sampler sound carries its instrument: an HBC1 file beside the preset.
+        if not isinstance(sampler, dict) or not str(sampler.get("instrument", "")).strip():
+            raise fail(path, "preset", "sampler must be an object with an instrument file")
+        instrument_path = path.parent / str(sampler["instrument"])
+        if not instrument_path.is_file():
+            raise fail(path, "preset", f"sampler instrument {sampler['instrument']!r} is missing")
+        sampler_name = parse_compact_sampler(instrument_path)
+        instrument = instrument_path.read_bytes()
         envelope_override = checked_byte(sampler.get("envelopeOverride", 0), path, "sampler envelopeOverride")
         if envelope_override & ~0x1F:
             raise fail(path, "preset", "sampler envelopeOverride must be a 5-bit stage mask")
@@ -832,12 +816,11 @@ def parse_preset(path: Path, root: Path,
     if len(slot) != SYNTH_PRESET_RECORD_WIDTH:
         raise fail(path, "presets", f"internal slot size is {len(slot)}; expected {SYNTH_PRESET_RECORD_WIDTH}")
     selected_key = f"{folder}/{name}" if folder != "/" else name
-    return slot, selected_key, object_id, values, (wavetable_folder, wavetable_name)
+    return slot, selected_key, object_id, values, (wavetable_folder, wavetable_name), instrument
 
 
 def build_presets(root: Path, output: Path, config: dict,
-                  wavetable_references: set[tuple[str, str]],
-                  sampler_names: set[str] = frozenset()) -> tuple[
+                  wavetable_references: set[tuple[str, str]]) -> tuple[
                       bytes, dict[str, int], tuple[str, str]
                   ]:
     paths = sorted(root.rglob("*.json"))
@@ -851,9 +834,14 @@ def build_presets(root: Path, output: Path, config: dict,
     selected_name = config.get("selectedPreset")
     seen_ids: set[bytes] = set()
     seen_names: set[str] = set()
-    index_entries: list[tuple[bytes, str, str, bool, Path]] = []
+    index_entries: list[tuple[bytes, str, str, int, Path]] = []
+    sampler_count = 0
     for path in paths:
-        slot, key, object_id, values, wavetable = parse_preset(path, root, wavetable_references, sampler_names)
+        slot, key, object_id, values, wavetable, instrument = parse_preset(path, root, wavetable_references)
+        if instrument:
+            sampler_count += 1
+            if sampler_count > SYNTH_PRESET_MAX_SAMPLER_COUNT:
+                raise fail(path, "presets", f"more than {SYNTH_PRESET_MAX_SAMPLER_COUNT} sampler sounds")
         if object_id in seen_ids:
             raise fail(path, "presets", f"duplicate objectId {object_id.hex()}")
         if key in seen_names:
@@ -865,12 +853,14 @@ def build_presets(root: Path, output: Path, config: dict,
         header = struct.pack("<3sBI", b"HSP", SYNTH_PRESET_FILE_VERSION, crc32(slot))
         bucket = preset_output / object_id.hex().upper()[0]
         bucket.mkdir(exist_ok=True)
-        (bucket / f"{object_id.hex().upper()}.hsp").write_bytes(header + slot)
+        (bucket / f"{object_id.hex().upper()}.hsp").write_bytes(header + slot + instrument)
         seen_ids.add(object_id)
         seen_names.add(key)
         name = slot[18:50].split(b"\0", 1)[0].decode("utf-8")
         folder = slot[50:98].split(b"\0", 1)[0].decode("utf-8")
-        index_entries.append((object_id, name, folder, slot[1] != 0, path))
+        # Index flags: favorite, and the sampler engine (SynthPresetCatalog.h).
+        flags = (0x01 if slot[1] != 0 else 0) | (0x02 if instrument else 0)
+        index_entries.append((object_id, name, folder, flags, path))
     if selected_id is None or selected_values is None or selected_wavetable is None:
         raise fail(root, "selection", f"selectedPreset {selected_name!r} was not found")
     index_output = output / PRESET_INDEX_DIRECTORY
@@ -886,11 +876,11 @@ def preset_index_file(magic: bytes, version: int, count: int, slot: int, body: b
 
 
 def build_preset_index(root: Path,
-                       entries: list[tuple[bytes, str, str, bool, Path]]) -> dict[str, bytes]:
+                       entries: list[tuple[bytes, str, str, int, Path]]) -> dict[str, bytes]:
     """Encode the per-folder index described in SynthPresetIndexCodec.h."""
     folders: list[str] = []
     records: dict[int, bytes] = {}
-    for object_id, name, folder, favorite, path in entries:
+    for object_id, name, folder, flags, path in entries:
         if folder not in folders:
             if len(folders) >= SYNTH_PRESET_FOLDER_MAX_COUNT:
                 raise fail(path, "presets",
@@ -902,7 +892,7 @@ def build_preset_index(root: Path,
                        f"folder {folder!r} has more than {SYNTH_PRESET_FOLDER_MAX_PRESETS} presets")
         records[slot] = records.get(slot, b"") + (
             object_id + encoded_text(name, path, "name", 32)
-            + bytes([slot, 1 if favorite else 0]) + bytes(2))
+            + bytes([slot, flags]) + bytes(2))
     files = {
         f"{slot:02X}.hpi": preset_index_file(b"HPI", 2, len(body) // 52, slot, body)
         for slot, body in records.items()
@@ -995,9 +985,8 @@ def build_library(library: Path, output: Path) -> None:
     if not wavetable_root.is_dir() or not preset_root.is_dir() or not geometry_root.is_dir():
         raise fail(library, "layout", "expected geometry/, presets/, and wavetables/ directories")
     wavetable_records, wavetable_references = build_wavetables(wavetable_root, output)
-    sampler_names = build_samplers(library / "sampler", output)
     selected_preset_id, _, selected_preset_wavetable = build_presets(
-        preset_root, output, config, wavetable_references, sampler_names
+        preset_root, output, config, wavetable_references
     )
     geometry_object_count, selected_tuning_id, selected_layout_id, selected_scale_id = (
         build_geometry(geometry_root, output, config_path, config)

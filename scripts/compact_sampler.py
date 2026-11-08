@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Personal HBC import/readback and hardware smoke tests over USB MIDI.
+"""Classic sampler sound install/readback and hardware smoke tests over USB MIDI.
 
-Requires mido/python-rtmidi. Instrument paths are supplied by the user; this tool
-does not fetch or bundle source recordings. Existing slots are never overwritten.
+Installs user-supplied `.hexsound` files (a sound with its instrument, see
+docs/compact-sampler.md): each is stored, played, and read back byte for byte.
+A sound with the same object id is replaced. Requires mido/python-rtmidi. This
+tool does not fetch or bundle source recordings.
 """
 import argparse
 import json
@@ -80,25 +82,38 @@ class Board:
             raise RuntimeError('Incorrect acknowledged message')
         return result
 
-    def sampler(self, operation, slot=None):
-        return self.request(0x36, [operation] + ([] if slot is None else [slot]), 0x37)
+    def sampler(self, operation):
+        return self.request(0x36, [operation], 0x37)
 
     def status(self):
         p = self.sampler(0)
-        return dict(slot=p[1], assets=p[2], zones=p[3], pcm_bytes=integer(p[4:7]), free_heap=integer(p[7:11]), name=bytes(p[12:]).decode('ascii'))
+        return dict(active=p[1] != 127, assets=p[2], zones=p[3], pcm_bytes=integer(p[4:7]), free_heap=integer(p[7:11]), name=bytes(p[12:]).decode('ascii'))
 
-    def library(self):
-        rows = []
-        for slot in range(32):
-            p = self.sampler(1, slot)
-            if p[2]:
-                rows.append(dict(slot=slot, bytes=integer(p[3:6]), name=bytes(p[7:]).decode('ascii')))
-        return rows
+    def sounds(self):
+        """Synth preset list rows: handle, object id, folder and name."""
+        rows, page = [], 0
+        while True:
+            p = self.request(0x20, [7, *number(page, 2), 4, 0], 0x21)
+            cursor = 6
+            for _ in range(p[5]):
+                handle = integer(p[cursor + 1:cursor + 3])
+                id_length = p[cursor + 6]
+                object_id = unpack(p[cursor + 7:cursor + 7 + id_length], 16)
+                cursor += 7 + id_length
+                folder = bytes(p[cursor + 1:cursor + 1 + p[cursor]]).decode()
+                cursor += 1 + p[cursor]
+                name = bytes(p[cursor + 1:cursor + 1 + p[cursor]]).decode()
+                cursor += 1 + p[cursor]
+                rows.append(dict(handle=handle, id=object_id, folder=folder, name=name))
+            page += 1
+            if page >= integer(p[3:5]):
+                return rows
 
-    def upload(self, slot, body):
+    def upload(self, body, flags=3):
+        """Stores a .hexsound (flags 2 save, 3 save and play)."""
         crc = zlib.crc32(body)
-        transfer, flags = 1, 2
-        self.request(0x24, [0x0e, *number(slot, 2), *number(transfer, 2), 1, 0, *number(len(body), 4), *number(crc, 5), *number(96, 2), flags], 6)
+        transfer = 1
+        self.request(0x24, [0x0e, *number(16383, 2), *number(transfer, 2), 1, 0, *number(len(body), 4), *number(crc, 5), *number(96, 2), flags], 6)
         try:
             index = 0
             for offset in range(0, len(body), 96):
@@ -114,10 +129,11 @@ class Board:
                 pass  # Rejected commits may already have discarded the transfer.
             raise
 
-    def read(self, slot):
+    def read(self, handle):
+        """The sampler sound at a synth preset handle, as a .hexsound."""
         self.transaction = self.transaction % 16000 + 1
         transaction = self.transaction
-        self.send(0x22, [0x0e, *number(slot, 2), 0], transaction)
+        self.send(0x22, [0x0e, *number(handle, 2), 0], transaction)
         kind, p = self.receive(transaction)
         if kind != 0x23:
             raise RuntimeError('Missing read begin')
@@ -144,55 +160,50 @@ class Board:
         return bytes(body)
 
 
+def sound_object_id(body):
+    """The object id TLV (0x02) of a .hexsound's preset body."""
+    if body[:4] != b'HXS1':
+        raise RuntimeError('Not a .hexsound file')
+    preset = body[6:6 + (body[4] | body[5] << 8)]
+    cursor = 8
+    while cursor + 3 <= len(preset):
+        tag, length = preset[cursor], preset[cursor + 1] | preset[cursor + 2] << 8
+        if tag == 0x02:
+            return bytes(preset[cursor + 3:cursor + 3 + length])
+        cursor += 3 + length
+    raise RuntimeError('The sound has no object id')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', default='HexBoard virtual-cable')
-    parser.add_argument('--install', type=Path, nargs='*', default=[])
-    parser.add_argument('--select', type=int)
+    parser.add_argument('--install', type=Path, nargs='*', default=[], help='.hexsound files to store and play')
     parser.add_argument('--save-startup', action='store_true', help='Save current settings into startup profile 1')
-    parser.add_argument('--switch-cycles', type=int, default=0)
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
     board = Board(args.port)
     report = {'passed': False, 'installed': []}
     try:
         report['before'] = board.status()
-        rows = board.library()
         for path in args.install:
             body = path.read_bytes()
-            name = body[32:64].split(b'\0', 1)[0].decode('ascii')
-            existing = next((r for r in rows if r['name'] == name), None)
-            if existing:
-                slot = existing['slot']
-                if board.read(slot) != body:
-                    raise RuntimeError(f'Existing instrument differs: {name}')
-            else:
-                slot = next(i for i in range(32) if not any(r['slot'] == i for r in rows))
-                board.upload(slot, body)
-                if board.read(slot) != body:
-                    raise RuntimeError(f'Install/readback differs: {path}')
-                rows.append(dict(slot=slot, name=name, bytes=len(body)))
-            board.sampler(2, slot)
-            if board.status()['slot'] != slot:
-                raise RuntimeError('Selection did not become active')
-            report['installed'].append(dict(file=str(path), slot=slot, bytes=len(body)))
+            object_id = sound_object_id(body)
+            board.upload(body)
+            row = next((r for r in board.sounds() if r['id'] == object_id), None)
+            if row is None:
+                raise RuntimeError(f'Installed sound is not listed: {path}')
+            readback = board.read(row['handle'])
+            # The board rewrites the preset body; the instrument must match exactly.
+            if readback[6 + (readback[4] | readback[5] << 8):] != body[6 + (body[4] | body[5] << 8):]:
+                raise RuntimeError(f'Install/readback differs: {path}')
+            status = board.status()
+            if not status['active']:
+                raise RuntimeError(f'The sound did not start playing: {path}')
+            report['installed'].append(dict(file=str(path), handle=row['handle'], folder=row['folder'], name=row['name'], bytes=len(body)))
             print(json.dumps(report['installed'][-1]), flush=True)
-        selected = args.select if args.select is not None else (rows[0]['slot'] if rows else 127)
-        minimum_heap = board.status()['free_heap']
-        for _ in range(args.switch_cycles):
-            for slot in (127, selected):
-                board.sampler(2, slot)
-                status = board.status()
-                if status['slot'] != slot:
-                    raise RuntimeError('Engine switch failed')
-                minimum_heap = min(minimum_heap, status['free_heap'])
-        report['minimum_heap'] = minimum_heap
-        if args.select is not None:
-            board.sampler(2, args.select)
         if args.save_startup:
             board.sampler(4)
         report['after'] = board.status()
-        report['library'] = board.library()
         report['passed'] = True
     finally:
         board.close()
