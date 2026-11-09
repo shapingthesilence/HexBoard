@@ -174,7 +174,7 @@ bool load_settings() {
   }
   // Profile 1 is the canonical boot target.
   defaultProfileIndex = DEFAULT_PROFILE_INDEX;
-  uint8_t persistedProfileSettings[SETTINGS_PROFILE_VALUES_DATA_SIZE] = {};
+  uint8_t persistedProfileSettings[MAX_PERSISTED_SETTINGS_WIDTH * PROFILE_COUNT] = {};
   size_t settingsBytesRead =
     f.read(persistedProfileSettings, sourceSettingsSize);
   size_t geometryBytesRead =

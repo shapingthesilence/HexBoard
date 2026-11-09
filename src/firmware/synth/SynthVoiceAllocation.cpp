@@ -503,7 +503,7 @@ void RAM_FUNC(stopSynthPreviewNote)(SynthPreviewNoteHandle& handle) {
 
 void synthWaveformChanged() {
   const byte requestedWave = currWave;
-  if (compactSamplerActive() && !selectCompactSampler(255)) return;
+  if (compactSamplerActive() && !useCompactSamplerWavetableEngine()) return;
   currWave = requestedWave;
   resetSynthFreqs();
   loadSelectedSynthWaveform();

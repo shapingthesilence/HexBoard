@@ -63,9 +63,12 @@ This protocol maps to independently replaceable persistent objects:
 - `/geometry/<tuning-object-id>.hgb` stores one complete editable musical-
   geometry bundle: its tuning root plus all layouts, scales, scale color map,
   and explicit button maps that reference that tuning.
-- `/presets/<object-id>.hsp` stores one named synth preset with its folder path
+- `/presets/<first-id-hex-digit>/<object-id>.hsp` stores one named synth preset with its folder path
   and a wavetable name dependency. The wavetable folder is retained as metadata
   for compatibility but is not part of dependency matching.
+- `/preset_index/` lists the synth presets by folder so listing does not open
+  preset files. It is derived data: firmware rebuilds it from the preset files
+  when it is missing, invalid or was interrupted.
 - `/synth_wavetables.dat` stores the named user wavetable catalog. Each catalog
   entry points to a sample file generated from the wavetable object id.
 
@@ -80,10 +83,12 @@ File headers:
 | File | Magic | Version owner | Payload |
 | --- | --- | --- | --- |
 | `/settings.dat` | `STG` | Main settings schema | Non-synth profile settings, tuning/layout/scale IDs, and synth preset-or-draft references |
-| `/.synth_profile_<0..8>.hsp` | `HSP` | Synth preset file schema `11` | Hidden full synth patch for a modified profile |
+| `/.synth_profile_<0..8>.hsp` | `HSP` | Synth preset file schema `13` | Hidden full synth patch for a modified profile |
 | `/geometry/*.hgb` | `HGB` | Geometry bundle file schema `3`; object schema `2` | One tuning root and all linked layout/scale/color/map records |
 | `/geometry_order.dat` | `HGO` | Geometry order file schema `1` | Ordered tuning object IDs used by device and web library menus |
-| `/presets/*.hsp` | `HSP` | Synth preset file schema `11` | One named preset, folder, values, and wavetable reference |
+| `/presets/<0-F>/*.hsp` | `HSP` | Synth preset file schema `13` | One named preset, folder, values, wavetable reference, and optional sampler instrument |
+| `/preset_index/folders.hpf` | `HPF` | Folder table schema `1` | 32 folder slots |
+| `/preset_index/<slot>.hpi` | `HPI` | Folder index schema `2` | Object id, name and flags of each preset in one folder slot |
 | `/synth_wavetables.dat` | `SYW` | Synth wavetable catalog schema | Named user wavetable objects and sample-file paths |
 
 The current firmware has `/settings.dat`, independent named/foldered synth
@@ -420,7 +425,7 @@ delete user object, factory geometry listing, synth wavetable objects, live
 synth parameter and wavetable selection, cents-table runtime tuning, and atomic
 geometry bundles),
 max raw object bytes `262144`, settings schema `29`, synth
-preset schema `9`, `9` profiles, `128` synth preset entries, `64` slots for
+preset schema `9`, `9` profiles, `512` synth preset entries, `64` slots for
 each advertised user geometry count, hardware version `2`:
 
 Hosts should decode these fields rather than compare a fixed response frame;
@@ -433,8 +438,8 @@ object handle:
 
 - Proposed profile objects reserve fixed slot indices `0..8`; profile transfer
   is not implemented.
-- For geometry records streamed from `/geometry/*.hgb` and synth presets indexed
-  from `/presets/*.hsp`, it is a compact handle returned by `OBJECT_LIST_RESP`.
+- For geometry records streamed from `/geometry/*.hgb` and synth presets listed
+  from `/preset_index/`, it is a compact handle returned by `OBJECT_LIST_RESP`.
   The handle may change after create/delete/reorder operations.
 - Rescue geometry handles start at `0x2000`, are generated on demand, and are
   listed only when `/geometry` has no usable tuning root.
@@ -1112,9 +1117,16 @@ The current synth setup is already cohesive, so v1 should transfer synth presets
 as synth-only objects, separate from tuning/layout/profile objects.
 
 Synth presets are named and organized by folder path. Current firmware supports
-up to `128` independent fixed-size `.hsp` files and keeps only preset metadata
-plus the current loaded preset record in RAM. Boot validates files independently;
-one corrupt preset is skipped without invalidating the rest of the library.
+up to `512` independent fixed-size `.hsp` files in at most `32` distinct folder
+paths, with at most `32` presets in one folder. A save that would exceed a limit
+is refused with `StorageFull`; presets already over the folder limit stay
+listed, and the device browser shows the first `32` of them. Preset metadata is
+listed from `/preset_index/`; RAM keeps only folder paths, counts and the
+current loaded preset record. A preset file that fails validation is reported
+and skipped without invalidating the rest of the library. Handles are
+`folderSlot × 256 + position`: saving keeps a preset's handle, and deleting or
+moving one shifts later handles in its folder. Hosts should list again after
+those changes.
 
 The user-facing model is a foldered preset library rather than a numbered slot
 bank. The web app presents the foldered library, and the device uses
@@ -1133,6 +1145,8 @@ Recommended TLVs:
 | `0x24` | `LastModifiedUnixTime` | Optional `u32-le` timestamp from the web app |
 | `0x26` | `SynthWavetableName` | UTF-8 wavetable name dependency |
 | `0x27` | `SynthWavetableFolderPath` | UTF-8 compatibility/display metadata; not used for dependency lookup |
+| `0x28` | `SynthSamplerName` | UTF-8 Classic sampler instrument name; present only on sampler presets |
+| `0x29` | `SynthSamplerEnvelopeOverride` | `u8` mask of amp envelope stages replacing the instrument's (bit 0 attack, 1 hold, 2 decay, 3 sustain, 4 release); sent with `0x28` |
 
 The current synth preset key set is:
 
@@ -1382,8 +1396,9 @@ present the rescue tuning as an editable catalog item.
    when present, the wavetable name and compatibility folder metadata TLVs.
 4. Commit with `apply` changes only the current synth runtime for auditioning
    and marks settings dirty for the normal debounced profile autosave path.
-   Commit with `save` atomically replaces one `/presets/<object-id>.hsp` file.
-5. Saving or deleting one synth preset does not rewrite other preset files.
+   Commit with `save` atomically replaces one synth preset file.
+5. Saving or deleting one synth preset does not rewrite other preset files; it
+   rewrites the small preset index.
    Rename and folder-move updates write the same object id to its existing
    handle with `SaveToFlash | OverwriteExisting` and do not apply the preset to
    the current synth runtime. When a destination folder/name is occupied, the
@@ -1428,26 +1443,43 @@ encoding. `ascii` is one u7 byte count followed by at most 31 ASCII bytes.
 | Operation | Request payload | Response payload |
 | --- | --- | --- |
 | Status | `0` | `0, active:u7, assets:u7, zones:u7, pcmBytes:u21, freeHeap:u28, name:ascii` |
-| Slot info | `1, slot:u7` | `1, slot:u7, exists:u7, fileBytes:u21, name:ascii` |
-| Select | `2, slot:u7` | `2, slot:u7` |
-| Delete | `3, slot:u7` | `3, slot:u7` |
 | Save startup settings | `4` | `4` |
 
-Slots are 0–31. Selection/status value 127 denotes the wavetable engine. Empty
-slot info reports `exists=0`, zero bytes and an empty name. Status reports limits,
-not the current patch's counts. Invalid requests use normal NACKs. Operations
-are busy during read/write transfers or the explicit audio benchmark. Save startup
-settings uses the ordinary settings writer and profile 1; it does not change
-AutoSave. Selection otherwise follows the normal settings-save policy.
+Status `active` is 0 while a sampler sound's instrument plays and 127 for the
+wavetable engine; `name` is the playing instrument or `Wavetable`. Status
+reports limits, not the current patch's counts. Invalid requests use normal
+NACKs. Operations are busy during read/write transfers or the explicit audio
+benchmark. Save startup settings uses the ordinary settings writer and profile
+1; it does not change AutoSave.
 
-Object type `0x0e` transfers raw HBC files through the existing WRITE_BEGIN /
-DATA_CHUNK / TRANSFER_END / WRITE_COMMIT exchange, schema 1.0. The handle is the
-actual destination slot, flags must be exactly SaveToFlash (2), and the file limit
-is 51,264 bytes. It supports ACK-paced writes and streamed READ_REQ for export.
-There is no apply-only or overwrite operation. Generic object-list messages do
-not enumerate these slots; use slot info. Install validates the staged file before
-renaming into an unused slot. Failure, abort and the existing transfer timeout
-leave installed instruments intact and restore the muted audio transport.
+Object type `0x0e` is a **sampler sound**: one sound with its instrument, in the
+`.hexsound` layout that HexBoard Sync also exports and imports:
+
+| Offset | Size | Content |
+| --- | --- | --- |
+| 0 | 4 | `HXS1` |
+| 4 | 2 | Synth preset object body length *n*, little-endian (1–2048) |
+| 6 | *n* | Synth preset object body (`HBS1`, type `0x07`, the TLVs above) |
+| 6 + *n* | to the end | HBC1 instrument (below), at most 51,264 bytes |
+
+Writes use the existing WRITE_BEGIN / DATA_CHUNK / TRANSFER_END / WRITE_COMMIT
+exchange, schema 1.0, with handle `0x3FFF`. Flags must include SaveToFlash (2);
+ApplyToRuntime (1) also loads the stored sound, and DryRun is refused. The
+object streams into the temporary file. Commit validates the preset body and
+the complete instrument (metadata and PCM CRCs), takes `SynthSamplerName` from
+the instrument's own name, and stores the sound like a synth preset write: a
+sound with the same object id is replaced in place, otherwise it is appended to
+its folder. Library, folder and sampler-sound limits NACK with STORAGE_FULL
+before anything is written. READ_REQ for `0x0e` takes a synth preset handle and
+streams that sampler sound in the same layout; a wavetable sound or a sound
+without an instrument NACKs with OBJECT_MISSING. Failure, abort and the
+transfer timeout leave stored sounds intact and restore the muted audio
+transport.
+
+A synth preset write (type `0x07`) for a sampler sound keeps the instrument
+already stored under its object id, so settings edits, renames and moves do not
+resend it. A sampler sound that is not on the board yet NACKs with
+OBJECT_MISSING; send it as object `0x0e` instead.
 
 ### HBC1 File Layout
 

@@ -1,8 +1,10 @@
 #include "CompactSampler.h"
 #include "CompactSamplerCodec.h"
 #include "SynthAudioInternal.h"
+#include "../menu/MenuAndDisplay.h"
 #include "../storage/Settings.h"
 #include "../storage/StorageHealth.h"
+#include "../storage/SynthPresetCatalog.h"
 #include "../storage/SynthPresetStorage.h"
 #include "../storage/PresetSync.h"
 #include <memory>
@@ -17,28 +19,43 @@ uint32_t regionDelays[CompactSampler::kZones] = {};
 struct Voice {
   CompactSampler::Reader reader;
   uint32_t delay = 0, step = 0, generation = 0;
+  // Step with vibrato applied, recomputed only when the step or vibrato changes.
+  uint32_t vibratoBase = 0, playStep = 0;
   int16_t zone = -1;
   uint8_t gain = 128;
 };
 Voice readers[POLYPHONY_LIMIT];
 std::atomic<int16_t> pendingRegions[POLYPHONY_LIMIT];
 std::atomic<uint32_t> pendingSteps[POLYPHONY_LIMIT];
+// Region envelope with the sound's "Inst" overrides applied, prepared on Core 0
+// when a note starts and copied by Core 1 when it consumes the attack command.
+EnvelopeParams pendingEnvelopes[POLYPHONY_LIMIT];
+// Mod wheel vibrato, refreshed on Core 1 at the synth control rate. The amount
+// uses the wavetable engine's units: step changes by amount / 2^18.
+uint8_t vibratoCountdown = 0;
+int32_t vibratoAmount = 0;
 std::atomic<bool> active{false};
-uint8_t loadedSlot = 255;
+constexpr size_t kSourceBytes = SYNTH_PRESET_OBJECT_ID_LENGTH;
+uint8_t loadedSource[kSourceBytes] = {};
+bool loadedValid = false;  // loadedSource names the instrument in the workspace
+char requestedName[32] = {};
+uint8_t requestedSource[kSourceBytes] = {};
+uint8_t envelopeOverride = 0;
 
 void failure(const char* path, const char* stage) { reportStorageHealthIssue(path, stage); }
 uint32_t samples(uint16_t ms) { return (uint64_t(ms) * AUDIO_SAMPLE_RATE_HZ + 999) / 1000; }
-bool validateFile(const char* path, CompactSampler::Directory& result) {
+bool validateFile(const char* path, uint32_t offset, uint32_t length, CompactSampler::Directory& result) {
   File file = LittleFS.open(path, "r");
   if (!file) { failure(path, "sampler open"); return false; }
   uint8_t header[CompactSampler::kHeader];
-  if (file.read(header, sizeof(header)) != sizeof(header)) { failure(path, "sampler header read"); return false; }
+  if (length < sizeof(header) || length > CompactSampler::kFileBytes || uint64_t(offset) + length > file.size()
+      || !file.seek(offset) || file.read(header, sizeof(header)) != sizeof(header)) { failure(path, "sampler header read"); return false; }
   const unsigned assets = CompactSampler::u16(header + 24), zones = CompactSampler::u16(header + 26);
   if (!assets || assets > CompactSampler::kAssets || !zones || zones > CompactSampler::kZones) { failure(path, "sampler counts"); return false; }
   std::vector<uint8_t> metadata(CompactSampler::kHeader + assets * CompactSampler::kAsset + zones * CompactSampler::kZone);
   memcpy(metadata.data(), header, sizeof(header));
   if (file.read(metadata.data() + sizeof(header), metadata.size() - sizeof(header)) != metadata.size() - sizeof(header)
-      || !result.decode(metadata.data(), metadata.size()) || file.size() != result.total) { failure(path, "sampler metadata validation"); return false; }
+      || !result.decode(metadata.data(), metadata.size()) || length != result.total) { failure(path, "sampler metadata validation"); return false; }
   uint8_t chunk[128]; uint32_t crc = ~0u, remaining = result.frames * 2;
   while (remaining) {
     const unsigned n = std::min<unsigned>(sizeof(chunk), remaining);
@@ -46,6 +63,10 @@ bool validateFile(const char* path, CompactSampler::Directory& result) {
     crc = CompactSampler::crcUpdate(crc, chunk, n); remaining -= n;
   }
   if (~crc != result.pcmCrc) { failure(path, "sampler PCM CRC"); return false; }
+  return true;
+}
+bool sourceIsEmpty(const uint8_t* source) {
+  for (size_t i = 0; i < kSourceBytes; ++i) if (source[i]) return false;
   return true;
 }
 bool pauseWorkspace() {
@@ -80,7 +101,7 @@ void RAM_FUNC(startReader)(unsigned i) {
   if (owner >= SYNTH_PREVIEW_SLOT_START && owner < BTN_COUNT) v.gain = synthPreviewGainForSlot[owner - SYNTH_PREVIEW_SLOT_START];
   EnvelopeState& env = envelopeStates[i]; resetEnvelopeState(env);
   if (v.zone < 0 || unsigned(v.zone) >= directory.zones || !v.step) { publishVoiceFreed(i, v.generation); return; }
-  voiceVolumeEnvelopeParams[i] = regionEnvelopes[v.zone];
+  voiceVolumeEnvelopeParams[i] = pendingEnvelopes[i];
   const EnvelopeParams& p = voiceVolumeEnvelopeParams[i];
   v.delay = regionDelays[v.zone]; v.reader.start();
   env.stage = EnvelopeStage::Attack;
@@ -97,34 +118,50 @@ std::atomic<bool> synthWorkspacePauseRequested{false};
 std::atomic<bool> synthWorkspacePauseAcknowledged{false};
 
 bool RAM_FUNC(compactSamplerActive)() { return active.load(std::memory_order_acquire); }
-uint8_t compactSamplerSlot() { return loadedSlot; }
 const char* compactSamplerName() { return compactSamplerActive() ? directory.name : "Wavetable"; }
-void compactSamplerPath(uint8_t slot, char* path, size_t capacity) { snprintf(path, capacity, "/sampler/%02u.hbc", slot); }
-bool compactSamplerFileInfo(uint8_t slot, char* name, size_t capacity, uint32_t& bytes) {
-  if (slot >= CompactSampler::kSlots || !fileSystemExists) return false;
-  char path[32]; compactSamplerPath(slot, path, sizeof(path)); File f = LittleFS.open(path, "r");
-  uint8_t h[64];
-  if (!f || f.read(h, sizeof(h)) != sizeof(h) || memcmp(h, "HBC1", 4) || !memchr(h + 32, 0, 32)) return false;
-  bytes = f.size(); snprintf(name, capacity, "%s", reinterpret_cast<char*>(h + 32)); return true;
+const char* compactSamplerRequestedName() { return requestedName; }
+const uint8_t* compactSamplerRequestedSource() { return requestedSource; }
+void requestCompactSampler(const char* name, const uint8_t* sourceObjectId) {
+  snprintf(requestedName, sizeof(requestedName), "%s", name && sourceObjectId ? name : "");
+  if (requestedName[0]) memcpy(requestedSource, sourceObjectId, kSourceBytes);
+  else memset(requestedSource, 0, kSourceBytes);
 }
-bool selectCompactSampler(uint8_t slot, bool persist) {
-  if (slot != 255 && slot >= CompactSampler::kSlots) return false;
-  if (slot == loadedSlot && (slot == 255 || compactSamplerActive())) return true;
+void retargetCompactSamplerSource(const uint8_t* sourceObjectId) {
+  if (!requestedName[0] || !sourceObjectId) return;
+  if (loadedValid && memcmp(loadedSource, requestedSource, kSourceBytes) == 0) memcpy(loadedSource, sourceObjectId, kSourceBytes);
+  memcpy(requestedSource, sourceObjectId, kSourceBytes);
+}
+uint8_t compactSamplerEnvelopeOverride() { return envelopeOverride; }
+void setCompactSamplerEnvelopeOverride(uint8_t mask) { envelopeOverride = mask & SAMPLER_ENVELOPE_OVERRIDE_ALL; }
+bool validateCompactSamplerInstrument(const char* path, uint32_t offset, uint32_t length, char* name, size_t capacity) {
+  std::unique_ptr<CompactSampler::Directory> d(new(std::nothrow) CompactSampler::Directory);
+  if (!d || !fileSystemExists || !validateFile(path, offset, length, *d)) return false;
+  snprintf(name, capacity, "%s", d->name);
+  return true;
+}
+
+namespace {
+// source nullptr loads the wavetable engine.
+bool loadInstrument(const uint8_t* source) {
+  if (source ? loadedValid && compactSamplerActive() && memcmp(source, loadedSource, kSourceBytes) == 0
+             : !compactSamplerActive()) return true;
   std::unique_ptr<CompactSampler::Directory> candidate;
-  char path[32] = {};
-  if (slot != 255) {
+  char path[SYNTH_PRESET_STORAGE_PATH_LENGTH] = {};
+  uint32_t offset = 0, length = 0;
+  if (source) {
     candidate.reset(new(std::nothrow) CompactSampler::Directory);
-    compactSamplerPath(slot, path, sizeof(path));
-    if (!candidate || !fileSystemExists || !validateFile(path, *candidate)) return false;
+    if (!candidate || !fileSystemExists || !synthPresetInstrumentRange(source, path, sizeof(path), offset, length)
+        || !validateFile(path, offset, length, *candidate)) return false;
   }
   if (!pauseWorkspace()) { failure(path, "sampler workspace pause timeout"); return false; }
   resetSynthFreqs(); active.store(false, std::memory_order_release);
   for (unsigned i = 0; i < POLYPHONY_LIMIT; ++i) { readers[i] = Voice{}; resetEnvelopeState(envelopeStates[i]); clearPendingVoiceFreed(i); consumeEnvelopeCommand(i); }
   bool ok = true;
+  loadedValid = false;
   if (candidate) {
     new (&synthSampleWorkspace.sampler) SynthPcmSamples;
     File f = LittleFS.open(path, "r");
-    ok = f && f.seek(candidate->metadataBytes()) && f.read(reinterpret_cast<uint8_t*>(synthSampleWorkspace.sampler.frames), candidate->frames * 2) == candidate->frames * 2;
+    ok = f && f.seek(offset + candidate->metadataBytes()) && f.read(reinterpret_cast<uint8_t*>(synthSampleWorkspace.sampler.frames), candidate->frames * 2) == candidate->frames * 2;
     if (ok) ok = ~CompactSampler::crcUpdate(~0u, reinterpret_cast<const uint8_t*>(synthSampleWorkspace.sampler.frames), candidate->frames * 2) == candidate->pcmCrc;
     if (ok) {
       directory = *candidate;
@@ -136,38 +173,69 @@ bool selectCompactSampler(uint8_t slot, bool persist) {
         p.decayIncrement = p.decayTicks ? std::max<uint32_t>(1, (envelopeMaxLevel - p.sustainLevel) / p.decayTicks) : envelopeMaxLevel;
         regionDelays[z] = samples(r.delay);
       }
+      memcpy(loadedSource, source, kSourceBytes);
+      loadedValid = true;
       active.store(true, std::memory_order_release);
     } else failure(path, "sampler load/readback CRC");
   }
-  loadedSlot = ok ? slot : 255;
   if (!active.load(std::memory_order_relaxed)) {
     new (&synthSampleWorkspace.wavetable) SynthWavetableSamples;
     loadedSynthWavetableName[0] = 0;
     if (!ok) selectFallbackSynthWavetable();
     loadSelectedSynthWavetable();
   }
-  if (persist && ok) { settings[static_cast<uint8_t>(SettingKey::SamplerSlot)] = slot; markSettingsDirty(); }
-  resumeWorkspace(); return ok;
+  resumeWorkspace();
+  return ok;
 }
+}  // namespace
+
+void reloadCompactSamplerSource(const uint8_t* sourceObjectId) {
+  if (!sourceObjectId || !loadedValid || memcmp(loadedSource, sourceObjectId, kSourceBytes) != 0) return;
+  loadedValid = false;
+  syncCompactSamplerSelection();
+}
+
+bool useCompactSamplerWavetableEngine() {
+  if (!loadInstrument(nullptr)) return false;
+  if (requestedName[0]) { requestCompactSampler("", nullptr); markSettingsDirty(); updateSynthMenuVisibility(); }
+  return true;
+}
+// A sound whose instrument cannot be loaded plays the wavetable engine but
+// keeps its request, so saving it does not lose the instrument.
 void syncCompactSamplerSelection() {
-  const uint8_t requested = settingValue(SettingKey::SamplerSlot);
-  if (!selectCompactSampler(requested, false)) selectCompactSampler(255, false);
+  if (requestedName[0] && !sourceIsEmpty(requestedSource) && loadInstrument(requestedSource)) return;
+  loadInstrument(nullptr);
 }
-bool installCompactSampler(const char* stagedPath, uint16_t slot) {
-  if (slot >= CompactSampler::kSlots) return false;
-  std::unique_ptr<CompactSampler::Directory> d(new(std::nothrow) CompactSampler::Directory);
-  if (!d || !validateFile(stagedPath, *d)) return false;
-  char path[32]; compactSamplerPath(slot, path, sizeof(path));
-  if (LittleFS.exists(path)) return false; // New slots only; existing instruments survive interrupted installs.
-  if (!LittleFS.exists("/sampler") && !LittleFS.mkdir("/sampler")) return false;
-  return LittleFS.rename(stagedPath, path);
+
+// The region's envelope with each overridden stage taken from the current
+// sound's amp envelope. Release stays at least 4 ms, like region releases.
+EnvelopeParams samplerEnvelopeForRegion(int region) {
+  EnvelopeParams merged = (region >= 0 && unsigned(region) < directory.zones) ? regionEnvelopes[region] : EnvelopeParams{};
+  const uint8_t mask = envelopeOverride;
+  if (!mask) return merged;
+  const EnvelopeParams& sound = envelopeParams;
+  if (mask & SAMPLER_ENVELOPE_OVERRIDE_ATTACK) merged.attackTicks = sound.attackTicks;
+  if (mask & SAMPLER_ENVELOPE_OVERRIDE_HOLD) merged.holdTicks = sound.holdTicks;
+  if (mask & SAMPLER_ENVELOPE_OVERRIDE_DECAY) merged.decayTicks = sound.decayTicks;
+  if (mask & SAMPLER_ENVELOPE_OVERRIDE_SUSTAIN) merged.sustainLevel = sound.sustainLevel;
+  if (mask & SAMPLER_ENVELOPE_OVERRIDE_RELEASE) merged.releaseTicks = std::max<uint32_t>(samples(4), sound.releaseTicks);
+  merged.attackIncrement = merged.attackTicks ? std::max<uint32_t>(1, envelopeMaxLevel / merged.attackTicks) : envelopeMaxLevel;
+  merged.decayIncrement = (merged.decayTicks && merged.sustainLevel < envelopeMaxLevel)
+    ? std::max<uint32_t>(1, (envelopeMaxLevel - merged.sustainLevel) / merged.decayTicks)
+    : envelopeMaxLevel;
+  return merged;
 }
-bool deleteCompactSampler(uint8_t slot) {
-  if (slot >= CompactSampler::kSlots || !fileSystemExists) return false;
-  if (loadedSlot == slot && !selectCompactSampler(255)) return false;
-  char path[32]; compactSamplerPath(slot, path, sizeof(path));
-  beginFlashSafeWrite(); const bool ok = LittleFS.remove(path); endFlashSafeWrite(); return ok;
+
+void RAM_FUNC(refreshSamplerVibrato)() {
+  const int16_t wheel = scaleSynthModAmount(smoothedSynthModValue(SYNTH_CONTROL_RATE_SAMPLES));
+  if (!wheel) { vibratoAmount = 0; return; }
+  synthVibratoPhase += synthVibratoPhaseIncrement * SYNTH_CONTROL_RATE_SAMPLES;
+  const int16_t sample = synthVibratoSpeed == SYNTH_VIBRATO_SPEED_NOISE
+    ? readSynthVibratoSmoothNoiseSample()
+    : static_cast<int16_t>(int16_t(synthVibratoSine[synthWaveSampleIndexFromPhase32(synthVibratoPhase)]) - 128);
+  vibratoAmount = int32_t(sample) * wheel;
 }
+
 
 // Called on Core 0 before publishing attack/steal commands. Retunes preserve
 // the captured region and update only a single atomic reader increment.
@@ -179,6 +247,7 @@ void RAM_FUNC(prepareCompactSamplerFrequency)(uint8_t channel, float nativeHz, f
     const int16_t owner = synthChannelOwners[channel].load(std::memory_order_relaxed);
     if (owner >= SYNTH_PREVIEW_SLOT_START && owner < BTN_COUNT) velocity = synthPreviewVelocityForSlot[owner - SYNTH_PREVIEW_SLOT_START];
     region = directory.region(nativeHz, velocity);
+    pendingEnvelopes[channel] = samplerEnvelopeForRegion(region);
     pendingRegions[channel].store(region, std::memory_order_relaxed);
   }
   uint32_t step = 0;
@@ -193,6 +262,14 @@ void RAM_FUNC(prepareCompactSamplerFrequency)(uint8_t channel, float nativeHz, f
 
 int32_t RAM_FUNC(renderCompactSamplerMix)(uint32_t& envSum, uint8_t& voices, uint8_t& flags) {
   int32_t mix = 0;
+  // The sampler always uses the mod wheel for vibrato (Wheel FX is hidden).
+  const bool vibratoTick = vibratoCountdown == 0;
+  if (vibratoTick) {
+    vibratoCountdown = SYNTH_CONTROL_RATE_SAMPLES - 1;
+    refreshSamplerVibrato();
+  } else {
+    --vibratoCountdown;
+  }
   for (unsigned i = 0; i < currentSynthVoiceLimit(); ++i) {
     Voice& v = readers[i]; EnvelopeState& env = envelopeStates[i];
     switch (consumeEnvelopeCommand(i)) {
@@ -211,11 +288,12 @@ int32_t RAM_FUNC(renderCompactSamplerMix)(uint32_t& envSum, uint8_t& voices, uin
     }
     if (!v.reader.ended && v.zone >= 0) {
       if (!synthStealFadeInProgress(i)) v.step = pendingSteps[i].load(std::memory_order_acquire);
+      if (vibratoTick || v.step != v.vibratoBase) { v.vibratoBase = v.step; v.playStep = CompactSampler::vibratoStep(v.step, vibratoAmount); }
       if (v.delay) --v.delay;
       else {
         updateAmpEnvelopeState(env, voiceVolumeEnvelopeParams[i], 1);
         const auto& z = directory.regions[v.zone];
-        int32_t s = v.reader.read(directory.recordings[z.asset], synthSampleWorkspace.sampler.frames, v.step);
+        int32_t s = v.reader.read(directory.recordings[z.asset], synthSampleWorkspace.sampler.frames, v.playStep);
         if (!v.step || v.reader.ended || env.stage == EnvelopeStage::Idle || (env.stage == EnvelopeStage::Sustain && !env.level)) finishReader(i);
         else {
           uint32_t level = envelopeAudioLevel(env.level);
@@ -238,23 +316,15 @@ int32_t RAM_FUNC(renderCompactSamplerMix)(uint32_t& envSum, uint8_t& voices, uin
 
 void handleCompactSamplerRequest(uint16_t transaction, const uint8_t* p, size_t n) {
   constexpr uint8_t request = 0x36, response = 0x37;
-  if (!n || n > 2) { presetSyncSendNack(transaction, request, PRESET_SYNC_ERROR_BAD_LENGTH); return; }
+  if (n != 1) { presetSyncSendNack(transaction, request, PRESET_SYNC_ERROR_BAD_LENGTH); return; }
   if (synthPerformanceTestActive() || presetSyncReadTransfer.active || presetSyncWriteTransfer.active) { presetSyncSendNack(transaction, request, PRESET_SYNC_ERROR_BUSY); return; }
   std::vector<uint8_t> out{p[0]};
-  if (p[0] == 0 && n == 1) {
-    out.push_back(loadedSlot == 255 ? 127 : loadedSlot); out.push_back(CompactSampler::kAssets); out.push_back(CompactSampler::kZones);
+  if (p[0] == 0) {
+    // 0 = a sampler sound's instrument is playing, 127 = the wavetable engine.
+    out.push_back(compactSamplerActive() ? 0 : 127); out.push_back(CompactSampler::kAssets); out.push_back(CompactSampler::kZones);
     presetSyncAppendU21(out, CompactSampler::kPcmBytes); presetSyncAppendU28(out, rp2040.getFreeHeap());
     presetSyncAppendAscii(out, compactSamplerName(), 31);
-  } else if (p[0] == 1 && n == 2 && p[1] < CompactSampler::kSlots) {
-    char name[32] = {}; uint32_t bytes = 0; const bool exists = compactSamplerFileInfo(p[1], name, sizeof(name), bytes);
-    out.push_back(p[1]); out.push_back(exists); presetSyncAppendU21(out, bytes); presetSyncAppendAscii(out, name, 31);
-  } else if (p[0] == 2 && n == 2 && (p[1] < CompactSampler::kSlots || p[1] == 127)) {
-    if (!selectCompactSampler(p[1] == 127 ? 255 : p[1])) { presetSyncSendNack(transaction, request, PRESET_SYNC_ERROR_VALIDATION_FAILED); return; }
-    out.push_back(p[1]);
-  } else if (p[0] == 3 && n == 2 && p[1] < CompactSampler::kSlots) {
-    if (!deleteCompactSampler(p[1])) { presetSyncSendNack(transaction, request, PRESET_SYNC_ERROR_OBJECT_MISSING); return; }
-    out.push_back(p[1]);
-  } else if (p[0] == 4 && n == 1) {
+  } else if (p[0] == 4) {
     if (!saveCurrentSettingsForStartup()) { presetSyncSendNack(transaction, request, PRESET_SYNC_ERROR_STORAGE_FULL); return; }
   } else { presetSyncSendNack(transaction, request, PRESET_SYNC_ERROR_BAD_LENGTH); return; }
   presetSyncSendFrame(response, transaction, out);

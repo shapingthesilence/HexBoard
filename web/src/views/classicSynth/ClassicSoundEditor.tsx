@@ -41,7 +41,7 @@ const oscillatorTargets = [ModTarget.Vibrato, ModTarget.Pitch, ModTarget.WaveFol
 // Off silences the synth rather than shaping a sound, so patches pick a playing mode.
 // A sound saved with Off still shows it until another mode is chosen.
 const patchModes = playbackOptions.filter((option) => option.value !== 0);
-const percent127 = (value: number) => `${Math.round(value / 127 * 100)}%`;
+export const percent127 = (value: number) => `${Math.round(value / 127 * 100)}%`;
 
 interface KnobProps {
   label: string; value: number; min: number; max: number; format: (value: number) => string;
@@ -58,10 +58,25 @@ export function ClassicKnob({ label, value, min, max, format, onChange, routes, 
   </div>;
 }
 
-function Choice({ label, value, options, onChange }: { label: string; value: number; options: readonly { label: string; value: number }[]; onChange: (value: number) => void }) {
+export function Choice({ label, value, options, onChange }: { label: string; value: number; options: readonly { label: string; value: number }[]; onChange: (value: number) => void }) {
   return <label className="classic-choice"><span>{label}</span><select value={value} onChange={(e) => onChange(Number(e.target.value))}>
     {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
   </select></label>;
+}
+
+/** Synth mode with its arpeggiator and portamento settings; shared by both engines. */
+export function ClassicPlayback({ values: v, onChange }: { values: EditableSynthValues; onChange: (key: EditableSynthValueKey, value: number) => void }) {
+  const mode = v.PlaybackMode, arp = mode === 2 || mode === 6, mono = mode === 1 || mode === 4;
+  return <fieldset className="classic-playback"><legend>Playback</legend>
+        <Choice label="Synth mode" value={mode} options={mode === 0 ? playbackOptions : patchModes} onChange={(value) => onChange("PlaybackMode", value)}/>
+        {arp && <>
+          <Choice label="Arpeggiator rate" value={v.ArpeggiatorDivision} options={arpDivisionOptions} onChange={(value) => onChange("ArpeggiatorDivision", value)}/>
+          <Choice label="Arpeggiator direction" value={v.ArpeggiatorDirection} options={arpDirectionOptions} onChange={(value) => onChange("ArpeggiatorDirection", value)}/>
+          <ClassicKnob label="Note length" value={v.ArpeggiatorNoteLength} min={1} max={100} format={(value) => `${value}%`} onChange={(value) => onChange("ArpeggiatorNoteLength", value)}/>
+          <ClassicKnob label="Tempo" value={v.SynthBPM} min={1} max={255} format={(value) => `${value} BPM`} onChange={(value) => onChange("SynthBPM", value)}/>
+        </>}
+        {mono && <ClassicKnob label="Portamento" value={v.SynthPortamentoTimeIndex} min={0} max={19} format={envelopeTimeLabel} onChange={(value) => onChange("SynthPortamentoTimeIndex", value)}/>}
+    </fieldset>;
 }
 
 export interface ClassicSoundEditorProps {
@@ -93,7 +108,7 @@ export function ClassicSoundEditor({ values: v, onChange, wavetableName, samples
 
   const frame = wavetablePositionByteToFrame(v.SynthWavetablePosition) - 1;
   const live = useLiveVoiceShape(subscribeVoiceShape);
-  const mode = v.PlaybackMode, arp = mode === 2 || mode === 6, mono = mode === 1 || mode === 4;
+  const mode = v.PlaybackMode;
   const timeKnob = (label: string, key: EditableSynthValueKey, target?: number) => <ClassicKnob key={key} label={label} value={envelopeTimePosition(v[key])} min={0} max={envelopePositionCount - 1}
     format={(position) => envelopeTimeLabel(envelopeTimeIndex(position))} onChange={(position) => onChange(key, envelopeTimeIndex(position))}
     routes={target === undefined ? undefined : rings(target)} lit={target === undefined ? undefined : lit(target)}/>;
@@ -103,16 +118,7 @@ export function ClassicSoundEditor({ values: v, onChange, wavetableName, samples
   const volumeKeys: EditableSynthValueKey[] = ["EnvelopeAttackIndex", "EnvelopeHoldIndex", "EnvelopeDecayIndex", "EnvelopeSustainLevel", "EnvelopeReleaseIndex"];
 
   return <div className="classic-sound" data-synth-off={mode === 0 || undefined}>
-    <fieldset className="classic-playback"><legend>Playback</legend>
-      <Choice label="Synth mode" value={mode} options={mode === 0 ? playbackOptions : patchModes} onChange={(value) => onChange("PlaybackMode", value)}/>
-      {arp && <>
-        <Choice label="Arpeggiator rate" value={v.ArpeggiatorDivision} options={arpDivisionOptions} onChange={(value) => onChange("ArpeggiatorDivision", value)}/>
-        <Choice label="Arpeggiator direction" value={v.ArpeggiatorDirection} options={arpDirectionOptions} onChange={(value) => onChange("ArpeggiatorDirection", value)}/>
-        <ClassicKnob label="Note length" value={v.ArpeggiatorNoteLength} min={1} max={100} format={(value) => `${value}%`} onChange={(value) => onChange("ArpeggiatorNoteLength", value)}/>
-        <ClassicKnob label="Tempo" value={v.SynthBPM} min={1} max={255} format={(value) => `${value} BPM`} onChange={(value) => onChange("SynthBPM", value)}/>
-      </>}
-      {mono && <ClassicKnob label="Portamento" value={v.SynthPortamentoTimeIndex} min={0} max={19} format={envelopeTimeLabel} onChange={(value) => onChange("SynthPortamentoTimeIndex", value)}/>}
-    </fieldset>
+    <ClassicPlayback values={v} onChange={onChange}/>
 
     <div className="wt-workspace">
       <div className="wt-stages classic-stages">

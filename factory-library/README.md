@@ -13,11 +13,27 @@ presets/Pads/Soft String Pad.json -> Pads/Soft String Pad
 ```
 
 The generator writes each source preset as one independently checksummed
-`/presets/<object-id>.hsp` file.
+`/presets/<first-id-hex-digit>/<object-id>.hsp` file, plus the `/preset_index/`
+folder index the device browser lists them from. The library holds at most 512 presets in at most
+32 folders, with at most 32 presets per folder; the build fails beyond those
+limits. Names longer than 23 characters are shortened in the device browser.
 
 The JSON `name` must match the filename and `folderPath` must match the source
 directory. Each preset must provide all current synth values and reference
 either a wavetable in this library or `/Built In/Basic Shapes`.
+
+A sampler preset adds `"sampler": {"name": "<instrument>", "envelopeOverride": 0}`
+naming an instrument in `sampler/`; its wavetable reference is optional and
+defaults to Basic Shapes. `envelopeOverride` is a bit mask of amp envelope stages
+the preset replaces (1 attack, 2 hold, 4 decay, 8 sustain, 16 release); leave it
+`0` to use the instrument's own envelope.
+
+## Sampler Instruments
+
+Place Classic sampler `.hbc` files (exported from HexBoard Sync) under
+`sampler/`. The generator validates each file's sizes and CRCs and installs them
+into `/sampler/00.hbc` onward in filename order, at most 64. Instrument names come
+from the file and must be unique, because presets refer to instruments by name.
 
 ## Wavetables
 

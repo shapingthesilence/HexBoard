@@ -2,7 +2,7 @@ import { crc32 } from "./prepare.mjs";
 import { monoRecording, fitCompactRecordings } from "./compactAudio.mjs";
 import { trimRecording, crossfadeRecording, defaults, defaultPerformance } from "./encode.mjs";
 
-export const compactLimits = Object.freeze({ pcmBytes: 49152, assets: 16, zones: 32, slots: 32, voices: 8 });
+export const compactLimits = Object.freeze({ pcmBytes: 49152, assets: 16, zones: 32, voices: 8 });
 const hz = (midi) => 440 * 2 ** ((midi - 69) / 12);
 export function readCompactPatch(bytes) {
   if (!(bytes instanceof Uint8Array) || bytes.length < 64) throw Error("Incomplete Classic instrument.");

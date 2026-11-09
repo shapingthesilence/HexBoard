@@ -305,6 +305,7 @@ extern byte attenuation[];
 extern uint16_t synthModValueQ8;
 extern uint32_t synthVibratoPhase;
 extern uint32_t synthVibratoPhaseIncrement;
+int16_t RAM_FUNC(readSynthVibratoSmoothNoiseSample)();
 extern uint32_t synthLfoPhase;
 extern uint32_t synthLfoPhaseIncrement;
 extern volatile uint16_t metronomeBeepSamplesRemaining;

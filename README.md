@@ -52,7 +52,7 @@ HexBoard supports:
 - standard MIDI, extended multi-channel MIDI mapping, and MPE behavior
 - dynamic just intonation and BPM-linked retuning options
 - onboard synth waveform/wavetable banks, Serum/Vital and HexBoard wavetable import, mono portamento, AHDSR envelope, phase-warp/wavetable/LFO modulation, presets, and arpeggiator settings
-- a [compact sampler](docs/compact-sampler.md) with shared Advanced import/editing tools, native-rate mono samples, eight voices and 32 user instrument slots
+- a [compact sampler](docs/compact-sampler.md) with shared Advanced import/editing tools, native-rate mono samples, eight voices and up to 128 sampler sounds that each carry their instrument
 - an external-only delegated-control mode for host-driven buttons and LEDs
 - persistent settings with `9` profile slots stored in LittleFS
 - storage status and recovery information under `Advanced`

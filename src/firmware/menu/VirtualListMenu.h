@@ -24,6 +24,9 @@ struct VirtualListMenuProvider {
   void (*close)(void* context) = nullptr;
   const char* emptyLabel = "";
   bool (*getValue)(void*, uint16_t, char*, size_t) = nullptr;
+  // Button rows with an icon draw it at the left; the current-row diamond
+  // then moves to the right edge. Icons are 6x8 XBM sprites.
+  const unsigned char* (*getIcon)(void* context, uint16_t index) = nullptr;
   void (*adjust)(void*, uint16_t, int) = nullptr;
 };
 
@@ -34,3 +37,8 @@ void redrawVirtualListMenu();
 void resetVirtualListMenuSelection();
 void closeVirtualListMenu();
 void deactivateVirtualListMenu();
+// The highlighted provider row of the open list, when that list was opened
+// with getCount; VIRTUAL_LIST_MENU_NO_ROW for its Back row or an empty list.
+// False when no list, or a different list, is open.
+constexpr uint16_t VIRTUAL_LIST_MENU_NO_ROW = 0xFFFFu;
+bool virtualListMenuHighlightedRow(uint16_t (*getCount)(void* context), uint16_t& providerIndex);

@@ -26,7 +26,6 @@
 #include "PlayedNotesOverlay.h"
 #include "SynthPresetMenu.h"
 #include "SynthWavetableMenu.h"
-#include "CompactSamplerMenu.h"
 #include "VirtualListMenu.h"
 
 // @menu
@@ -66,11 +65,11 @@ bool flashSaveScreenClosePending = false;
 uint64_t flashSaveSavedScreenTime = 0;
 uint64_t flashSaveScreenVisibleUntil = 0;
 constexpr uint64_t FLASH_SAVE_SCREEN_MAX_VISIBLE_MICROS = 700000ULL;
-bool missingWavetableNoticeVisible = false;
-bool missingWavetableNoticeWokeDisplayFromSleep = false;
-uint64_t missingWavetableNoticeSavedScreenTime = 0;
-uint64_t missingWavetableNoticeVisibleUntil = 0;
-constexpr uint64_t MISSING_WAVETABLE_NOTICE_MICROS = 2000000ULL;
+bool displayNoticeVisible = false;
+bool displayNoticeWokeDisplayFromSleep = false;
+uint64_t displayNoticeSavedScreenTime = 0;
+uint64_t displayNoticeVisibleUntil = 0;
+constexpr uint64_t DISPLAY_NOTICE_MICROS = 2000000ULL;
 
 constexpr uint8_t VIRTUAL_LIST_LAUNCHER_VISIBLE_CHARS = 19;
 constexpr uint64_t VIRTUAL_LIST_LAUNCHER_SCROLL_START_DELAY_MICROS = 1500000ULL;
@@ -398,6 +397,25 @@ void showFlashSaveScreen() {
   flashSaveScreenVisible = true;
 }
 
+// Replaces the flash-save screen text with a counted task during long writes.
+void showFlashSaveProgress(const char* task, uint16_t done, uint16_t total) {
+  if (!flashSaveScreenVisible) {
+    showFlashSaveScreen();
+  }
+  flashSaveScreenVisibleUntil = readClock() + FLASH_SAVE_SCREEN_MAX_VISIBLE_MICROS;
+  char count[16] = {};
+  snprintf(count, sizeof(count), "%u / %u", static_cast<unsigned>(done), static_cast<unsigned>(total));
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_7x14B_tf);
+  const char* lines[] = {task, count, "Audio muted."};
+  const uint8_t y[] = {40, 62, 90};
+  for (uint8_t i = 0; i < 3; ++i) {
+    int16_t x = static_cast<int16_t>((128 - u8g2.getStrWidth(lines[i])) / 2);
+    u8g2.drawStr(x > 0 ? x : 0, y[i], lines[i]);
+  }
+  u8g2.sendBufferAndWait();
+}
+
 static void closeFlashSaveScreenNow() {
   if (!flashSaveScreenVisible) {
     return;
@@ -448,19 +466,34 @@ void serviceFlashSaveScreen() {
   }
 }
 
-void showMissingWavetableNotice(const char* wavetableName) {
+// Shows centered lines for two seconds, then restores the previous screen.
+void showDisplayNotice(const DisplayNoticeLine* lines, uint8_t lineCount) {
   dismissFlashSaveScreenForMenuInput();
   dismissCommandWheelOverlay();
-  missingWavetableNoticeWokeDisplayFromSleep = screenSaverOn;
-  missingWavetableNoticeSavedScreenTime = screenTime;
-  missingWavetableNoticeVisibleUntil = readClock() + MISSING_WAVETABLE_NOTICE_MICROS;
+  displayNoticeWokeDisplayFromSleep = screenSaverOn;
+  displayNoticeSavedScreenTime = screenTime;
+  displayNoticeVisibleUntil = readClock() + DISPLAY_NOTICE_MICROS;
   wakeDisplayFromScreensaver();
   noteOverlayVisible = false;
   noteBadgeVisible = false;
   noteOverlayTemporaryWake = false;
   noteOverlayWokeDisplayFromSleep = false;
 
-  const char* name = wavetableName && wavetableName[0] ? wavetableName : "Unknown";
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_6x13_tf);
+  for (uint8_t i = 0; i < lineCount; ++i) {
+    if (lines[i].text && lines[i].text[0]) {
+      drawCenteredDelegatedText(lines[i].text, lines[i].y);
+    }
+  }
+  u8g2.sendBuffer();
+  displayNoticeVisible = true;
+}
+
+namespace {
+// "Upload <kind>" / quoted name on one or two lines / where / fallback.
+void showMissingSoundSourceNotice(const char* heading, const char* missingName, const char* fallback) {
+  const char* name = missingName && missingName[0] ? missingName : "Unknown";
   size_t nameLength = strnlen(name, SYNTH_WAVETABLE_NAME_LENGTH - 1);
   char firstNameLine[22] = {};
   char secondNameLine[18] = {};
@@ -470,32 +503,49 @@ void showMissingWavetableNotice(const char* wavetableName) {
     snprintf(firstNameLine, sizeof(firstNameLine), "\"%.*s", 18, name);
     snprintf(secondNameLine, sizeof(secondNameLine), "%.*s\"", 13, name + 18);
   }
+  const DisplayNoticeLine lines[] = {
+    {heading, 17},
+    {firstNameLine, static_cast<uint8_t>(secondNameLine[0] ? 39 : 46)},
+    {secondNameLine, 56},
+    {"with HexBoard Sync", 80},
+    {fallback, 104},
+  };
+  showDisplayNotice(lines, 5);
+}
+}  // namespace
 
-  u8g2.clearBuffer();
-  u8g2.setFont(u8g2_font_6x13_tf);
-  drawCenteredDelegatedText("Upload wavetable", 17);
-  drawCenteredDelegatedText(firstNameLine, secondNameLine[0] ? 39 : 46);
-  if (secondNameLine[0]) {
-    drawCenteredDelegatedText(secondNameLine, 56);
-  }
-  drawCenteredDelegatedText("with HexBoard Sync", 80);
-  drawCenteredDelegatedText("Using Basic Shapes", 104);
-  u8g2.sendBuffer();
-  missingWavetableNoticeVisible = true;
+void showMissingWavetableNotice(const char* wavetableName) {
+  showMissingSoundSourceNotice("Upload wavetable", wavetableName, "Using Basic Shapes");
 }
 
-bool serviceMissingWavetableNotice() {
-  if (!missingWavetableNoticeVisible) {
+void showMissingSamplerInstrumentNotice(const char* instrumentName) {
+  showMissingSoundSourceNotice("Upload instrument", instrumentName, "Using wavetable");
+}
+
+void showSynthPresetSaveRefusedNotice(const char* reason, const char* detail,
+                                      const char* advice, const char* adviceDetail) {
+  const DisplayNoticeLine lines[] = {
+    {"Sound not saved", 17},
+    {reason, 46},
+    {detail, 63},
+    {advice, 87},
+    {adviceDetail, 104},
+  };
+  showDisplayNotice(lines, 5);
+}
+
+bool serviceDisplayNotice() {
+  if (!displayNoticeVisible) {
     return false;
   }
-  if (readClock() < missingWavetableNoticeVisibleUntil) {
+  if (readClock() < displayNoticeVisibleUntil) {
     return true;
   }
 
-  missingWavetableNoticeVisible = false;
-  missingWavetableNoticeVisibleUntil = 0;
-  screenTime = missingWavetableNoticeSavedScreenTime;
-  if (missingWavetableNoticeWokeDisplayFromSleep || screenTime > screenSaverTimeout) {
+  displayNoticeVisible = false;
+  displayNoticeVisibleUntil = 0;
+  screenTime = displayNoticeSavedScreenTime;
+  if (displayNoticeWokeDisplayFromSleep || screenTime > screenSaverTimeout) {
     enterDisplayScreensaver();
   } else if (delegatedControlState.active) {
     delegatedControlState.displayDirty = true;
@@ -503,8 +553,8 @@ bool serviceMissingWavetableNotice() {
   } else {
     restoreInteractiveMenuDisplay();
   }
-  missingWavetableNoticeWokeDisplayFromSleep = false;
-  missingWavetableNoticeSavedScreenTime = 0;
+  displayNoticeWokeDisplayFromSleep = false;
+  displayNoticeSavedScreenTime = 0;
   return false;
 }
 
@@ -549,8 +599,8 @@ bool servicePresetSyncTransfer() {
 char mainTuningMenuLabel[40] = "Tuning";
 char mainLayoutMenuLabel[40] = "Layout";
 char mainScaleMenuLabel[40] = "Scale";
-char mainSynthPresetMenuLabel[48] = "Synth:Current";
-char synthPresetMenuLabel[48] = "Preset:Current";
+char mainSynthPresetMenuLabel[48] = "Sound:Current";
+char synthPresetMenuLabel[48] = "Sound:Current";
 
 GEMPage menuPageMain("HexBoard");
 GEMPage menuPageTuning("Tuning", menuPageMain);
@@ -565,7 +615,6 @@ GEMPage menuPageEditor("Editor", menuPageMain);
 GEMItem menuGotoEditor("Editor", menuPageEditor);
 GEMPage menuPageSynth("Synth", menuPageEditor);
 GEMItem menuGotoSynth("Synth", menuPageSynth);
-GEMItem menuGotoCompactSampler("Sampler / Engine", openCompactSamplerMenu);
 GEMPage menuPageSynthWavetableLoad("Wavetables", menuPageSynth);
 GEMItem menuGotoSynthWavetableLoad(currentSynthWavetableMenuLabel, menuPageSynthWavetableLoad);
 GEMPage menuPageSynthAmpEnv("Amp Env", menuPageSynth);
@@ -576,11 +625,11 @@ GEMPage menuPageSynthFx1("FX Env 1", menuPageSynth);
 GEMItem menuGotoSynthFx1("FX Env 1", menuPageSynthFx1);
 GEMPage menuPageSynthFx2("FX Env 2", menuPageSynth);
 GEMItem menuGotoSynthFx2("FX Env 2", menuPageSynthFx2);
-GEMPage menuPageSynthPresetSave("Save Preset", menuPageSynth);
-GEMItem menuGotoSynthPresetSave("Save Preset", menuPageSynthPresetSave);
-GEMPage menuPageMainSynthPresetLoad("Load Preset", menuPageMain);
+GEMPage menuPageSynthPresetSave("Save Sound", menuPageSynth);
+GEMItem menuGotoSynthPresetSave("Save Sound", menuPageSynthPresetSave);
+GEMPage menuPageMainSynthPresetLoad("Sounds", menuPageMain);
 GEMItem menuGotoMainSynthPresetLoad(mainSynthPresetMenuLabel, menuPageMainSynthPresetLoad);
-GEMPage menuPageSynthPresetLoad("Load Preset", menuPageSynth);
+GEMPage menuPageSynthPresetLoad("Sounds", menuPageSynth);
 GEMItem menuGotoSynthPresetLoad(synthPresetMenuLabel, menuPageSynthPresetLoad);
 GEMPage menuPageOptions("Settings", menuPageMain);
 GEMItem menuGotoOptions("Settings", menuPageOptions);
@@ -2514,12 +2563,113 @@ void previewPBSpeed(GEMPreviewCallbackData previewData) {
   pbWheelSpeed = previewData.previewValInt;
 }
 
+// --- Sampler presets -------------------------------------------------------
+// The instrument is fixed by the preset, so it is shown read-only. Each amp
+// envelope stage offers "Inst" (the instrument's own per-region value) before
+// the usual values; choosing a value replaces that stage for every region.
+char samplerInstrumentMenuLabel[40] = "Inst:";
+void samplerInstrumentMenuAction() {}
+GEMItem menuItemSamplerInstrument(samplerInstrumentMenuLabel, samplerInstrumentMenuAction, true);
+GEMPage menuPageSamplerAmpEnv("Amp Env", menuPageSynth);
+GEMItem menuGotoSamplerAmpEnv("Amp Env", menuPageSamplerAmpEnv);
+
+constexpr uint8_t SAMPLER_ENVELOPE_INST = 255;
+constexpr uint8_t SAMPLER_ENVELOPE_STAGES = 5;
+constexpr uint8_t ENVELOPE_TIME_OPTION_COUNT = sizeof(optionByteEnvelopeTimes) / sizeof(SelectOptionByte);
+constexpr uint8_t SUSTAIN_OPTION_COUNT = sizeof(optionByteSustain) / sizeof(SelectOptionByte);
+SelectOptionByte optionByteSamplerEnvelopeTimes[ENVELOPE_TIME_OPTION_COUNT + 1];
+SelectOptionByte optionByteSamplerSustain[SUSTAIN_OPTION_COUNT + 1];
+struct InitializeSamplerEnvelopeOptions {
+  InitializeSamplerEnvelopeOptions() {
+    optionByteSamplerEnvelopeTimes[0] = { "Inst", SAMPLER_ENVELOPE_INST };
+    for (uint8_t i = 0; i < ENVELOPE_TIME_OPTION_COUNT; ++i) optionByteSamplerEnvelopeTimes[i + 1] = optionByteEnvelopeTimes[i];
+    optionByteSamplerSustain[0] = { "Inst", SAMPLER_ENVELOPE_INST };
+    for (uint8_t i = 0; i < SUSTAIN_OPTION_COUNT; ++i) optionByteSamplerSustain[i + 1] = optionByteSustain[i];
+  }
+} initializeSamplerEnvelopeOptions;
+GEMSelect selectSamplerEnvelopeTime(ENVELOPE_TIME_OPTION_COUNT + 1, optionByteSamplerEnvelopeTimes);
+GEMSelect selectSamplerSustain(SUSTAIN_OPTION_COUNT + 1, optionByteSamplerSustain);
+
+uint8_t samplerEnvelopeChoices[SAMPLER_ENVELOPE_STAGES] = {
+  SAMPLER_ENVELOPE_INST, SAMPLER_ENVELOPE_INST, SAMPLER_ENVELOPE_INST, SAMPLER_ENVELOPE_INST, SAMPLER_ENVELOPE_INST
+};
+struct SamplerEnvelopeStage {
+  uint8_t overrideBit;
+  SettingKey key;
+  uint8_t* runtimeValue;
+};
+const SamplerEnvelopeStage samplerEnvelopeStages[SAMPLER_ENVELOPE_STAGES] = {
+  { SAMPLER_ENVELOPE_OVERRIDE_ATTACK, SettingKey::EnvelopeAttackIndex, &envelopeAttackIndex },
+  { SAMPLER_ENVELOPE_OVERRIDE_HOLD, SettingKey::EnvelopeHoldIndex, &envelopeHoldIndex },
+  { SAMPLER_ENVELOPE_OVERRIDE_DECAY, SettingKey::EnvelopeDecayIndex, &envelopeDecayIndex },
+  { SAMPLER_ENVELOPE_OVERRIDE_SUSTAIN, SettingKey::EnvelopeSustainLevel, &envelopeSustainLevel },
+  { SAMPLER_ENVELOPE_OVERRIDE_RELEASE, SettingKey::EnvelopeReleaseIndex, &envelopeReleaseIndex },
+};
+
+void refreshSamplerEnvelopeChoices() {
+  const uint8_t mask = compactSamplerEnvelopeOverride();
+  for (uint8_t stage = 0; stage < SAMPLER_ENVELOPE_STAGES; ++stage) {
+    const SamplerEnvelopeStage& s = samplerEnvelopeStages[stage];
+    samplerEnvelopeChoices[stage] = (mask & s.overrideBit) ? *s.runtimeValue : SAMPLER_ENVELOPE_INST;
+  }
+}
+
+void saveSamplerEnvelopeChoice(GEMCallbackData data) {
+  const uint8_t stage = data.valByte;
+  if (stage >= SAMPLER_ENVELOPE_STAGES) {
+    return;
+  }
+  const SamplerEnvelopeStage& s = samplerEnvelopeStages[stage];
+  const uint8_t choice = samplerEnvelopeChoices[stage];
+  uint8_t mask = compactSamplerEnvelopeOverride();
+  if (choice == SAMPLER_ENVELOPE_INST) {
+    mask = static_cast<uint8_t>(mask & ~s.overrideBit);
+  } else {
+    mask = static_cast<uint8_t>(mask | s.overrideBit);
+    *s.runtimeValue = choice;
+    settings[static_cast<uint8_t>(s.key)] = choice;
+    updateEnvelopeParamsFromSettings();
+  }
+  setCompactSamplerEnvelopeOverride(mask);
+  markSettingsDirty();
+}
+
+GEMItem menuItemSamplerAttack("Attack", samplerEnvelopeChoices[0], selectSamplerEnvelopeTime, saveSamplerEnvelopeChoice, static_cast<byte>(0));
+GEMItem menuItemSamplerHold("Hold", samplerEnvelopeChoices[1], selectSamplerEnvelopeTime, saveSamplerEnvelopeChoice, static_cast<byte>(1));
+GEMItem menuItemSamplerDecay("Decay", samplerEnvelopeChoices[2], selectSamplerEnvelopeTime, saveSamplerEnvelopeChoice, static_cast<byte>(2));
+GEMItem menuItemSamplerSustain("Sustain", samplerEnvelopeChoices[3], selectSamplerSustain, saveSamplerEnvelopeChoice, static_cast<byte>(3));
+GEMItem menuItemSamplerRelease("Release", samplerEnvelopeChoices[4], selectSamplerEnvelopeTime, saveSamplerEnvelopeChoice, static_cast<byte>(4));
+
+bool synthMenuShowsSampler = false;
+
 void updateSynthMenuVisibility() {
   menuItemPortamentoTime.hide(!isMonoPlaybackMode(playbackMode));
   bool arpSelected = isArpPlaybackMode(playbackMode);
   menuItemArpNoteLength.hide(!arpSelected);
   menuItemArpSpeed.hide(!arpSelected);
   menuItemArpDirection.hide(!arpSelected);
+
+  // A sampler preset shows only the edits the sampler supports.
+  const bool sampler = compactSamplerRequestedName()[0] != '\0';
+  snprintf(samplerInstrumentMenuLabel, sizeof(samplerInstrumentMenuLabel), "Inst: %s", compactSamplerRequestedName());
+  refreshSamplerEnvelopeChoices();
+  menuItemSamplerInstrument.hide(!sampler);
+  menuGotoSamplerAmpEnv.hide(!sampler);
+  menuGotoSynthAmpEnv.hide(sampler);
+  menuGotoSynthWavetableLoad.hide(sampler);
+  menuItemSynthWavetablePosition.hide(sampler);
+  menuGotoSynthFx1.hide(sampler);
+  menuGotoSynthFx2.hide(sampler);
+  menuGotoSynthLfo.hide(sampler);
+  menuItemSynthModTarget.hide(sampler);
+  if (sampler != synthMenuShowsSampler) {
+    synthMenuShowsSampler = sampler;
+    GEMPage* page = menu.getCurrentMenuPage();
+    if (!virtualListMenuIsActive()
+        && (page == &menuPageSynth || page == &menuPageSynthAmpEnv || page == &menuPageSamplerAmpEnv)) {
+      menuSynthOptionsHome();
+    }
+  }
 }
 
 void playbackModeChanged() {
@@ -2697,12 +2847,12 @@ void updateMainMenuDynamicLabels() {
            current.scale().name ? current.scale().name : "Current");
   snprintf(mainSynthPresetMenuLabel,
            sizeof(mainSynthPresetMenuLabel),
-           "Synth:%s%s",
+           "Sound:%s%s",
            currentSynthPresetRuntimeModified() ? "*" : "",
            currentSynthPresetDisplayName());
   snprintf(synthPresetMenuLabel,
            sizeof(synthPresetMenuLabel),
-           "Preset:%s%s",
+           "Sound:%s%s",
            currentSynthPresetRuntimeModified() ? "*" : "",
            currentSynthPresetDisplayName());
 }
@@ -2740,12 +2890,12 @@ bool virtualListLauncherLabelParts(GEMItem* item,
   } else if (item == &menuGotoMainSynthPresetLoad) {
     label = mainSynthPresetMenuLabel;
     labelLength = sizeof(mainSynthPresetMenuLabel);
-    prefix = currentSynthPresetRuntimeModified() ? "Synth:*" : "Synth:";
+    prefix = currentSynthPresetRuntimeModified() ? "Sound:*" : "Sound:";
     value = currentSynthPresetDisplayName();
   } else if (item == &menuGotoSynthPresetLoad) {
     label = synthPresetMenuLabel;
     labelLength = sizeof(synthPresetMenuLabel);
-    prefix = currentSynthPresetRuntimeModified() ? "Preset:*" : "Preset:";
+    prefix = currentSynthPresetRuntimeModified() ? "Sound:*" : "Sound:";
     value = currentSynthPresetDisplayName();
   } else if (item == &menuGotoSynthWavetableLoad) {
     label = currentSynthWavetableMenuLabel;
@@ -3216,6 +3366,7 @@ void setupEditorMenuPage() {
 }
 
 void setupSynthMenuPage() {
+  menuPageSynth.addMenuItem(menuItemSamplerInstrument);
   menuPageSynth.addMenuItem(menuItemPlayback);
   addPreviewMenuItem(menuPageSynth, menuItemSynthOutputVolume, previewSynthOutputVolume);
   // menuItemAudioD added here for hardware V1.2
@@ -3224,11 +3375,16 @@ void setupSynthMenuPage() {
   addPreviewMenuItem(menuPageSynth, menuItemArpNoteLength, previewArpNoteLength);
   addPreviewMenuItem(menuPageSynth, menuItemPortamentoTime, previewPortamentoTime);
   updateCurrentSynthWavetableMenuLabel();
-  menuPageSynth.addMenuItem(menuGotoCompactSampler);
   menuPageSynth.addMenuItem(menuGotoSynthWavetableLoad);
   addPreviewMenuItem(menuPageSynth, menuItemSynthWavetablePosition, previewSynthWavetablePosition);
   addPreviewMenuItem(menuPageSynth, menuItemSynthDrive, previewSynthDrive);
   menuPageSynth.addMenuItem(menuGotoSynthAmpEnv);
+  menuPageSynth.addMenuItem(menuGotoSamplerAmpEnv);
+  menuPageSamplerAmpEnv.addMenuItem(menuItemSamplerAttack);
+  menuPageSamplerAmpEnv.addMenuItem(menuItemSamplerHold);
+  menuPageSamplerAmpEnv.addMenuItem(menuItemSamplerDecay);
+  menuPageSamplerAmpEnv.addMenuItem(menuItemSamplerSustain);
+  menuPageSamplerAmpEnv.addMenuItem(menuItemSamplerRelease);
   addPreviewMenuItem(menuPageSynthAmpEnv, menuItemEnvelopeAttack, previewEnvelopeAttack);
   addPreviewMenuItem(menuPageSynthAmpEnv, menuItemEnvelopeHold, previewEnvelopeHold);
   addPreviewMenuItem(menuPageSynthAmpEnv, menuItemEnvelopeDecay, previewEnvelopeDecay);
