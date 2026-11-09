@@ -10,6 +10,11 @@ void beginFlashSafeWrite();
 void endFlashSafeWrite();
 void flashSafeSave();
 void queueCurrentSynthStateForProfile(uint8_t profileIndex);
+// Plays a sound without committing it. Until something changes the sound,
+// saves record the sound that played before the audition.
+void auditionSynthPreset(const SynthPresetSlot& preset);
+// Returns to the committed sound, or commits the audition if it was changed.
+void endSynthAudition();
 bool persistPendingSynthProfileDrafts();
 bool restoreSynthStateForProfile(uint8_t profileIndex);
 void saveSynthPresetToSlot(uint16_t presetIndex);

@@ -27,6 +27,12 @@ SynthPresetSlot pendingSynthProfileDraft = {};
 SynthProfileReference pendingSynthProfileReference = {};
 uint8_t pendingSynthProfileIndex = DEFAULT_PROFILE_INDEX;
 bool pendingSynthProfileStateValid = false;
+// A hover audition plays a sound without committing it: saves record the
+// sound that played before it while the audition is unchanged.
+bool synthAuditionActive = false;
+SynthProfileReference synthAuditionCommittedReference = {};
+SynthPresetSlot synthAuditionCommittedDraft = {};
+SynthPresetSlot synthAuditionPlayed = {};
 
 bool objectIdIsEmpty(const uint8_t* objectId, size_t objectIdLength) {
   for (size_t i = 0; i < objectIdLength; ++i) {
@@ -418,6 +424,7 @@ SynthPresetSlot buildCurrentSynthPresetObject() {
 }
 
 void applyBlankSynthPresetToSettings() {
+  synthAuditionActive = false;
   for (SettingKey key : synthPresetKeys) {
     uint8_t keyIndex = static_cast<uint8_t>(key);
     settings[keyIndex] = factoryDefaults[keyIndex];
@@ -503,11 +510,12 @@ bool writeSynthProfileDraftAtomic(uint8_t profileIndex, const SynthPresetSlot& p
 }
 }  // namespace
 
-void queueCurrentSynthStateForProfile(uint8_t profileIndex) {
-  if (profileIndex >= PROFILE_COUNT) {
-    return;
-  }
-  SynthProfileReference reference = {};
+namespace {
+// What a profile save records for the playing sound: a catalog sound, Blank,
+// or a draft holding its values.
+void captureSynthProfileState(SynthProfileReference& reference, SynthPresetSlot& draft) {
+  reference = SynthProfileReference{};
+  draft = SynthPresetSlot{};
   bool modified = currentSynthPresetRuntimeModified();
   const bool tracked = !currentSynthPresetIsBlank && currentSynthPresetTracked();
 
@@ -524,41 +532,18 @@ void queueCurrentSynthStateForProfile(uint8_t profileIndex) {
       reference.flags |= SYNTH_PROFILE_REFERENCE_CATALOG;
       memcpy(reference.objectId, currentSynthPresetObjectId, sizeof(reference.objectId));
     }
-    pendingSynthProfileDraft = SynthPresetSlot{};
-    captureCurrentSynthPreset(pendingSynthProfileDraft);
-    snprintf(pendingSynthProfileDraft.name,
-             sizeof(pendingSynthProfileDraft.name),
-             "Profile %u Draft",
-             static_cast<unsigned>(profileIndex + 1));
-    snprintf(pendingSynthProfileDraft.folderPath, sizeof(pendingSynthProfileDraft.folderPath), "/");
+    captureCurrentSynthPreset(draft);
+    snprintf(draft.folderPath, sizeof(draft.folderPath), "/");
     // A sampler draft names the sound file that holds its instrument.
-    if (pendingSynthProfileDraft.samplerName[0]) {
-      memcpy(pendingSynthProfileDraft.objectId, compactSamplerRequestedSource(), sizeof(pendingSynthProfileDraft.objectId));
+    if (draft.samplerName[0]) {
+      memcpy(draft.objectId, compactSamplerRequestedSource(), sizeof(draft.objectId));
     }
   }
-  pendingSynthProfileReference = reference;
-  pendingSynthProfileIndex = profileIndex;
-  pendingSynthProfileStateValid = true;
 }
 
-bool persistPendingSynthProfileDrafts() {
-  if (!pendingSynthProfileStateValid) {
-    return true;
-  }
-  if ((pendingSynthProfileReference.flags & SYNTH_PROFILE_REFERENCE_DRAFT) != 0
-      && !writeSynthProfileDraftAtomic(pendingSynthProfileIndex, pendingSynthProfileDraft)) {
-    return false;
-  }
-  synthProfileReferences[pendingSynthProfileIndex] = pendingSynthProfileReference;
-  pendingSynthProfileStateValid = false;
-  return true;
-}
-
-bool restoreSynthStateForProfile(uint8_t profileIndex) {
-  if (profileIndex >= PROFILE_COUNT) {
-    return false;
-  }
-  const SynthProfileReference& reference = synthProfileReferences[profileIndex];
+// Applies a recorded sound to settings without syncing the runtime. A null
+// draft for a draft reference falls back to Blank.
+bool applySynthProfileState(const SynthProfileReference& reference, SynthPresetSlot* draftPreset) {
   const bool draft = (reference.flags & SYNTH_PROFILE_REFERENCE_DRAFT) != 0;
   const bool catalog = (reference.flags & SYNTH_PROFILE_REFERENCE_CATALOG) != 0;
   const bool blank = (reference.flags & SYNTH_PROFILE_REFERENCE_BLANK) != 0;
@@ -570,18 +555,13 @@ bool restoreSynthStateForProfile(uint8_t profileIndex) {
   }
 
   if (draft) {
-    SynthPresetSlot preset = {};
-    if (!readSynthProfileDraft(profileIndex, preset)) {
-      char path[32] = {};
-      synthProfileDraftPath(profileIndex, path, sizeof(path));
-      reportStorageHealthIssue(path, "missing or invalid draft");
-      sendToLog("Synth profile draft is missing or invalid. Using Blank.");
+    if (!draftPreset) {
       applyBlankSynthPresetToSettings();
       trackBlankSynthPreset();
       return false;
     }
-    normalizeSynthPresetValues(preset);
-    applySynthPresetToSettings(preset);
+    normalizeSynthPresetValues(*draftPreset);
+    applySynthPresetToSettings(*draftPreset);
     if (catalog && trackCurrentSynthPresetObjectId(reference.objectId)) {
       return true;
     }
@@ -609,6 +589,97 @@ bool restoreSynthStateForProfile(uint8_t profileIndex) {
   return blank;
 }
 
+// True while the playing sound is still the one the audition started.
+bool synthAuditionUnchanged() {
+  if (!synthAuditionActive) return false;
+  SynthPresetSlot current = {};
+  captureCurrentSynthPreset(current);
+  const SynthPresetSlot& played = synthAuditionPlayed;
+  return memcmp(current.values, played.values, sizeof(current.values)) == 0
+    && strncmp(current.wavetableName, played.wavetableName, sizeof(current.wavetableName)) == 0
+    && strncmp(current.wavetableFolderPath, played.wavetableFolderPath, sizeof(current.wavetableFolderPath)) == 0
+    && strncmp(current.samplerName, played.samplerName, sizeof(current.samplerName)) == 0
+    && current.samplerEnvelopeOverride == played.samplerEnvelopeOverride
+    && (!current.samplerName[0]
+        || memcmp(compactSamplerRequestedSource(), played.objectId, sizeof(played.objectId)) == 0);
+}
+}  // namespace
+
+void auditionSynthPreset(const SynthPresetSlot& preset) {
+  // A changed audition was committed by whatever changed it.
+  if (synthAuditionActive && !synthAuditionUnchanged()) synthAuditionActive = false;
+  const bool continuing = synthAuditionActive;
+  if (!continuing) captureSynthProfileState(synthAuditionCommittedReference, synthAuditionCommittedDraft);
+  applySynthPresetToSettings(preset);
+  syncSynthSettingsToRuntime();
+  captureCurrentSynthPreset(synthAuditionPlayed);
+  memcpy(synthAuditionPlayed.objectId, compactSamplerRequestedSource(), sizeof(synthAuditionPlayed.objectId));
+  synthAuditionActive = true;
+}
+
+void endSynthAudition() {
+  if (!synthAuditionActive) return;
+  if (!synthAuditionUnchanged()) { synthAuditionActive = false; return; }
+  applySynthProfileState(synthAuditionCommittedReference, &synthAuditionCommittedDraft);
+  syncSynthSettingsToRuntime();
+}
+
+void queueCurrentSynthStateForProfile(uint8_t profileIndex) {
+  if (profileIndex >= PROFILE_COUNT) {
+    return;
+  }
+  // An unchanged audition is never saved; the sound before it is.
+  if (synthAuditionUnchanged()) {
+    pendingSynthProfileReference = synthAuditionCommittedReference;
+    pendingSynthProfileDraft = synthAuditionCommittedDraft;
+  } else {
+    synthAuditionActive = false;
+    captureSynthProfileState(pendingSynthProfileReference, pendingSynthProfileDraft);
+  }
+  if (pendingSynthProfileReference.flags & SYNTH_PROFILE_REFERENCE_DRAFT) {
+    snprintf(pendingSynthProfileDraft.name,
+             sizeof(pendingSynthProfileDraft.name),
+             "Profile %u Draft",
+             static_cast<unsigned>(profileIndex + 1));
+  }
+  pendingSynthProfileIndex = profileIndex;
+  pendingSynthProfileStateValid = true;
+}
+
+bool persistPendingSynthProfileDrafts() {
+  if (!pendingSynthProfileStateValid) {
+    return true;
+  }
+  if ((pendingSynthProfileReference.flags & SYNTH_PROFILE_REFERENCE_DRAFT) != 0
+      && !writeSynthProfileDraftAtomic(pendingSynthProfileIndex, pendingSynthProfileDraft)) {
+    return false;
+  }
+  synthProfileReferences[pendingSynthProfileIndex] = pendingSynthProfileReference;
+  pendingSynthProfileStateValid = false;
+  return true;
+}
+
+bool restoreSynthStateForProfile(uint8_t profileIndex) {
+  if (profileIndex >= PROFILE_COUNT) {
+    return false;
+  }
+  const SynthProfileReference& reference = synthProfileReferences[profileIndex];
+  if (!(reference.flags & SYNTH_PROFILE_REFERENCE_DRAFT)) {
+    return applySynthProfileState(reference, nullptr);
+  }
+  SynthPresetSlot preset = {};
+  if (!readSynthProfileDraft(profileIndex, preset)) {
+    char path[32] = {};
+    synthProfileDraftPath(profileIndex, path, sizeof(path));
+    reportStorageHealthIssue(path, "missing or invalid draft");
+    sendToLog("Synth profile draft is missing or invalid. Using Blank.");
+    applyBlankSynthPresetToSettings();
+    trackBlankSynthPreset();
+    return false;
+  }
+  return applySynthProfileState(reference, &preset);
+}
+
 bool readSynthPresetFromCatalog(uint16_t presetIndex, SynthPresetSlot& preset) {
   SynthPresetCatalogEntry entry;
   return readSynthPresetCatalogEntry(presetIndex, entry)
@@ -621,6 +692,8 @@ void load_synth_presets() {
 }
 
 void applySynthPresetToSettings(const SynthPresetSlot& preset) {
+  // Applying a sound commits it; auditionSynthPreset marks its own afterwards.
+  synthAuditionActive = false;
   for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
     uint8_t value = preset.values[i];
     if (synthPresetKeys[i] == SettingKey::PlaybackMode) {

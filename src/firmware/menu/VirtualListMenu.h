@@ -37,3 +37,8 @@ void redrawVirtualListMenu();
 void resetVirtualListMenuSelection();
 void closeVirtualListMenu();
 void deactivateVirtualListMenu();
+// The highlighted provider row of the open list, when that list was opened
+// with getCount; VIRTUAL_LIST_MENU_NO_ROW for its Back row or an empty list.
+// False when no list, or a different list, is open.
+constexpr uint16_t VIRTUAL_LIST_MENU_NO_ROW = 0xFFFFu;
+bool virtualListMenuHighlightedRow(uint16_t (*getCount)(void* context), uint16_t& providerIndex);

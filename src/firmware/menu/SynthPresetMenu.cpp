@@ -48,6 +48,8 @@ bool synthPresetMenuRebuildPending = false;
 char synthPresetMenuCurrentFolder[SYNTH_PRESET_FOLDER_LENGTH] = "/";
 // The Favorites view lists favorite presets from every folder.
 bool synthPresetMenuShowingFavorites = false;
+// Bumped on every rebuild, so a highlighted row is told apart across folders.
+uint16_t synthPresetMenuGeneration = 0;
 // The list menu reads these through pointers, so they can change in place.
 char synthPresetMenuTitleText[16] = "Sounds";
 char synthPresetMenuEmptyText[16] = "Blank";
@@ -121,6 +123,7 @@ bool synthPresetMenuHasSubfolder(const char* folderPath) {
 }
 
 void rebuildSynthPresetVirtualList() {
+  ++synthPresetMenuGeneration;
   synthPresetMenuPresetCount = 0;
   synthPresetMenuSubfolderCount = 0;
   synthPresetMenuHiddenCount = 0;
@@ -332,7 +335,68 @@ void openSynthPresetMenu(SynthPresetMenuMode mode, SynthPresetMenuReturn destina
   provider.emptyLabel = synthPresetMenuEmptyText;
   openVirtualListMenu(provider);
 }
+// Resting on a sound in the Sounds list auditions it: it plays, but is not
+// chosen or saved. Leaving the list without choosing returns to the sound
+// that was playing; choosing a sound loads it as usual.
+constexpr uint32_t SYNTH_PRESET_AUDITION_DELAY_MS = 200;
+constexpr uint32_t SYNTH_PRESET_AUDITION_NO_ROW = 0xFFFFFFFFu;
+uint32_t auditionWatchedRow = SYNTH_PRESET_AUDITION_NO_ROW;
+uint32_t auditionRowSinceMs = 0;
+bool auditionRowMoved = false;
+bool auditionRowDone = false;
+bool auditionStartedFromMenu = false;
+
+void finishSynthPresetMenuAudition() {
+  if (auditionStartedFromMenu) {
+    auditionStartedFromMenu = false;
+    endSynthAudition();
+  }
+}
+
+void auditionHighlightedSynthPreset(uint16_t row) {
+  uint16_t itemIndex = 0;
+  if (row == VIRTUAL_LIST_MENU_NO_ROW || synthPresetRowKind(row, itemIndex) != SynthPresetMenuRowKind::Preset) {
+    return;
+  }
+  // The diamond marks the chosen sound; resting on it returns to it.
+  if (synthPresetVirtualIsCurrent(nullptr, row)) {
+    finishSynthPresetMenuAudition();
+    return;
+  }
+  SynthPresetSlot preset = {};
+  if (!readSynthPresetFromCatalog(synthPresetMenuPresets[itemIndex].handle, preset)) {
+    return;
+  }
+  auditionSynthPreset(preset);
+  auditionStartedFromMenu = true;
+}
 }  // namespace
+
+void serviceSynthPresetMenuAudition() {
+  uint16_t row = VIRTUAL_LIST_MENU_NO_ROW;
+  if (activeSynthPresetMenuMode != SynthPresetMenuMode::Load
+      || !virtualListMenuHighlightedRow(synthPresetVirtualCount, row)) {
+    auditionWatchedRow = SYNTH_PRESET_AUDITION_NO_ROW;
+    auditionRowMoved = false;
+    finishSynthPresetMenuAudition();
+    return;
+  }
+  const uint32_t watched = (uint32_t(synthPresetMenuGeneration) << 16) | row;
+  const uint32_t now = millis();
+  if (watched != auditionWatchedRow) {
+    // The row highlighted on opening is the chosen sound; wait for a move.
+    auditionRowMoved = auditionWatchedRow != SYNTH_PRESET_AUDITION_NO_ROW;
+    auditionWatchedRow = watched;
+    auditionRowSinceMs = now;
+    auditionRowDone = false;
+    return;
+  }
+  if (!auditionRowMoved || auditionRowDone || now - auditionRowSinceMs < SYNTH_PRESET_AUDITION_DELAY_MS) {
+    return;
+  }
+  auditionRowDone = true;
+  auditionHighlightedSynthPreset(row);
+}
 
 int decodeSynthPresetFolderHex(char value) {
   if (value >= '0' && value <= '9') {

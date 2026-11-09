@@ -383,3 +383,14 @@ void deactivateVirtualListMenu() {
   currentItemIndex = VIRTUAL_LIST_BACK_INDEX;
   activeProvider = {};
 }
+
+bool virtualListMenuHighlightedRow(uint16_t (*getCount)(void* context), uint16_t& providerIndex) {
+  providerIndex = VIRTUAL_LIST_MENU_NO_ROW;
+  if (!active || !getCount || activeProvider.getCount != getCount) {
+    return false;
+  }
+  if (currentItemIndex != VIRTUAL_LIST_BACK_INDEX && currentItemIndex - 1u < providerItemCount()) {
+    providerIndex = static_cast<uint16_t>(currentItemIndex - 1);
+  }
+  return true;
+}

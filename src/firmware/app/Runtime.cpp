@@ -167,6 +167,7 @@ void hexboardLoop() {        // run on first core
     return;
   }
   serviceSynthPresetMenuRebuild();
+  serviceSynthPresetMenuAudition();
   serviceSynthWavetableMenuRebuild();
   serviceUserGeometryMenuRebuild();
   restoreMenuAfterDelegatedControl();
