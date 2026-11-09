@@ -309,6 +309,23 @@ bool geometryFallbackRequired();
 bool loadDefaultGeometryRuntime();
 bool loadGeometryRuntimeForProfile(uint8_t profileIndex);
 void rememberCurrentGeometryReferenceForProfile(uint8_t profileIndex);
+// Geometry auditions play a tuning, layout or scale without choosing it.
+// Begin before loading, mark after; while unchanged, saves record the
+// selection from before the audition.
+void beginGeometryAudition();
+void markGeometryAuditionPlayed();
+// Choosing an item makes the playing selection the chosen one.
+void commitGeometryAudition();
+bool geometryAuditionUnchanged();
+// The chosen selection while an audition plays, else null.
+const GeometryProfileReference* geometryAuditionCommittedReference();
+// Re-applies the chosen selection's objects, settings and orientation, or
+// commits a changed audition (false). The caller refreshes layout and display.
+bool restoreGeometryAuditionCommitted();
+// Around packing settings for a save, and for copies into other profiles.
+void beginSavingCommittedGeometrySettings();
+void endSavingCommittedGeometrySettings();
+void applyCommittedGeometryAuditionSettings(uint8_t* profileSettings);
 bool loadUserGeometryBundleFromTuningSlot(uint16_t tuningIndex);
 std::vector<uint8_t> buildSynthPresetObjectBody(const SynthPresetSlot& preset);
 bool parseSynthPresetObjectBody(const std::vector<uint8_t>& body, SynthPresetSlot& preset, std::string& error);

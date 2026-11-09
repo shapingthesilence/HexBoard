@@ -54,6 +54,8 @@ SelectedGeometryMenuEntry selectedGeometryMenuCache[SELECTED_GEOMETRY_MENU_CACHE
 uint8_t selectedGeometryMenuCacheCount = 0;
 uint8_t selectedGeometryMenuCacheTuningId[GEOMETRY_OBJECT_ID_LENGTH] = {};
 bool selectedGeometryMenuCacheValid = false;
+// Bumped on every rebuild, so a highlighted row is told apart across folders.
+uint16_t userGeometryMenuGeneration = 0;
 
 const char* userGeometryMenuTitle(UserGeometryMenuKind kind) {
   switch (kind) {
@@ -346,6 +348,18 @@ bool userGeometryHandleIsCurrent(UserGeometryMenuKind kind, uint16_t handle) {
   if (handle == USER_GEOMETRY_MENU_INVALID_HANDLE) {
     return false;
   }
+  // During an audition the diamond stays on the chosen item.
+  if (const GeometryProfileReference* chosen = geometryAuditionCommittedReference()) {
+    switch (kind) {
+      case UserGeometryMenuKind::Tuning:
+        return (chosen->flags & GEOMETRY_PROFILE_HAS_TUNING) && geometryHandleMatchesObjectId(handle, chosen->tuningObjectId);
+      case UserGeometryMenuKind::Layout:
+        return (chosen->flags & GEOMETRY_PROFILE_HAS_LAYOUT) && geometryHandleMatchesObjectId(handle, chosen->layoutObjectId);
+      case UserGeometryMenuKind::Scale:
+        return (chosen->flags & GEOMETRY_PROFILE_HAS_SCALE) && geometryHandleMatchesObjectId(handle, chosen->scaleObjectId);
+    }
+    return false;
+  }
   switch (kind) {
     case UserGeometryMenuKind::Tuning:
       return userGeometryRuntime.tuningObjectSelected
@@ -400,6 +414,7 @@ bool showScaleEntry(const SelectedGeometryMenuEntry& entry){
 }
 
 void rebuildUserGeometryVirtualList(UserGeometryMenuKind kind) {
+  ++userGeometryMenuGeneration;
   userGeometryVirtualKind = kind;
   userGeometryVirtualCount = 0;
   userGeometryMenuOverflowLogged = false;
@@ -529,6 +544,7 @@ void loadUserGeometryHandle(UserGeometryMenuKind kind, uint16_t handle) {
     redrawVirtualListMenu();
     return;
   }
+  commitGeometryAudition();
 
   bool builtinSelection = prepareBuiltinGeometrySelection(handle);
   bool loaded = false;
@@ -651,7 +667,98 @@ void openUserGeometryMenu(UserGeometryMenuKind kind) {
   openVirtualListMenu(provider);
 }
 
+// Resting on a tuning, layout or scale for 200 ms auditions it: it plays,
+// but is not chosen or saved. Leaving the list without choosing returns to
+// the chosen item; choosing loads it as usual.
+constexpr uint32_t USER_GEOMETRY_AUDITION_DELAY_MS = 200;
+constexpr uint32_t USER_GEOMETRY_AUDITION_NO_ROW = 0xFFFFFFFFu;
+uint32_t geometryAuditionWatchedRow = USER_GEOMETRY_AUDITION_NO_ROW;
+uint32_t geometryAuditionRowSinceMs = 0;
+bool geometryAuditionRowMoved = false;
+bool geometryAuditionRowDone = false;
+bool geometryAuditionStartedFromMenu = false;
+
+void finishUserGeometryAudition() {
+  if (!geometryAuditionStartedFromMenu) return;
+  geometryAuditionStartedFromMenu = false;
+  if (restoreGeometryAuditionCommitted()) {
+    refreshMenuChoicesForCurrentTuning();
+    updateLayoutAndRotate();
+    requestUserGeometryMenuRebuild();
+  }
+}
+
+void auditionUserGeometryHandle(UserGeometryMenuKind kind, uint16_t handle) {
+  beginGeometryAudition();
+  prepareBuiltinGeometrySelection(handle);
+  // Browsing keeps the screen's orientation; choosing a layout applies its rotation.
+  const byte heldDeviceRotation = deviceRotation;
+  bool loaded = false;
+  switch (kind) {
+    case UserGeometryMenuKind::Tuning:
+      loaded = loadUserGeometryBundleFromTuningSlot(handle);
+      break;
+    case UserGeometryMenuKind::Layout:
+      loaded = loadUserGeometryLayoutFromSlot(handle);
+      break;
+    case UserGeometryMenuKind::Scale:
+      loaded = loadUserGeometryScaleFromSlot(handle);
+      break;
+  }
+  if (loaded) refreshMenuChoicesForCurrentTuning();
+  if (deviceRotation != heldDeviceRotation) {
+    deviceRotation = heldDeviceRotation;
+    settings[static_cast<uint8_t>(SettingKey::DeviceRotation)] = deviceRotation;
+    updateLayoutAndRotate();
+  }
+  markGeometryAuditionPlayed();
+  geometryAuditionStartedFromMenu = true;
+  redrawVirtualListMenu();
+}
+
+void auditionHighlightedUserGeometryRow(uint16_t row) {
+  if (row == VIRTUAL_LIST_MENU_NO_ROW) return;
+  uint16_t index = row;
+  if (userGeometryVirtualKind == UserGeometryMenuKind::Scale) {
+    if (index < 2) return;  // Key and Scale Lock
+    index -= 2;
+  }
+  if (index >= userGeometryVirtualCount || userGeometryVirtualRows[index].kind != UserGeometryMenuRowKind::Item) return;
+  // The diamond marks the chosen item; resting on it returns to it.
+  if (userGeometryVirtualIsCurrent(nullptr, row)) {
+    finishUserGeometryAudition();
+    redrawVirtualListMenu();
+    return;
+  }
+  auditionUserGeometryHandle(userGeometryVirtualKind, userGeometryVirtualRows[index].handle);
+}
 }  // namespace
+
+void serviceUserGeometryMenuAudition() {
+  uint16_t row = VIRTUAL_LIST_MENU_NO_ROW;
+  if (!virtualListMenuHighlightedRow(userGeometryVirtualCountProvider, row)) {
+    geometryAuditionWatchedRow = USER_GEOMETRY_AUDITION_NO_ROW;
+    geometryAuditionRowMoved = false;
+    finishUserGeometryAudition();
+    return;
+  }
+  const uint32_t watched = (uint32_t(userGeometryMenuGeneration) << 16) | row;
+  const uint32_t now = millis();
+  if (watched != geometryAuditionWatchedRow) {
+    // The row highlighted on opening is the chosen item; wait for a move.
+    geometryAuditionRowMoved = geometryAuditionWatchedRow != USER_GEOMETRY_AUDITION_NO_ROW;
+    geometryAuditionWatchedRow = watched;
+    geometryAuditionRowSinceMs = now;
+    geometryAuditionRowDone = false;
+    return;
+  }
+  if (!geometryAuditionRowMoved || geometryAuditionRowDone
+      || now - geometryAuditionRowSinceMs < USER_GEOMETRY_AUDITION_DELAY_MS) {
+    return;
+  }
+  geometryAuditionRowDone = true;
+  auditionHighlightedUserGeometryRow(row);
+}
 
 void openUserGeometryTuningMenu() {
   openUserGeometryMenu(UserGeometryMenuKind::Tuning);
