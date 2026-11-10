@@ -357,7 +357,7 @@ function lowpass(data, cutoff, periodic = false) {
 const tick = () => new Promise((r) => setTimeout(r, 0));
 export async function preparePatch(input, onProgress = () => {}) {
   if (!input?.assets?.length || input.assets.length > 128)
-    throw Error("Use 1–128 recordings per instrument.");
+    throw Error("Use 1–128 recordings per sound.");
   const playback = playbackLimits(input);
   const globalMotion=motionSettings(input.motion),hasMotion=!!input.motion||input.zones?.some(z=>z.motion);
   const settings = settingsFor(input.settings),
@@ -375,7 +375,7 @@ export async function preparePatch(input, onProgress = () => {}) {
     source.map((_, asset) => ({ asset, lowMidi: -0.5, highMidi: 127.5 }))
   ).map((z) => ({ ...z }));
   if (!zones.length || zones.length > 256)
-    throw Error("Use 1–256 zones per instrument.");
+    throw Error("Use 1–256 zones per sound.");
   for (const z of zones) {
     if(hasMotion)z.motion=motionSettings({...globalMotion,...z.motion});
     if((z.fixed||z.keyTrack===0)&&pitchBound(z.motion??globalMotion)>970)throw Error("Fixed-pitch regions support up to 970 cents of motion. Reduce pitch motion or use pitched tracking.");
@@ -453,7 +453,7 @@ export async function preparePatch(input, onProgress = () => {}) {
     input.storage === "streaming" ||
     (input.storage !== "resident" && (estimate > 5.5 * 1048576 || region));
   if (input.storage === "resident" && region)
-    throw Error("Region loops require the SD instrument profile.");
+    throw Error("Region loops require the SD sound profile.");
   const assets = [],
     newZones = [];
   if (quality === "character")
@@ -565,7 +565,7 @@ export async function preparePatch(input, onProgress = () => {}) {
       nextLevel += levels.length;
     }
   }
-  if(assets.some(a=>a.channels.length===2)&&(playback.voices>8||playback.tails>2))warnings.push("Stereo instruments with motion and reverb should start at 8 held voices + 2 tails. Larger stereo profiles need device qualification; the selected voice count is preserved.");
+  if(assets.some(a=>a.channels.length===2)&&(playback.voices>8||playback.tails>2))warnings.push("Stereo sounds with motion and reverb should start at 8 held voices + 2 tails. Larger stereo profiles need device qualification; the selected voice count is preserved.");
   if (zones.length > 256)
     throw Error(
       "Pitch protection requires more than 256 zones. Narrow the map or reduce layers.",
@@ -614,7 +614,7 @@ export async function preparePatch(input, onProgress = () => {}) {
   );
   if (!streaming && residentBytes > 5.5 * 1048576)
     throw Error(
-      "This stereo instrument exceeds memory. Choose automatic or SD export.",
+      "This stereo sound exceeds memory. Choose automatic or SD export.",
     );
   const quantum = streaming ? 4096 : 512,
     pages = streaming
@@ -624,7 +624,7 @@ export async function preparePatch(input, onProgress = () => {}) {
         )
       : 0;
   if (pages > 65535)
-    throw Error("This instrument exceeds the 256 MiB SD bank limit.");
+    throw Error("This sound exceeds the 256 MiB SD bank limit.");
   const base = 128 + encoded.length * 48 + count * 16 + zones.length * 48,
     metadata = align(base + pages * 4 + 184+(hasMotion?(zones.length+1)*64:0), quantum),
     total =

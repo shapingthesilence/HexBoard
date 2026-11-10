@@ -64,8 +64,10 @@ import { deleteBrowserInstrument, readBrowserInstrument, writeBrowserInstrument 
 
 interface SynthPresetLibraryProps {
   transport: MidiTransport;
-  /** Opens a sampler sound's instrument in the Instruments editor. */
+  /** Opens a sampler sound's samples in the sampler editor. */
   onEditInstrument?: (sound: SamplerSoundTarget) => void;
+  /** Starts a new sampler sound in the sampler editor, when the board has the sampler engine. */
+  onNewSamplerSound?: () => void;
 }
 
 type LibrarySpace = "computer" | "hexboard";
@@ -144,8 +146,6 @@ const factoryWavetableFolder = "/";
 const basicWavetableName = "Basic Shapes";
 const deviceNameMaxBytes = 31;
 const deviceFolderMaxBytes = 47;
-/** Where the board and Sync put sounds made for instruments. */
-
 const defaultPreset: EditableSynthPreset = {
   objectIdHex: objectIdToHex(deterministicObjectId("Soft String Pad")),
   name: "Soft String Pad",
@@ -1040,7 +1040,7 @@ function eventTargetAcceptsText(event: KeyboardEvent): boolean {
     || target.tagName === "SELECT";
 }
 
-export function SynthPresetLibrary({ transport, onEditInstrument }: SynthPresetLibraryProps) {
+export function SynthPresetLibrary({ transport, onEditInstrument, onNewSamplerSound }: SynthPresetLibraryProps) {
   const connected = !(transport instanceof MockMidiTransport);
   const drafts = useEditorDrafts<EditableSynthPreset>("hexboard-synth-drafts-v1", (value): value is EditableSynthPreset => {
     if (!isRecord(value) || typeof value.objectIdHex !== "string" || !/^[a-f0-9]{32}$/i.test(value.objectIdHex) || typeof value.name !== "string" || typeof value.folderPath !== "string" || typeof value.wavetableName !== "string" || typeof value.wavetableFolderPath !== "string" || !isRecord(value.values)) return false;
@@ -1155,17 +1155,17 @@ export function SynthPresetLibrary({ transport, onEditInstrument }: SynthPresetL
     if (connected && listed?.deviceHandle !== undefined) {
       return decodeHexSound(await samplerClient.readSound(listed.deviceHandle)).instrument;
     }
-    throw new Error(`The instrument of “${source.name}” is missing${connected ? "" : ". Connect the HexBoard that holds it"}`);
+    throw new Error(`The samples of “${source.name}” are missing${connected ? "" : ". Connect the HexBoard that holds it"}`);
   }
 
   async function editInstrument(source: EditableSynthPreset) {
     if (!onEditInstrument) return;
     try {
-      setSyncStatus(`Reading the instrument of ${source.name}...`);
+      setSyncStatus(`Reading the samples of ${source.name}...`);
       const instrument = await instrumentForPreset(source);
       onEditInstrument({ name: source.name, folderPath: source.folderPath, presetBody: encodeEditablePreset(source).body, instrument });
     } catch (error) {
-      setSyncStatus(error instanceof Error ? error.message : "Failed to read the instrument");
+      setSyncStatus(error instanceof Error ? error.message : "Failed to read the samples");
     }
   }
   const allFolders = useMemo(
@@ -1896,7 +1896,7 @@ export function SynthPresetLibrary({ transport, onEditInstrument }: SynthPresetL
       try {
         await writeBrowserInstrument(normalized.objectIdHex, await instrumentForPreset(nextPreset));
       } catch (error) {
-        setSyncStatus(error instanceof Error ? error.message : "Failed to copy the instrument");
+        setSyncStatus(error instanceof Error ? error.message : "Failed to copy the samples");
         return;
       }
     }
@@ -2324,7 +2324,7 @@ export function SynthPresetLibrary({ transport, onEditInstrument }: SynthPresetL
       try {
         const sound = encodeHexSound(encodeEditablePreset(nextPreset).body, await instrumentForPreset(nextPreset));
         downloadBytes(sound, `${safeFileName(nextPreset.name)}${HEXSOUND_EXTENSION}`);
-        setSyncStatus(`Exported ${nextPreset.name} with its instrument as a sound file`);
+        setSyncStatus(`Exported ${nextPreset.name} with its samples as a sound file`);
       } catch (error) {
         setSyncStatus(error instanceof Error ? error.message : "Failed to export the sound");
       }
@@ -2433,11 +2433,11 @@ export function SynthPresetLibrary({ transport, onEditInstrument }: SynthPresetL
       try {
         for (const [index, source] of sources.entries()) {
           if (!source.sampler) continue;
-          setSyncStatus(`Copying the instrument of ${source.name}...`);
+          setSyncStatus(`Copying the samples of ${source.name}...`);
           await writeBrowserInstrument(merged.ids[index], await instrumentForPreset(source));
         }
       } catch (error) {
-        setSyncStatus(`Nothing copied. ${error instanceof Error ? error.message : "Failed to copy an instrument"}`);
+        setSyncStatus(`Nothing copied. ${error instanceof Error ? error.message : "Failed to copy the samples"}`);
         return;
       }
       setComputerPresets(merged.presets);
@@ -2899,7 +2899,7 @@ export function SynthPresetLibrary({ transport, onEditInstrument }: SynthPresetL
           <button type="button" onClick={() => void sendPreview("Sent")}>Preview on HexBoard</button>
         </> : null}
         saveBrowser={{ onClick: () => void saveToComputer(), disabled: browserSaved, title: browserSaved ? "No changes to save" : undefined }}
-        saveHexBoard={{ onClick: () => void uploadToHexBoard(preset, "Saved"), disabled: !connected, title: connected ? undefined : "Connect a HexBoard to save on the instrument" }}
+        saveHexBoard={{ onClick: () => void uploadToHexBoard(preset, "Saved"), disabled: !connected, title: connected ? undefined : "Connect a HexBoard to save on it" }}
         menu={<>
           <button type="button" onClick={() => void downloadPresetFile(preset)}>Export file</button>
           <button disabled={!connected} type="button" onClick={() => void loadCurrentHexBoardPatch()}>Load current HexBoard sound</button>
@@ -2925,7 +2925,8 @@ export function SynthPresetLibrary({ transport, onEditInstrument }: SynthPresetL
           onClose={() => setLibraryOpen(false)}
           tabs={<LibraryTabs label="Sound library sections" value={libraryKind} options={[{ value: "presets", label: "Sounds" }, { value: "wavetables", label: "Wavetables" }]} onChange={setLibraryKind} />}
           actions={libraryKind === "presets" ? <>
-            <button className="primary" type="button" onClick={() => { newPreset(); setLibraryOpen(false); }}>New sound</button>
+            <button className="primary" type="button" onClick={() => { newPreset(); setLibraryOpen(false); }}>{onNewSamplerSound ? "New wavetable sound" : "New sound"}</button>
+            {onNewSamplerSound ? <button type="button" onClick={onNewSamplerSound}>New sampler sound</button> : null}
             <button type="button" onClick={() => fileInputRef.current?.click()}>Import files</button>
             <FolderControls
               folderLabel={folderLabel}
@@ -3157,7 +3158,7 @@ export function SynthPresetLibrary({ transport, onEditInstrument }: SynthPresetL
                 draftIds={Object.entries(drafts.entries).filter(([,entry]) => !sameContent(entry.value, entry.base)).map(([key]) => key)}
                 title="HexBoard Library"
                 onRefresh={() => void refreshHexBoardLibrary()}
-                subtitle="Saved on your instrument"
+                subtitle="Saved on your HexBoard"
                 space="hexboard"
                 presets={hexboardPresets}
                 folders={hexboardPresetFolders}
@@ -3204,7 +3205,7 @@ export function SynthPresetLibrary({ transport, onEditInstrument }: SynthPresetL
               <WavetableLibraryPanel
                 connected={connected}
                 title="HexBoard Wavetables"
-                subtitle="Saved on your instrument"
+                subtitle="Saved on your HexBoard"
                 onRefresh={() => void refreshHexBoardWavetables()}
                 space="hexboard"
                 wavetables={hexboardWavetables}
@@ -3225,7 +3226,7 @@ export function SynthPresetLibrary({ transport, onEditInstrument }: SynthPresetL
       <div className="card physical-editor wavetable-editor stack synthMainPanel">
         <div className="editorBody">
         {preset.sampler ? <>
-        <header className="instrument-title"><h2>Sampler</h2><span>HexBoard Classic · instrument inside the sound</span></header>
+        <header className="instrument-title"><h2>Sampler</h2><span>HexBoard Classic · samples inside the sound</span></header>
         <ClassicSamplerSoundEditor
           values={preset.values}
           onChange={updateValue}

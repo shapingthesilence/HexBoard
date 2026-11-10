@@ -332,10 +332,10 @@ export class PhysicalSynthClient {
     try{let state=await this.request(1,samplerSource===undefined?[instrument]:[instrument,...encodeU14(samplerSource)]);while(state.state==='loading'){
       if(Date.now()-startedAt>(instrument===6?90000:45000))throw Error('The synth did not become playable. Retry the connection.');await new Promise(r=>setTimeout(r,50));
       try{state=await this.request(0);}catch(error){if(Date.now()-startedAt>(instrument===6?90000:45000))throw error;}
-      if(instrument===6&&state.instrument===6&&state.state==='loading'&&(await this.samplerLoading()).phase===3)throw Error('The sampler could not verify the instrument audio.');
+      if(instrument===6&&state.instrument===6&&state.state==='loading'&&(await this.samplerLoading()).phase===3)throw Error('The sampler could not verify the sound audio.');
     }
     if(state.state!=='playing'||state.instrument!==instrument)throw Error('The requested synth could not start.');
-    if(samplerSource!==undefined&&(await this.samplerLoading(true)).source!==samplerSource)throw Error('The requested sampler instrument could not start.');
+    if(samplerSource!==undefined&&(await this.samplerLoading(true)).source!==samplerSource)throw Error('The requested sampler sound could not start.');
     if(this.advanced||instrument>=4)this.previewNeedsStartup=false;return state;
     }finally{this.onProgress?.();}
   }

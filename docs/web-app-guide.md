@@ -797,19 +797,21 @@ not replace your open sound. Previewing or saving to HexBoard requires a connect
 
 Both engines share one library. A small wave icon marks wavetable sounds and a
 sample icon marks Classic sampler sounds, as in the HexBoard's `Sounds` list.
-A sampler sound holds its instrument, so copying it between the HexBoard and
-Browser Library, exporting it or importing it always takes the instrument
+A sampler sound holds its samples, so copying it between the HexBoard and
+Browser Library, exporting it or importing it always takes them
 along. **Export file** saves a sampler sound as one `.hexsound` file to share;
-a library export of several sounds embeds each instrument; import accepts both.
-Sampler sounds are made in **Instruments** (**Send to HexBoard**). The sound
+a library export of several sounds embeds each sound's samples; import accepts both.
+With a sampler-capable HexBoard connected, the library offers **New wavetable
+sound** and **New sampler sound**; the latter opens the sampler editor, where
+**Send to HexBoard** saves the sound. The sound
 editor offers what the board offers: Playback, an **Amp envelope** whose
-stages start at `Inst` (the instrument's own values), **Vibrato** (`Wheel
+stages start at `Smpl` (each sample's own values), **Vibrato** (`Wheel
 amount`, `Vibrato speed`) and **Drive**. Turning a stage replaces it for the
-whole instrument; tick `Inst` to restore it. **Edit instrument** opens the
-sound's instrument in **Instruments**; sending it back replaces it in that
-sound. The browser can't play instruments, so the test keyboard is hidden;
+whole sound; tick `Smpl` to restore it. **Edit samples** opens the
+sound's samples in the sampler editor; sending from there replaces them in that
+sound, and **← Sounds** returns. The browser can't play sampler sounds, so the test keyboard is hidden;
 **Preview on HexBoard** works once the sound is saved on the HexBoard. The
-Browser Library keeps instruments in the browser's IndexedDB storage.
+Browser Library keeps samples in the browser's IndexedDB storage.
 
 Preset names are limited to 23 characters, the length the HexBoard's preset
 list shows. The HexBoard Library holds up to 512 presets in up to 32 folders,
@@ -1059,7 +1061,7 @@ side rack.
 
 A device advertising Sampler support adds **Sampler** to the Advanced engine
 selector. Add mono/stereo PCM16/24/32 or float WAV files, including ordinary
-PCM/float WAVE_FORMAT_EXTENSIBLE files. Instrument fills pitch ranges from
+PCM/float WAVE_FORMAT_EXTENSIBLE files. Pitched fills pitch ranges from
 editable roots. Kit maps recordings to playing keys. Slices cuts the selected
 recording at detected hits (adjust **Sensitivity**) or into 2–64 equal parts,
 previewing the cut points. The slices are added as new one-shot recordings on
@@ -1069,12 +1071,12 @@ WAV import uses embedded root metadata first, then pitch detection, then a note
 written in the file name (for example `glock_G4`, C4 = 60). When detection and
 the file name disagree, the Sample view offers the file-name note; libraries
 number octaves differently, so check by ear. Set **Original pitch** as a note,
-octave and cents. Pitch warnings apply only to Instrument mapping.
+octave and cents. Pitch warnings apply only to Pitched mapping.
 
-The instrument autosaves in this browser and returns after a reload, separately
-for Advanced and Classic. **New** starts an empty instrument (Undo brings the
+The sound autosaves in this browser and returns after a reload, separately
+for Advanced and Classic. **New** starts an empty sound (Undo brings the
 previous one back). Rename or **Remove** the selected recording in the Sample
-view. Undo history is not kept across reloads; export to keep an instrument.
+view. Undo history is not kept across reloads; export to keep a sound.
 
 The shared **Region ADSR** panel provides direct sliders and exact time/percent
 entry. Choose a region there, use **Edit all regions** for linked changes, or
@@ -1196,17 +1198,18 @@ set the final hardware accuracy.
 
 ## Classic Sampler
 
-With updated Classic firmware connected, Synth offers **Sounds** (the sound
-library and editor for both engines) and **Instruments** (the sampler instrument
-editor). Instruments shares Advanced's import, waveform, loop and region tools
+Classic sounds use one of two engines, Wavetable or Sampler, and share one
+library. With updated Classic firmware connected, **New sampler sound** in the
+library or **Edit samples** on a sampler sound opens the sampler editor;
+**← Sounds** returns to the library and sound editor. The sampler editor shares Advanced's import, waveform, loop and region tools
 with controls limited to Classic playback. Import and edits automatically
 prepare the Classic conversion. Compare original and converted recordings, then
 use **Send to HexBoard**. Region ADSR is in Mapping with sliders, exact
 time/percent fields and selected/all-region editing. Review size and sound
-changes before copying to the board. **Send to HexBoard** saves the instrument
-inside a sampler sound (name and folder fields beside it) and plays it; **Save
-sound file** saves that sound as a `.hexsound` file. An instrument opened with
-**Edit instrument** replaces the instrument in its sound instead.
+changes before copying to the board. **Send to HexBoard** saves the
+sampler sound (name and folder fields beside it) and plays it; **Save
+sound file** saves that sound as a `.hexsound` file. Samples opened with
+**Edit samples** replace the samples in their sound instead.
 
 See [Classic sampler](compact-sampler.md) for supported sources, eight-voice and
 48 KiB limits, loop behavior, conversion and device controls.

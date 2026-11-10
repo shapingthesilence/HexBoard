@@ -61,13 +61,13 @@ export type DeviceLibrary=ReturnType<typeof useDeviceLibrary>;
 
 export function DevicePresetLibrary({client,library,medium,onMedium,activeSlot,busy=false,run,onLoad,onLoadFavorite,onCopy,onReplace,onDelete,onOrganize,onFavorite,onUnfavorite}:{client?:PhysicalSynthClient;library:DeviceLibrary;medium:DeviceMedium;onMedium:(m:DeviceMedium)=>void;activeSlot?:number;busy?:boolean;run:(fn:()=>Promise<void>)=>void;onLoad:(row:DeviceRow)=>Promise<void>;onLoadFavorite:(favorite:DeviceFavorite)=>Promise<void>;onCopy:(row:DeviceRow)=>Promise<void>;onReplace:(row:DeviceRow)=>Promise<void>;onDelete:(row:DeviceRow)=>Promise<void>;onOrganize:(row:DeviceRow)=>void;onFavorite:(row:DeviceRow)=>Promise<void>;onUnfavorite:(favorite:DeviceFavorite)=>Promise<void>}){
  const [folder,setFolder]=useState<number|'all'|'favorites'>('all'),[query,setQuery]=useState('');
- if(!client)return <LibraryColumn title="HexBoard Library" subtitle="Saved on your instrument"><p className="libraryEmpty">Connect to see your saved sounds</p></LibraryColumn>;
+ if(!client)return <LibraryColumn title="HexBoard Library" subtitle="Saved on your HexBoard"><p className="libraryEmpty">Connect to see your saved sounds</p></LibraryColumn>;
  const {catalog,favorites,reading}=library,blocked=busy||!!reading,shown=(catalog?.folders??[]).filter(f=>f.mask).sort((a,b)=>a.name.localeCompare(b.name));
  const q=query.trim().toLowerCase(),match=(text:string)=>!q||text.toLowerCase().includes(q);
  const rows=(catalog?.rows??[]).filter(r=>(folder==='all'||Math.floor(r.id/32)%32===folder)&&match(`${r.label.name} ${r.label.folder}`)).sort((a,b)=>a.label.folder.localeCompare(b.label.folder)||a.label.name.localeCompare(b.label.name,undefined,{numeric:true}));
  const starred=favorites.filter(f=>match(f.name)),count=folder==='favorites'?starred.length:rows.length;
  const chip=(key:typeof folder,label:string,n:string)=><LibraryChip key={String(key)} label={label} count={n} active={folder===key} onClick={()=>setFolder(key)}/>;
- return <LibraryColumn title="HexBoard Library" subtitle={catalog?`${catalog.medium===2?'SD card':'Internal flash'} · ${shown.length}/${deviceFolderLimit} folders`:'Saved on your instrument'} count={count}
+ return <LibraryColumn title="HexBoard Library" subtitle={catalog?`${catalog.medium===2?'SD card':'Internal flash'} · ${shown.length}/${deviceFolderLimit} folders`:'Saved on your HexBoard'} count={count}
   actions={<button type="button" disabled={blocked} title="Read the library from the HexBoard again" onClick={()=>run(()=>library.refresh())}>Refresh</button>}>
   <LibrarySearch label="Search HexBoard Library" placeholder="Search sounds" value={query} onChange={setQuery}><select aria-label="HexBoard storage" value={medium} disabled={blocked} onChange={e=>{onMedium(+e.target.value as DeviceMedium);setFolder('all');}}><option value={0}>SD preferred</option><option value={2}>SD card</option><option value={1}>Internal flash</option></select></LibrarySearch>
   <LibraryChips label="HexBoard Library folders">

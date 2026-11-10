@@ -3126,7 +3126,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
           </div>
         </>}
         saveBrowser={{ onClick: saveBrowserTuning, disabled: !hasDraft, title: hasDraft ? undefined : "No changes to save" }}
-        saveHexBoard={{ onClick: () => void saveActiveBundleToHexBoard(), disabled: !connected || syncBusy, title: connected ? undefined : "Connect a HexBoard to save on the instrument" }}
+        saveHexBoard={{ onClick: () => void saveActiveBundleToHexBoard(), disabled: !connected || syncBusy, title: connected ? undefined : "Connect a HexBoard to save on it" }}
         menu={<>
           <button type="button" onClick={() => downloadBundleFile(activeBundle)}>Export file</button>
           <button disabled={!hasDraft} type="button" onClick={discardTuningDraft}>Discard draft</button>
@@ -4147,7 +4147,7 @@ function HexBoardGeometryLibraryPanel({
 
   if (!connected) {
     return (
-      <LibraryColumn title="HexBoard Library" subtitle="Saved on your instrument">
+      <LibraryColumn title="HexBoard Library" subtitle="Saved on your HexBoard">
         <p className="libraryEmpty">Connect to see your saved tunings</p>
       </LibraryColumn>
     );
@@ -4156,7 +4156,7 @@ function HexBoardGeometryLibraryPanel({
   return (
     <LibraryColumn
       title="HexBoard Library"
-      subtitle="Saved on your instrument"
+      subtitle="Saved on your HexBoard"
       count={visibleEntries.length}
       actions={<button disabled={reorderDisabled} type="button" title="Read the library from the HexBoard again" onClick={onRefresh}>Refresh</button>}
     >

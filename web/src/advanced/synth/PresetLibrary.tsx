@@ -137,7 +137,7 @@ export function PresetLibrary({preset,client,disabled,onLoad,onDeviceLoad,onBusy
    </>}
    status={<>{where}{!open&&status}</>}
    saveBrowser={{onClick:()=>saveCurrentToBrowser(false),disabled:disabled||working}}
-   saveHexBoard={{onClick:saveCurrentToHexBoard,disabled:disabled||working||!client,title:client?undefined:'Connect HexBoard Advanced to save on the instrument'}}
+   saveHexBoard={{onClick:saveCurrentToHexBoard,disabled:disabled||working||!client,title:client?undefined:'Connect HexBoard Advanced to save on it'}}
    menu={<>
     <button type="button" disabled={disabled||working} onClick={()=>saveCurrentToBrowser(true)}>Save as new in Browser</button>
     <button type="button" disabled={disabled||working} onClick={()=>run(()=>downloadPreset(current()))}>Export file</button>

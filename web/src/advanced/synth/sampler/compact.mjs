@@ -5,12 +5,12 @@ import { trimRecording, crossfadeRecording, defaults, defaultPerformance } from 
 export const compactLimits = Object.freeze({ pcmBytes: 49152, assets: 16, zones: 32, voices: 8 });
 const hz = (midi) => 440 * 2 ** ((midi - 69) / 12);
 export function readCompactPatch(bytes) {
-  if (!(bytes instanceof Uint8Array) || bytes.length < 64) throw Error("Incomplete Classic instrument.");
+  if (!(bytes instanceof Uint8Array) || bytes.length < 64) throw Error("Incomplete Classic sampler sound.");
   const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), assets = [], zones = [];
   const count=v.getUint16(24,true), regions=v.getUint16(26,true), frames=v.getUint32(12,true), metadata=64+count*32+regions*48;
   if (String.fromCharCode(...bytes.subarray(0,4))!=="HBC1" || v.getUint16(4,true)!==1 || v.getUint16(6,true)!==64 || !count || count>16 || !regions || regions>32 || frames*2>49152 || bytes.length!==metadata+frames*2 || v.getUint32(8,true)!==bytes.length) throw Error("Invalid Classic instrument bounds.");
   const checked=Uint8Array.from(bytes.subarray(0,metadata)), stored=v.getUint32(20,true);checked.fill(0,20,24);
-  if(crc32(checked)!==stored||crc32(bytes.subarray(metadata))!==v.getUint32(16,true))throw Error("Classic instrument checksum failed.");
+  if(crc32(checked)!==stored||crc32(bytes.subarray(metadata))!==v.getUint32(16,true))throw Error("Classic sampler checksum failed.");
   let end=0;
   for(let i=0;i<count;++i){const at=64+i*32,offset=v.getUint32(at,true),length=v.getUint32(at+4,true),mode=bytes[at+24],loopStart=v.getUint32(at+8,true),loopEnd=v.getUint32(at+12,true),rate=v.getFloat32(at+16,true),root=v.getFloat32(at+20,true);
     if(offset!==end||length<2||offset+length>frames||mode>3||!Number.isFinite(rate)||rate<100||rate>384000||!Number.isFinite(root)||root<1||root>50000||([1,3].includes(mode)?loopStart>=loopEnd||loopEnd>length:loopStart||loopEnd))throw Error("Invalid Classic recording.");
@@ -29,7 +29,7 @@ export async function prepareCompactPatch(patch, progress = () => {}) {
   if(patch.motion||patch.zones.some(z=>z.motion))warnings.push("Classic export omits live vibrato, modulation envelope and LFO routes. Original browser audition preserves them; converted audition previews the adaptation.");
   if(patch.zones.some(z=>z.fixedVelocity!==undefined||z.fixedNote!==undefined))warnings.push("Classic export omits SoundFont fixed velocity/key envelope semantics; these remain in original audition.");
   const used = [...new Set(patch.zones.map(z => z.asset))];
-  if (used.length > compactLimits.assets) throw Error("Classic supports at most 16 recordings per instrument.");
+  if (used.length > compactLimits.assets) throw Error("Classic supports at most 16 recordings per sound.");
   let assets = used.map(i => {
     const a = crossfadeRecording(trimRecording(patch.assets[i]));
     if (!Number.isFinite(a.rootMidi) || a.rootMidi < -24 || a.rootMidi > 150) throw Error("Invalid root pitch.");
@@ -39,7 +39,7 @@ export async function prepareCompactPatch(patch, progress = () => {}) {
   assets = fitCompactRecordings(assets, compactLimits.pcmBytes / 2, warnings, progress);
   warnings.push("Classic uses mono linear interpolation and eight shared voice slots. Tone filters, pressure, room reverb and patch response/arp recall are omitted; board tuning, bends and arpeggiator remain available.");
   const zones = patch.zones.map(z => {
-    if (z.key !== undefined || z.fixed || z.roundRobin || z.choke) throw Error("Classic currently supports pitched instruments. Remove fixed-key, round-robin and choke mappings.");
+    if (z.key !== undefined || z.fixed || z.roundRobin || z.choke) throw Error("Classic currently supports pitched sounds. Remove fixed-key, round-robin and choke mappings.");
     const r = { ...z, motion:undefined,resonance:undefined, fixedVelocity:undefined,fixedNote:undefined,asset: used.indexOf(z.asset), lowMidi: z.lowMidi ?? -.5, highMidi: z.highMidi ?? 127.5,
       velocityLow: z.velocityLow ?? 1, velocityHigh: z.velocityHigh ?? 127,
       gain: z.gain ?? 1, keyTrack: z.keyTrack ?? 1, attack: z.attack ?? settings.attack,

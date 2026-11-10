@@ -392,26 +392,28 @@ can still add to or subtract from this base position, so setting `WT Pos` above
 frame `1` lets a negative envelope or LFO amount move backward through the
 wavetable.
 
-Sampler presets play an imported mono instrument instead of a wavetable; the
-preset you load chooses the engine. Use HexBoard Sync's Synth → Instruments editor
+Every sound uses one of two engines. Wavetable sounds play a wavetable; sampler
+sounds play imported mono samples, and the
+sound you load chooses the engine. In HexBoard Sync's Synth editor, open
+**Library → New sampler sound**
 to convert your own SoundFonts or recordings: **Send to HexBoard** saves a
-sampler sound with the instrument inside it (in `Instruments` unless you choose
-another folder). Each sampler sound holds its own instrument, so copying or
-sharing the sound takes the instrument along, and deleting the sound deletes
-it. `Save Sound` and `Save as new` on the HexBoard copy the playing instrument
+sampler sound with its samples inside it (in `Sampler` unless you choose
+another folder). Each sampler sound holds its own samples, so copying or
+sharing the sound takes them along, and deleting the sound deletes
+them. `Save Sound` and `Save as new` on the HexBoard copy the playing samples
 into the saved sound. The HexBoard holds up to 128 sampler sounds. In the
 `Sounds` list, a small wave icon marks wavetable sounds and a sample icon marks
 sampler sounds; the diamond on the right marks the loaded sound. Sync edits
 sampler sounds with the same controls as the board.
 
-With a sampler preset loaded, the `Synth` page shows `Inst: <name>` (fixed by
-the preset), and hides the wavetable, `WT Pos`, `Wheel FX`, `FX Env` and `LFO`
-items. Its `Amp Env` page starts every stage at `Inst`, the instrument's own
-envelope; choosing a value replaces that stage for the whole instrument, and
-choosing `Inst` again restores it. New notes use the change. The mod wheel adds
+With a sampler sound loaded, the `Synth` page shows `Smpl: <name>` (fixed by
+the sound), and hides the wavetable, `WT Pos`, `Wheel FX`, `FX Env` and `LFO`
+items. Its `Amp Env` page starts every stage at `Smpl`, each sample's own
+envelope; choosing a value replaces that stage for the whole sound, and
+choosing `Smpl` again restores it. New notes use the change. The mod wheel adds
 vibrato to sampler sounds: `Wheel Amt` sets how deep and `Vib Speed` how fast.
-Engine changes briefly mute audio; held keys need a fresh press afterward. If a sampler sound's instrument
-can't be read, the HexBoard shows `Upload instrument` and plays the wavetable
+Engine changes briefly mute audio; held keys need a fresh press afterward. If a sampler sound's samples
+can't be read, the HexBoard shows `Resend sound` and plays the wavetable
 engine instead. See [Classic sampler](compact-sampler.md) for importing and limits.
 
 `Drive` adds soft saturation after the voices are mixed:

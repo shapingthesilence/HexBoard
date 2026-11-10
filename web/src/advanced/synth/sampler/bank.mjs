@@ -14,13 +14,13 @@ export function readBank(bytes, options = {}) {
     u32(8) !== 44100 ||
     u32(20) !== bytes.length
   )
-    throw Error("Choose a current HBS instrument.");
+    throw Error("Choose a current HBS sound file.");
   const header = bytes.slice(0, 128);
   header.fill(0, 36, 40);
   if (crc32(header) !== u32(36))
-    throw Error("Instrument header checksum failed.");
+    throw Error("Sound header checksum failed.");
   // 114-119 hold signed envelope bends; -32768 is out of range. 120-127 are reserved.
-  if(bytes[106]>=16||bytes[107]>4||bytes.subarray(120,128).some(x=>x)||[114,116,118].some(at=>u16(at)===0x8000))throw Error("Invalid instrument voice reservations.");
+  if(bytes[106]>=16||bytes[107]>4||bytes.subarray(120,128).some(x=>x)||[114,116,118].some(at=>u16(at)===0x8000))throw Error("Invalid sound voice reservations.");
   const a = u16(12),
     l = u16(14),
     z = u16(16),
@@ -41,7 +41,7 @@ export function readBank(bytes, options = {}) {
     crc32(bytes.subarray(128, meta)) !== u32(28) ||
     crc32(bytes.subarray(meta)) !== u32(32)
   )
-    throw Error("Instrument bounds or checksum failed.");
+    throw Error("Sound bounds or checksum failed.");
   const assets = Array.from({ length: a }, (_, i) => {
     const p = 128 + i * 48,
       frames = u32(p),

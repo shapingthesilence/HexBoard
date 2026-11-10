@@ -10,7 +10,7 @@ export function InstrumentSetup({patch,classic,design,cycles,mode,onApply,onClos
  const [purpose,setPurpose]=useState(mode==='kit'||mode==='slices'?mode:design==='tiny'?'compact':'natural');
  const [voices,setVoices]=useState(current.voices),[tails,setTails]=useState(current.tails),[room,setRoom]=useState(current.room),[loop,setLoop]=useState(design),[count,setCount]=useState(cycles),[mono,setMono]=useState(false);
  const apply=()=>{const assets=mono?patch.assets.map(a=>a.channels.length===1?a:{...a,channels:[Float32Array.from(a.channels[0],(x,i)=>(x+a.channels[1][i])*.5)]}):patch.assets;const motion=motionPreset==="keep"?patch.motion:motionSettings(motionPreset==="off"?{}:motionPreset==="expressive"?{vibratoDepth:35,source:2,vibratoFade:300}:{vibratoDepth:25,vibratoDelay:150,vibratoFade:400,source:1,attack:400});onApply({...patch,assets,motion,zones:motionPreset==="keep"?patch.zones:patch.zones?.map(z=>({...z,motion})),playback:classic?undefined:{voices,tails},settings:{...patch.settings,space:classic?(patch.settings?.space??0):room?(patch.settings?.space||.18):0}},loop,count,purpose==='kit'||purpose==='slices'?purpose:'instrument');onClose();};
- return <WorkspaceDialog title="Instrument setup" onClose={onClose}>
+ return <WorkspaceDialog title="Sound setup" onClose={onClose}>
  <p className="panel-note">Choose a starting point. Every choice stays editable; recordings and authored loops are kept.</p>
  <div className="sampler-setup-grid">
  <label>Starting point<select aria-label="Starting point" value={purpose} onChange={e=>{const value=e.target.value;setPurpose(value);setLoop(value==='compact'?'tiny':'natural');if(value==='texture'&&!classic)setRoom(true);}}><option value="natural">Natural instrument</option><option value="compact">Compact tonal sound</option><option value="texture">Evolving texture</option>{!classic&&<><option value="kit">Drum kit</option><option value="slices">Slices</option></>}</select><small>Suggestions for your sound. Imported tuning, envelopes and loops are preserved.</small></label>
@@ -28,5 +28,5 @@ export function InstrumentSetup({patch,classic,design,cycles,mode,onApply,onClos
 export function InstrumentResources({patch,classic,onSetup,disabled=false}:{patch:Patch;classic:boolean;onSetup:()=>void;disabled?:boolean}) {
  const r=resourceSummary(patch,classic),motion=motionActive(motionSettings(patch.motion))||patch.zones?.some(z=>motionActive(motionSettings(z.motion)));
  const summary=[`${r.voices} voices`,!r.stereo||classic?'Mono':'Stereo',r.room&&'Room',motion&&'Motion'].filter(Boolean).join(' · ');
- return <button className="sampler-setup-button" disabled={disabled} onClick={onSetup} aria-label={`Instrument setup: ${summary}`}>Setup<small>{summary}</small></button>;
+ return <button className="sampler-setup-button" disabled={disabled} onClick={onSetup} aria-label={`Sound setup: ${summary}`}>Setup<small>{summary}</small></button>;
 }

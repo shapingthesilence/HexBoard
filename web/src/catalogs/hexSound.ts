@@ -20,7 +20,7 @@ export interface HexSound {
 
 export function encodeHexSound(presetBody: Uint8Array, instrument: Uint8Array): Uint8Array {
   if (presetBody.length === 0 || presetBody.length > 0xffff) throw new RangeError("Sound settings are too large for a .hexsound file");
-  if (instrument.length === 0) throw new RangeError("A .hexsound file needs an instrument");
+  if (instrument.length === 0) throw new RangeError("A .hexsound file needs its samples");
   const output = new Uint8Array(headerBytes + presetBody.length + instrument.length);
   output.set(magic, 0);
   output[4] = presetBody.length & 0xff;
@@ -38,7 +38,7 @@ export function decodeHexSound(bytes: Uint8Array): HexSound {
   const instrumentStart = headerBytes + length;
   if (length === 0 || bytes.length <= instrumentStart) throw new Error("The sound file is incomplete");
   const instrument = bytes.slice(instrumentStart);
-  if (String.fromCharCode(...instrument.slice(0, 4)) !== "HBC1") throw new Error("The sound file's instrument is not a Classic sampler instrument");
+  if (String.fromCharCode(...instrument.slice(0, 4)) !== "HBC1") throw new Error("The sound file does not hold Classic sampler samples");
   return { presetBody: bytes.slice(headerBytes, instrumentStart), instrument };
 }
 
