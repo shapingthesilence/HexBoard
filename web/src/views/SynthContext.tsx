@@ -21,11 +21,11 @@ export function SynthContext({ transport, hello }: { transport: MidiTransport; h
   const physical = hasAdvancedDevice(hello) && !(transport instanceof MockMidiTransport);
   const connectedPhysical = Boolean(physical && hello && (hello.capabilityFlags & CapabilityFlag.AdvancedPhysicalSynth));
   return <>
-    <div className="card">
-      {hello && <p>Synth context: {board.label}</p>}
-      {physical && !connectedPhysical && <p>Connect updated Advanced firmware to audition this physical instrument.</p>}
-      {hello && board.synth && !canEditConnectedSynth(hello) && <p>This firmware does not support synth preset writes.</p>}
-    </div>
+    {hello && <p className="synthContextNote">
+      Synth context: {board.label}
+      {physical && !connectedPhysical && " · Connect updated Advanced firmware to audition this physical instrument."}
+      {board.synth && !canEditConnectedSynth(hello) && " · This firmware does not support synth preset writes."}
+    </p>}
     <Suspense fallback={<p role="status">Opening synth editor…</p>}>
     {physical ? <AdvancedSynthEditor sampler={Boolean(hello && (hello.capabilityFlags & CapabilityFlag.AdvancedSampler))} engines={Boolean(hello && (hello.capabilityFlags & CapabilityFlag.AdvancedSynthEngines))} key={`${transport.label}:${initialPreset.format}`} transport={connectedPhysical ? transport : undefined} /> : board.synth && <>{!!(hello && (hello.capabilityFlags & CapabilityFlag.CompactSampler)) && <nav className="engine-selector" aria-label="Classic synth editor"><button aria-pressed={classicTab === "wavetable"} onClick={()=>{setClassicTab("wavetable");setInstrumentSound(undefined);}}>Sounds</button><button aria-pressed={classicTab === "sampler"} onClick={()=>setClassicTab("sampler")}>Instruments</button></nav>}{classicTab === "sampler" && hello && (hello.capabilityFlags & CapabilityFlag.CompactSampler) ? <SamplerEditor target="classic" transport={transport} sound={instrumentSound}/> : <SynthPresetLibrary key={board.synth} transport={canEditConnectedSynth(hello) ? transport : offlineTransport} onEditInstrument={hello && (hello.capabilityFlags & CapabilityFlag.CompactSampler) ? (sound) => { setInstrumentSound(sound); setClassicTab("sampler"); } : undefined} />}</>}
     </Suspense>

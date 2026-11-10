@@ -510,8 +510,9 @@ leave the HexBoard powered until the menu returns. The supplied presets are orga
 `Leads`, `Pads`, and `Plucks`. They can be changed or erased like any other
 preset. The web app
 shows folders with preset counts. Search
-narrows the compact preset list within the selected folder. Open a preset from
-its name or use its more-actions menu for rename, move, copy, export, and
+narrows the preset list within the selected folder. Load a preset from
+its name, copy it with the row's `→ HexBoard` or `→ Browser` button, or use its
+more-actions menu for rename, move, export, and
 delete. The app can also create foldered presets.
 `Rename / Move` changes a saved Browser or HexBoard preset in place, so changing
 its name or folder does not require making a copy and deleting the old preset.
@@ -520,10 +521,10 @@ which preset will be replaced and requires confirmation. `Delete` also requires
 confirmation and states that it cannot be undone.
 
 Use the selection boxes in either preset library for batch work. The batch
-toolbar appears after at least one preset is selected. `Select shown`
+actions appear after at least one preset is selected. `Select shown`
 selects the presets visible under the current folder filter. The selected
 presets can be copied together to the other library or exported as one JSON
-library file. `Import Preset Files` accepts several individual preset files, a
+library file. `Import files` accepts several individual preset files, a
 bulk library file, or both in one file selection. Before a batch import or copy,
 the app lists how many existing destination presets will be replaced and waits
 for confirmation.

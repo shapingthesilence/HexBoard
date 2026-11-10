@@ -250,6 +250,15 @@ export function WavetableSynthEditor({ transport,onDeviceEngineLoaded }: { trans
       if (!e.metaKey && !e.ctrlKey && !e.altKey) beginEdit();
     }}>
     {importing&&<WavetableImporter initial={importing==='edit'?selectedTable:undefined} onClose={()=>setImporting(undefined)} onUse={asset=>void useTable(asset)}/>}
+    <PresetLibrary preset={preset} client={ready?client:undefined} disabled={busy}
+      onRename={name=>replacePreset(p=>({...p,name}))} onBusy={async busy=>{libraryBusy.current=busy;setLoading(busy);if(busy)await settle();}} onImportAsset={importPresetAsset}
+      onLoad={async p=>{if(!isWavetablePreset(p))throw Error('Select the matching engine.');await apply(p);}}
+      onDeviceLoad={async(engine,name)=>{
+        await settle();const value=await client!.readSound(name);
+        if(engine!==wavetableEngine){store(presetDraftKey(engine),value);onDeviceEngineLoaded?.((engine===3?2:engine) as 2|4|5);return;}
+        if(!isWavetablePreset(value))return;
+        retainedDraft.current=true;resetPreset(value);setDevice(await client!.status());
+      }}/>
     <PerformanceRow transport={transport} disabled={busy} voiceControls={<MonoControls value={preset.mono ?? defaultMono()} disabled={busy} onChange={setMono}/>}/><ControllerControls transport={transport} disabled={busy} onState={preview.setController}/>
 
     <div className="modulation-toolbar" role="toolbar" aria-label="Modulation tools">
@@ -268,15 +277,6 @@ export function WavetableSynthEditor({ transport,onDeviceEngineLoaded }: { trans
     </div>
 
     <header className="instrument-title"><h2>Wavetable</h2><span>Stereo · 8 voices + 2 tails · {preset.table?.name??(tableCrc(preset)?'Custom':'Basic Shapes')} table</span>{activity ? <SynthProgress progress={activity}/> : <p role="status" className={failed ? 'error' : ''}>{message}</p>}</header>
-    <PresetLibrary preset={preset} client={ready?client:undefined} disabled={busy}
-      onRename={name=>replacePreset(p=>({...p,name}))} onBusy={async busy=>{libraryBusy.current=busy;setLoading(busy);if(busy)await settle();}} onImportAsset={importPresetAsset}
-      onLoad={async p=>{if(!isWavetablePreset(p))throw Error('Select the matching engine.');await apply(p);}}
-      onDeviceLoad={async(engine,name)=>{
-        await settle();const value=await client!.readSound(name);
-        if(engine!==wavetableEngine){store(presetDraftKey(engine),value);onDeviceEngineLoaded?.((engine===3?2:engine) as 2|4|5);return;}
-        if(!isWavetablePreset(value))return;
-        retainedDraft.current=true;resetPreset(value);setDevice(await client!.status());
-      }}/>
     <div className="synth-activation" aria-label="Instrument playback">
       <div><strong>{!transport ? 'Connect Advanced to play' : !ready ? 'Synth connection unavailable' : playing ? 'Wavetable running' : device?.state === 'loading' ? 'Starting synth…' : device?.state === 'playing' ? 'Another engine is playing' : 'Synth stopped'}</strong>
         <small>{playing ? 'Edits apply on the next audio block.' : 'Start loads this sound and switches the board to Wavetable.'}</small></div>
