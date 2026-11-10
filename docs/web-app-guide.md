@@ -1061,7 +1061,7 @@ side rack.
 
 A device advertising Sampler support adds **Sampler** to the Advanced engine
 selector. Add mono/stereo PCM16/24/32 or float WAV files, including ordinary
-PCM/float WAVE_FORMAT_EXTENSIBLE files. Pitched fills pitch ranges from
+PCM/float WAVE_FORMAT_EXTENSIBLE files. Instrument fills pitch ranges from
 editable roots. Kit maps recordings to playing keys. Slices cuts the selected
 recording at detected hits (adjust **Sensitivity**) or into 2–64 equal parts,
 previewing the cut points. The slices are added as new one-shot recordings on
@@ -1071,7 +1071,7 @@ WAV import uses embedded root metadata first, then pitch detection, then a note
 written in the file name (for example `glock_G4`, C4 = 60). When detection and
 the file name disagree, the Sample view offers the file-name note; libraries
 number octaves differently, so check by ear. Set **Original pitch** as a note,
-octave and cents. Pitch warnings apply only to Pitched mapping.
+octave and cents. Pitch warnings apply only to Instrument mapping.
 
 The sound autosaves in this browser and returns after a reload, separately
 for Advanced and Classic. **New** starts an empty sound (Undo brings the

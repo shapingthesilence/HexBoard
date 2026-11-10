@@ -848,7 +848,7 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
               else if (mode !== "instrument" && !Object.keys(map).length) editMap(assignSequentially(patch.assets.length));
             }}
           >
-            {mode === "instrument" ? "Pitched" : mode === "kit" ? "Kit" : "Slices"}
+            {mode === "instrument" ? "Instrument" : mode === "kit" ? "Kit" : "Slices"}
           </button>
         ))}
         <span>
