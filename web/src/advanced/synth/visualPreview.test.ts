@@ -67,13 +67,13 @@ describe('shared engine live preview contracts', () => {
     const preset = physicalPresetFromUnknown(initialPreset), visual = new PhysicalPreview(preset, 0);
     visual.configure(preset, false, 32768); visual.advance(100);
     expect(visual.sources[8]).toBe(1);
-    expect(visual.parameters).toEqual(effectiveParameters(preset, visual.sources));
+    expect(visual.parameters.slice(0,33)).toEqual(effectiveParameters(preset, visual.sources));
     visual.configure(preset, true, 0); visual.setExpression(expression(10, true)); visual.advance(200);
     expect(visual.sources[1]).toBe(40000 / 65535);
-    expect(visual.parameters).toEqual(effectiveParameters(preset, visual.sources));
+    expect(visual.parameters.slice(0,33)).toEqual(effectiveParameters(preset, visual.sources));
     const next = {...preset, parameters: preset.parameters.map((v, i) => i === 5 ? 10000 : v)};
     visual.configure(next, true, 0); visual.advance(3600000);
-    expect(visual.parameters).toEqual(effectiveParameters(next, visual.sources));
+    expect(visual.parameters.slice(0,33)).toEqual(effectiveParameters(next, visual.sources));
   });
   it.each([4, 5] as const)('keeps engine %i native sources and modulation finite across long pauses', engine => {
     const preset = initialClassic(engine), visual = new ClassicPreview(preset.patch, 0);

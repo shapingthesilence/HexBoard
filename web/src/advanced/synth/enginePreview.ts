@@ -1,14 +1,17 @@
+import {PitchSpringPreview,springEffective} from './pitchSpring.ts';
 import {VisualPreview} from './visualPreview.ts';
 import {effectiveParameters, type PhysicalPreset} from './schema.ts';
 import {effectiveAdvanced, type AdvancedPatch} from './advancedSchema.ts';
 
 export class PhysicalPreview extends VisualPreview {
-  constructor(private preset: PhysicalPreset, origin = performance.now()) { super(preset.parameters.length, 1, origin); this.advance(origin); }
+  private spring=new PitchSpringPreview();
+  constructor(private preset: PhysicalPreset, origin = performance.now()) { super(preset.parameters.length+3, 1, origin); this.advance(origin); }
   configure(preset: PhysicalPreset, connected: boolean, pressure: number) { this.preset = preset; this.connected = connected; this.pressure = pressure; }
   protected sample(now: number) {
     this.sampleSources([this.preset.modulation.settings], now);
     const values = effectiveParameters(this.preset, this.sources);
     for (let i = 0; i < values.length; ++i) this.parameters[i] = values[i];
+    this.parameters[33]=springEffective(this.preset.modulation.settings,this.sources,0);this.parameters[34]=springEffective(this.preset.modulation.settings,this.sources,1);this.parameters[35]=this.spring.advance(this.preset.modulation.settings,this.sources,now,this.expression?.key);
   }
 }
 

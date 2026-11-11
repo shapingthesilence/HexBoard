@@ -1,3 +1,4 @@
+import {springDefaults,springSourceWords} from './pitchSpring.ts';
 import {type MonoConfig,validateMono} from "./mono.ts";
 import {modulationUsage} from "./modulationBudget.ts";
 import {targetDepths, targetSourceLimit} from "./targetModulation.ts";
@@ -102,16 +103,13 @@ export function modulationRouteCount(routes:number[],source:number){return route
 export function canAssignModulation(routes:number[],id:number,source:number){const copy=[...routes];copy[id*2+source]=copy[id*2+source]||1;return modulationUsage({routes:Array(99).fill(0),tiltRoutes:Array(66).fill(0),modulation:{routes:copy}}).fits;}
 export interface ModulationSources { settings:number[]; routes:number[] }
 // 18-word Modulators layout: words 6/16/17 are attack/decay/release curves (32768 straight).
-export const modulationSettingCount=18;
-export const defaultModulation = ():ModulationSources => ({settings:[14000,30000,42000,34000,0,0,32768,0,30000,0,65535,0,0,0,0,0,32768,32768],routes:Array(66).fill(0)});
+export const modulationSettingCount=40;
+export const defaultModulation = ():ModulationSources => ({settings:[14000,30000,42000,34000,0,0,32768,0,30000,0,65535,0,0,0,0,0,32768,32768,...springDefaults],routes:Array(66).fill(0)});
 export function modulationSeconds(v:number){return v===0?0:.001*Math.exp(9.903488*v/65535);}
 export function modulationRate(v:number){return .05*Math.exp(5.991465*v/65535);}
 export function validateModulation(value:unknown):ModulationSources {
-  const given=value as ModulationSources;
-  // Drafts and files saved before per-segment curves carry 16 words; their one
-  // curve becomes all three segment curves.
-  const m=given&&Array.isArray(given.settings)&&given.settings.length===16?{...given,settings:[...given.settings,given.settings[6],given.settings[6]]}:given;
-  if(!m||!Array.isArray(m.settings)||m.settings.length!==modulationSettingCount||m.settings.some(v=>!Number.isInteger(v)||v<0||v>65535)||[7,10,14].some(i=>m.settings[i]!==0&&m.settings[i]!==65535)||m.settings[9]%13107!==0||!Array.isArray(m.routes)||m.routes.length!==66||m.routes.some(v=>!Number.isInteger(v)||v<-65536||v>65536)||[8,21,27,31].some(id=>m.routes.slice(id*2,id*2+2).some(Boolean)))throw Error("Invalid envelope / LFO modulation.");
+  const m=value as ModulationSources;
+  if(!m||!Array.isArray(m.settings)||m.settings.length!==modulationSettingCount||!springSourceWords.includes(m.settings[18])||m.settings.some(v=>!Number.isInteger(v)||v<0||v>65535)||[7,10,14].some(i=>m.settings[i]!==0&&m.settings[i]!==65535)||m.settings[9]%13107!==0||!Array.isArray(m.routes)||m.routes.length!==66||m.routes.some(v=>!Number.isInteger(v)||v<-65536||v>65536)||[8,21,27,31].some(id=>m.routes.slice(id*2,id*2+2).some(Boolean)))throw Error("Invalid envelope / LFO modulation.");
   if(!modulationUsage({routes:Array(99).fill(0),tiltRoutes:Array(66).fill(0),modulation:m}).fits)throw Error("Modulation capacity full. Remove a destination before adding another.");
   return {settings:[...m.settings],routes:[...m.routes]};
 }
@@ -126,9 +124,9 @@ export function validateSample(value:unknown):SampleExciter{
  if(![0,1,2].includes(loop.mode)||![loop.start,loop.end,loop.crossfade].every(Number.isInteger)||loop.start<0||loop.end>s.frames.length||loop.crossfade<0||loop.crossfade>3200||loop.crossfade===1||(loop.mode===0?(loop.start!==0||loop.end!==0||loop.crossfade!==0):(loop.end-loop.start<160||loop.crossfade*2>loop.end-loop.start)))throw Error("Use a loop of at least 10 ms, with a crossfade up to half its length (maximum 200 ms).");
  return {enabled:s.enabled,gain:s.gain,direct,loop:{...loop},name:s.name.slice(0,80),frames:[...s.frames]};
 }
-export interface PhysicalPreset { mono?:MonoConfig; voiceBudget?:VoiceBudgetProfile; controllerRoutes?:number[]; format: "hexboard.physical.v22"; modulation:ModulationSources; tiltRoutes: number[]; effects: FxRack; sample:SampleExciter; name: string; parameters: number[]; routes: number[]; velocityEngine: PhysicalVelocityEngine }
+export interface PhysicalPreset { mono?:MonoConfig; voiceBudget?:VoiceBudgetProfile; controllerRoutes?:number[]; format: "hexboard.physical.v23"; modulation:ModulationSources; tiltRoutes: number[]; effects: FxRack; sample:SampleExciter; name: string; parameters: number[]; routes: number[]; velocityEngine: PhysicalVelocityEngine }
 export const initialPreset: PhysicalPreset = {
-  mono:{flags:0,glideMs:0},format: "hexboard.physical.v22", modulation:defaultModulation(), tiltRoutes: Array(66).fill(0), controllerRoutes:Array(66).fill(0), effects: defaultFx(), sample:defaultSample(), name: "Pressure Sweep", velocityEngine: 0,
+  mono:{flags:0,glideMs:0},format: "hexboard.physical.v23", modulation:defaultModulation(), tiltRoutes: Array(66).fill(0), controllerRoutes:Array(66).fill(0), effects: defaultFx(), sample:defaultSample(), name: "Pressure Sweep", velocityEngine: 0,
   parameters: [56000, 9000, 36000, 30000, 24000, 12000, 14000, 43690, 0, 65535, 30000, 18000, 10000, 18000, 50000, 32768, 32768, 0, 32768, 22000, 16000],
   routes: [0, 0, 0, 0, 0, 0, 14000, 0, 0, 0, 0, -26000, 0, 0, 0, 0, 42000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -50000, 0, ...Array(12).fill(0), 0, -20000, 0, 0, 0, 0, ...Array(15).fill(0)]
 };
@@ -177,15 +175,15 @@ export function physicalPresetFromUnknown(value: unknown): PhysicalPreset {
   const valid = (v: unknown, count: number, low: number, high: number): v is number[] =>
     Array.isArray(v) && v.length === count && v.every(n => Number.isInteger(n) && n >= low && n <= high);
   if (typeof p.name !== "string" || !p.name.trim() || p.name.length > 80) throw Error("Give the preset a name.");
-  if (p.format !== "hexboard.physical.v22")
-    throw Error("This file is not a supported physical string preset. Use JSON v22.");
+  if (p.format !== "hexboard.physical.v23")
+    throw Error("This file is not a supported physical string preset. Use JSON v23.");
   const discrete=[7,8,21,27,31];
   if (!valid(p.tiltRoutes,66,-65536,65536) || discrete.some(id=>(p.tiltRoutes as number[]).slice(id*2,id*2+2).some(Boolean)))throw Error("Invalid tilt modulation routes.");
   if (!valid(p.parameters,33,0,65535) || !valid(p.routes,99,-65536,65536) || discrete.some(id=>(p.routes as number[]).slice(id*3,id*3+3).some(Boolean)) || !velocityEngines.some(e => e.id === p.velocityEngine))
     throw Error("This file is not a supported physical string preset.");
   if(!Array.isArray((p.effects as FxRack)?.steps)||((p.effects as FxRack).values[2][3]>127||(p.effects as FxRack).values[0][2]>4))throw Error("Invalid volume step configuration.");
   if(p.controllerRoutes!==undefined&&(!valid(p.controllerRoutes,66,-65536,65536)||[8,21,27,31].some(id=>(p.controllerRoutes as number[]).slice(id*2,id*2+2).some(Boolean))))throw Error("Invalid controller modulation routes.");
-  const result:PhysicalPreset={mono:validateMono(p.mono),controllerRoutes:[...((p.controllerRoutes as number[]|undefined)??Array(66).fill(0))],format:"hexboard.physical.v22",sample:validateSample({...validateSample(p.sample),direct:p.parameters[32]}),modulation:validateModulation(p.modulation),tiltRoutes:[...(p.tiltRoutes as number[])],effects:validateFx(p.effects),name:p.name.trim(),parameters:[...p.parameters],routes:[...p.routes],velocityEngine:p.velocityEngine as PhysicalVelocityEngine};
+  const result:PhysicalPreset={mono:validateMono(p.mono),controllerRoutes:[...((p.controllerRoutes as number[]|undefined)??Array(66).fill(0))],format:"hexboard.physical.v23",sample:validateSample({...validateSample(p.sample),direct:p.parameters[32]}),modulation:validateModulation(p.modulation),tiltRoutes:[...(p.tiltRoutes as number[])],effects:validateFx(p.effects),name:p.name.trim(),parameters:[...p.parameters],routes:[...p.routes],velocityEngine:p.velocityEngine as PhysicalVelocityEngine};
   if(result.parameters.some((_,id)=>targetDepths(result,id).filter(Boolean).length>targetSourceLimit))throw Error("Each target allows four modulation sources. Remove an assignment before adding another.");
   if(!modulationUsage(result).fits||modulationUsage(result).connections+(result.effects.routes??[]).filter(Boolean).length>32)throw Error("Modulation capacity full. Remove a destination before adding another.");
   const voiceBudget=validVoiceBudget(result,p.voiceBudget);return voiceBudget?{...result,voiceBudget}:result;
@@ -202,3 +200,5 @@ export function encodeLogPitchHz(hz: number): number[] {
   const biased = Math.round(Math.log2(hz) * 2 ** 24) + 2 ** 31;
   return Array.from({ length: 5 }, (_, i) => Math.floor(biased / 2 ** (7 * (4 - i))) % 128);
 }
+
+factoryPhysicalPresets.push({...initialPreset,name:'Elastic Pressure',modulation:{...defaultModulation(),settings:defaultModulation().settings.map((v,i)=>i===19?40960:i===21?18000:v)}});

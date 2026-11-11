@@ -1,3 +1,4 @@
+import {springBase,springNames,springRouteWord,springWord,springSourceNames,springSourceWords} from './pitchSpring.ts';
 import {isPhysicalPreset,presetDraftKey} from './presetLibrary.ts';
 import {PresetLibrary} from './PresetLibrary.tsx';
 import {useAutosave} from '../../editor/useAutosave.ts';
@@ -201,12 +202,14 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
     if(fxWaiting)setEffects(effects);else queue("fx",()=>client!.effects(effects));
   };
   const setParameter = (id: number, value: number) => {
+    if(id>=33){setModSetting(id===33?19:20,value);return;}
     if(!admit(parameterPatch(preset,id,value)))return;
     retainedDraft.current = true;
     setPreset(p => ({ ...p, sample:id===32?{...p.sample,direct:value}:p.sample, parameters: p.parameters.map((v, i) => i === id ? value : v) }));
     queue(`p${id}`, () => client!.parameter(id, value));
   };
   const setRoute = (id: number, which: number, value: number) => {
+    if(id>=33){if(canAssignTarget(preset,id,which)&&dspRouteAllows(preset,id,which,value))setModSetting(springRouteWord(id,which),springWord(value));return;}
     if(value!==0 && !canAssignTarget(preset,id,which))return;
     if(value!==0&&!dspRouteAllows(preset,id,which,value))return;
     retainedDraft.current = true;
@@ -217,6 +220,7 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
   };
 
   const setModSetting=(id:number,value:number)=>{
+    const next={...preset,modulation:{...preset.modulation,settings:preset.modulation.settings.map((v,i)=>i===id?value:v)}};if(!admit(next))return;
     retainedDraft.current=true;setPreset(p=>({...p,modulation:{...p.modulation,settings:p.modulation.settings.map((v,i)=>i===id?value:v)}}));
     queue(`ms${id}`,()=>client!.modSetting(id,value));
   };
@@ -277,19 +281,20 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
   const {drag,bind:dragBind,dragged}=useSourceDrag(dropRoute);
   const highlight=drag?.source??budgetSource;
   const control = (id: number) => {
-    const original = physicalParameters[id],p=bowMode&&id===28?{...original,name:"Bow texture"}:original;
+    const base=id>=33?springBase(preset,id):preset.parameters[id];
+    const original = id>=33?springNames[id-33]:physicalParameters[id],p=bowMode&&id===28?{...original,name:"Bow texture"}:original;
     const {sampleGate,unavailable,modulatable,targetFull,full}=targetState(id,source);
     const routes = physicalSources.map((label, i) => ({ label:String(label), i, bipolar:i===3||i===4||i===7||(i===6&&!preset.modulation.settings[14]), depth:routeDepth(preset,id,i) })).filter(r => r.depth !== 0);
     const routeFull=tool==="modulate"&&full;
     const modulating = tool === "modulate" && modulatable;
-    const value = modulating ? routeDepth(preset,id,source) : preset.parameters[id];
+    const value = modulating ? routeDepth(preset,id,source) : base;
     const dropState=drag?(()=>{const t=targetState(id,drag.source);return t.modulatable&&!t.full?"ok":"blocked";})():undefined;
     const alternate=tool==="value"&&modulatable&&!full?{value:routeDepth(preset,id,source),onChange:(d:number)=>setRoute(id,source,d)}:undefined;
     const menu=(i:number,x:number,y:number)=>setRouteMenu({target:id,source:i,x,y});
     return <div className="physical-control" key={id} data-mod-target={id} data-drop={dropState} data-drop-hover={drag?.target===id||undefined} data-source-route={highlight===undefined?undefined:routes.some(r=>r.i===highlight)?"yes":"no"} data-unavailable={unavailable||undefined} data-modulatable={modulatable} data-route-full={routeFull||undefined} title={routeFull?(targetFull?"4 sources on this target · remove one to add another":"DSP budget full · reduce another feature"):unavailable?sampleGate?"DSP budget full · reduce another feature":"Available with Strike":undefined} onPointerEnter={()=>{if(modulatable){setBudgetTarget(id);setBudgetSource(undefined);}}} onFocusCapture={()=>{if(modulatable){setBudgetFocus(id);setBudgetSource(undefined);}}} onBlurCapture={()=>setBudgetFocus(undefined)} onPointerMove={e=>{if(routeFull)setBlockedTip({x:e.clientX+16,y:e.clientY+18});}} onPointerLeave={()=>{setBlockedTip(undefined);setBudgetTarget(undefined);}}>
       <strong>{p.name}</strong>
       <PreviewValues ids={[id]}>{([effective]) => <><div className="knob-wrap">
-        {id===32?<input key={modulating?`route-${source}`:"value"} className="sample-direct-slider" type="range" aria-label={modulating?`${physicalSources[source]} to ${p.name}`:p.name} min={modulating?-65536:0} max={modulating?65536:65535} step="1" value={value} disabled={busy||unavailable||routeFull} onChange={e=>modulating?setRoute(id,source,Number(e.target.value)):setParameter(id,Number(e.target.value))} onPointerUp={()=>{if(modulating&&!locked)setTool("value");}} onKeyUp={()=>{if(modulating&&!locked)setTool("value");}}/>:<Knob key={modulating?`route-${source}`:"value"} label={modulating ? `${physicalSources[source]} to ${id===7?"Voice level":p.name}` : p.name} value={value} min={modulating ? -65536 : 0} max={modulating ? 65536 : 65535} disabled={busy || unavailable || routeFull} baseValue={preset.parameters[id]} effectiveValue={effective} routes={routes} onRouteDepth={(i,d)=>setRoute(id,i,d)} onRouteMenu={menu} alternate={alternate}
+        {id===32?<input key={modulating?`route-${source}`:"value"} className="sample-direct-slider" type="range" aria-label={modulating?`${physicalSources[source]} to ${p.name}`:p.name} min={modulating?-65536:0} max={modulating?65536:65535} step="1" value={value} disabled={busy||unavailable||routeFull} onChange={e=>modulating?setRoute(id,source,Number(e.target.value)):setParameter(id,Number(e.target.value))} onPointerUp={()=>{if(modulating&&!locked)setTool("value");}} onKeyUp={()=>{if(modulating&&!locked)setTool("value");}}/>:<Knob key={modulating?`route-${source}`:"value"} label={modulating ? `${physicalSources[source]} to ${id===7?"Voice level":p.name}` : p.name} value={value} min={modulating ? -65536 : 0} max={modulating ? 65536 : 65535} disabled={busy || unavailable || routeFull} baseValue={base} effectiveValue={effective} routes={routes} onRouteDepth={(i,d)=>setRoute(id,i,d)} onRouteMenu={menu} alternate={alternate}
           onChange={v => modulating ? setRoute(id, source, Math.round(v)) : setParameter(id, Math.round(v))} onRelease={() => { if (modulating&&!locked) setTool("value"); }} />}
       </div>
       <output aria-live="off" title={`${"strike" in p ? "Next strike" : "Live"}: ${p.describe(Math.round(effective*65535))}`}>{modulating ? `${Math.round(value/65536*100)}%` : p.describe(value)}</output></>}</PreviewValues>
@@ -334,7 +339,7 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
 
 
     {drag&&<div className="mod-drag-ghost" data-blocked={drag.target!==undefined&&(()=>{const t=targetState(drag.target,drag.source);return !t.modulatable||t.full;})()||undefined} style={{left:drag.x+14,top:drag.y+14,borderColor:sourceColors[drag.source]}}><span className="source-dot" style={{background:sourceColors[drag.source]}}/>{sourceShortNames[drag.source]}</div>}
-    {routeMenu&&routeDepth(preset,routeMenu.target,routeMenu.source)!==0&&<RouteMenu title={`${physicalSources[routeMenu.source]} → ${physicalParameters[routeMenu.target].name}`} color={sourceColors[routeMenu.source]} depth={routeDepth(preset,routeMenu.target,routeMenu.source)} x={routeMenu.x} y={routeMenu.y} onDepth={d=>setRoute(routeMenu.target,routeMenu.source,d)} onClose={()=>setRouteMenu(undefined)}/>}
+    {routeMenu&&routeDepth(preset,routeMenu.target,routeMenu.source)!==0&&<RouteMenu title={`${physicalSources[routeMenu.source]} → ${(physicalParameters[routeMenu.target]??springNames[routeMenu.target-33]).name}`} color={sourceColors[routeMenu.source]} depth={routeDepth(preset,routeMenu.target,routeMenu.source)} x={routeMenu.x} y={routeMenu.y} onDepth={d=>setRoute(routeMenu.target,routeMenu.source,d)} onClose={()=>setRouteMenu(undefined)}/>}
     {blockedTip && tool==="modulate"&&<div className="mod-limit-tooltip" role="tooltip" style={{left:Math.min(blockedTip.x,window.innerWidth-220),top:blockedTip.y}}>DSP budget full · reduce another feature</div>}
     <header className="instrument-title"><h2>Physical Strings</h2><span>Stereo</span>{activity?<SynthProgress progress={activity}/>:<p role="status" className={failed ? "error" : ""}>{message}</p>}</header>
     <PresetLibrary preset={namedPreset} client={ready?client:undefined} disabled={busy} onRename={value=>replacePreset(p=>({...p,name:value}))} onBusy={v=>{if(v){edits.current.clear();clearTimeout(fxTimer.current);setFxWaiting(false);}setLoading(v);}} onLoad={async p=>{if(!isPhysicalPreset(p))throw Error('Select the matching engine.');await apply(p);}} onDeviceLoad={async(engine,name)=>{edits.current.clear();clearTimeout(fxTimer.current);retainedDraft.current=true;const value=await client!.readSound(name);if(engine!==2&&engine!==3){writeStoredText(localStorage, presetDraftKey(engine),JSON.stringify(value));onDeviceEngineLoaded?.(engine as 4|5|7);return;}if(!isPhysicalPreset(value))return;setDevice(await client!.status());resetPreset(value);}}/>
@@ -423,6 +428,7 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
 
     </div>
     <div className="monitor-grid">
+    <fieldset className="pitch-spring-panel" disabled={busy}><legend>Pitch Spring</legend><div className="physical-grid mini-controls"><label className="physical-control">Source<select aria-label="Pitch spring source" value={preset.modulation.settings[18]} onChange={e=>setModSetting(18,+e.target.value)}>{springSourceNames.map((name,i)=><option key={name} value={springSourceWords[i]}>{name}</option>)}</select></label>{control(33)}{control(34)}<div className="physical-control"><label>Warble</label><Knob label="Pressure warble" value={preset.modulation.settings[21]} disabled={busy||tool==="modulate"} onChange={v=>setModSetting(21,Math.round(v))}/><output>{Math.round(preset.modulation.settings[21]/65535*100)}%</output></div></div><PreviewValues ids={[35]}>{([cents])=><div className="pitch-spring-meter" title="Approximation for the displayed note" role="meter" aria-label="Pitch spring gesture preview" aria-valuemin={-280} aria-valuemax={280} aria-valuenow={Math.round(cents)}><span style={{left:`${50+Math.max(-1,Math.min(1,cents/280))*48}%`}}/><output>{cents>=0?'+':''}{cents.toFixed(1)} ct</output></div>}</PreviewValues></fieldset>
     <fieldset className="expression-panel" disabled={busy}><legend>Expression</legend>
       <PreviewExpression>{live => <>{client&&ready&&<p className="panel-note">Tilt X ± {((live?.tiltX??0)*45).toFixed(1)}° · Y {((live?.tiltY??0)*45).toFixed(1)}° · {live?.motionValid?"Live":live?.motionDetected?"Waiting for valid gravity":"Connect for tilt"} {client&&ready&&<button disabled={busy||!live?.motionValid} onClick={()=>void operation(async()=>{await client.zeroMotion();return client.read();})}>Set tilt neutral</button>}</p>}
       <p className="panel-note">{client && ready ? live?.key === null || live?.key === undefined ? "Play a key to see its pressure." : `Key ${live.key} · ${live.held ? "held" : "released"}` : "Connect to see live key expression."}</p></>}</PreviewExpression>

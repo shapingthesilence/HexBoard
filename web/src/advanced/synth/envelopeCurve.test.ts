@@ -35,10 +35,11 @@ describe('shared envelope curves', () => {
 });
 
 describe('18-word envelope banks', () => {
-  it('upgrades 16-word Physical drafts with their single curve', () => {
-    const m = defaultModulation(); expect(m.settings).toHaveLength(18);
+  it('keeps physical gesture settings separate from the eighteen envelope words', () => {
+    const m = defaultModulation(); expect(m.settings).toHaveLength(40);
     const old = {settings: m.settings.slice(0, 16).map((v, i) => i === 6 ? 50000 : v), routes: m.routes};
-    expect(validateModulation(old).settings.slice(16)).toEqual([50000, 50000]);
+    expect(() => validateModulation(old)).toThrow();
+    expect(validateModulation(m).settings.slice(18)).toEqual([0,32768,23200,0,...Array(18).fill(32768)]);
   });
   it('round-trips wavetable curves and upgrades v3 sounds', () => {
     const patch = initialWavetable(); patch.parameters[P.AmpDecayCurve] = 9000; patch.mod[1][17] = 60000;

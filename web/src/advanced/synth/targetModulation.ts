@@ -1,7 +1,9 @@
+import {routeDepth} from './modulationBudget.ts';
 import type {PhysicalPreset} from './schema.ts';
 
 export const targetSourceLimit = 4;
 export function targetDepths(preset: PhysicalPreset, id: number): number[] {
+  if(id>=33)return Array.from({length:9},(_,s)=>routeDepth(preset,id,s));
   return [...preset.routes.slice(id * 3, id * 3 + 3),
     ...preset.tiltRoutes.slice(id * 2, id * 2 + 2),
     ...preset.modulation.routes.slice(id * 2, id * 2 + 2),

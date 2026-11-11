@@ -54,7 +54,7 @@ export function decodePhysicalState(payload: number[]): PhysicalState {
   const parameters = Array.from({ length: 33 }, (_, i) => decodeU21(payload.slice(6 + i * 3, 9 + i * 3)));
   const routes = Array.from({ length: 99 }, (_, i) => decodeU21(payload.slice(105 + i * 3, 108 + i * 3)) - 65536);
   return { state: (["stopped", "playing", "loading"] as const)[payload[1]], instrument: payload[2], bend,
-    preset: physicalPresetFromUnknown({ format: "hexboard.physical.v22",sample:defaultSample(),modulation:defaultModulation(),effects:defaultFx(),tiltRoutes:Array(66).fill(0), name: "Device RAM", parameters, routes, velocityEngine: payload[402] }) };
+    preset: physicalPresetFromUnknown({ format: "hexboard.physical.v23",sample:defaultSample(),modulation:defaultModulation(),effects:defaultFx(),tiltRoutes:Array(66).fill(0), name: "Device RAM", parameters, routes, velocityEngine: payload[402] }) };
 }
 export interface ControllerState {play:boolean;pedal:number;invert:boolean;minimum:number;maximum:number;tip:number;ring:number;valid:boolean;sustain:boolean;armed:boolean;expression:number;modulation:number}
 export interface MotionState {detected:boolean;valid:boolean;tiltX:number;tiltY:number;tiltRoutes:number[]}
@@ -75,7 +75,7 @@ export function decodeFx(payload:number[]): FxRack {
   return validateFx({room:true,steps:Array.from({length:16},(_,i)=>decodeU21(payload.slice(fxStepsAt+i*3,fxStepsAt+3+i*3))),order:padded.filter(Boolean),routes:Array.from({length:fxRouteCount},(_,i)=>decodeU21(payload.slice(fxRoutesAt+i*3,fxRoutesAt+3+i*3))-65536),values:Array.from({length:7},(_,i)=>Array.from({length:4},(_,j)=>decodeU21(payload.slice(fxValuesAt+(i*4+j)*3,fxValuesAt+3+(i*4+j)*3))))});
 }
 export function decodeModulation(payload:number[]):ModulationSources {
-  const n=modulationSettingCount;if(payload.length!==1+3*(n+66)||payload[0]!==17)throw Error("Update Advanced firmware for envelope curves.");
+  const n=modulationSettingCount;if(payload.length!==1+3*(n+66)||payload[0]!==17)throw Error("Update Advanced firmware for Pitch Spring.");
   return validateModulation({settings:Array.from({length:n},(_,i)=>decodeU21(payload.slice(1+i*3,4+i*3))),routes:Array.from({length:66},(_,i)=>decodeU21(payload.slice(1+3*n+i*3,4+3*n+i*3))-65536)});
 }
 export function sampleChecksum(frames:number[]){let crc=0xffffffff;for(const v of frames)for(const byte of [v&255,(v>>8)&255]){crc^=byte;for(let i=0;i<8;i++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}return (crc^0xffffffff)>>>0;}

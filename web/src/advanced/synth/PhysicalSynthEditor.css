@@ -465,3 +465,7 @@
 @media (prefers-reduced-motion: reduce) { .physical-editor .physical-control[data-mod-target] { transition:none; } }
 /* Shared curved envelope inside the source editor follows the source color. */
 .mod-source-editor .curved-envelope { --envelope-color: var(--modulation-color, var(--brand)); margin: 2px 0 6px; }
+
+.pitch-spring-panel{grid-column:1/-1}.pitch-spring-panel .mini-controls{grid-template-columns:repeat(4,minmax(0,1fr));align-items:center}.pitch-spring-meter{position:relative;height:1.7rem;border-radius:6px;background:linear-gradient(90deg,transparent 49.6%,var(--text-soft) 50%,transparent 50.4%),var(--surface-muted);border:1px solid var(--border);margin-top:.35rem}.pitch-spring-meter>span{position:absolute;top:.35rem;width:.4rem;height:.4rem;border-radius:50%;background:var(--brand);transform:translateX(-50%)}.pitch-spring-meter output{position:absolute;right:.4rem;bottom:0;font-size:.7rem;color:var(--text-soft)}
+
+@media(max-width:520px){.pitch-spring-panel .mini-controls{grid-template-columns:repeat(2,minmax(0,1fr));}}
