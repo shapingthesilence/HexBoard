@@ -1,3 +1,4 @@
+import {AssetStorageSelector} from "./AssetStorageSelector.tsx";
 import {MonoControls} from './MonoControls.tsx';
 import {PresetLibrary} from './PresetLibrary.tsx';
 import {isWavetablePreset,presetDraftKey} from './presetLibrary.ts';
@@ -268,6 +269,7 @@ export function WavetableSynthEditor({ transport,onDeviceEngineLoaded }: { trans
     </div>
 
     <header className="instrument-title"><h2>Wavetable</h2><span>Stereo · 8 voices + 2 tails · {preset.table?.name??(tableCrc(preset)?'Custom':'Basic Shapes')} table</span>{activity ? <SynthProgress progress={activity}/> : <p role="status" className={failed ? 'error' : ''}>{message}</p>}</header>
+    <AssetStorageSelector client={client??undefined} disabled={busy}/>
     <PresetLibrary preset={preset} client={ready?client:undefined} disabled={busy}
       onRename={name=>replacePreset(p=>({...p,name}))} onBusy={async busy=>{libraryBusy.current=busy;setLoading(busy);if(busy)await settle();}} onImportAsset={importPresetAsset}
       onLoad={async p=>{if(!isWavetablePreset(p))throw Error('Select the matching engine.');await apply(p);}}

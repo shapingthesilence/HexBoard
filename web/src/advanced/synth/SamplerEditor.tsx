@@ -1,3 +1,4 @@
+import {AssetStorageSelector} from "./AssetStorageSelector.tsx";
 import {MotionEditor} from "./sampler/MotionEditor.tsx";
 import {useAutosave} from '../../editor/useAutosave.ts';
 import {motionSettings} from "./sampler/motion.mjs";
@@ -573,10 +574,7 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
         return;
       }
       if (usb) {
-        if (result.bytes.length > 8 * 1048576)
-          throw Error(
-            "Export this instrument and copy it to sampler/instruments on the SD card. USB is intended for files under 8 MiB.",
-          );
+
         if (!client.current) throw Error("Connect HexBoard first.");
         const targetName = samplerFilename(patch.name ?? "Instrument");
         const folderList = await client.current.samplerLibrary(true, 32),
@@ -601,7 +599,7 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
           exportFolder,
           targetName,
           (n, total) =>
-            setBusy(`Copying to SD · ${Math.round((n / total) * 100)}%`),
+            setBusy(`Copying audio · ${Math.round((n / total) * 100)}%`),
         );
         setPlaying(false);
         const refreshed = await client.current.samplerLibrary(true, 32);
@@ -1373,19 +1371,17 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
               disabled={!transport || !patch.assets.length || !!busy}
               onClick={() => void exportPatch(true)}
             >
-              Send to HexBoard SD over USB
+              Send to HexBoard over USB
             </button>
           </div>
           {!transport&&<p className="panel-note">Connect your HexBoard in Sync to send over USB.</p>}
           <p className="panel-note">
-            {prepared ? `${bytes(prepared.bytes.length)} prepared. ` : ""}USB
-            works for instruments under 8 MiB. For larger ones, copy the HBS
-            file into a folder under sampler/instruments on the SD card. Each
-            folder holds up to 32 instruments.
+            {prepared ? `${bytes(prepared.bytes.length)} prepared. ` : ""}USB supports large SD instruments with a bounded transfer buffer. A card reader is another option for large files. Each folder holds up to 32 instruments.
           </p>
         </fieldset>}
         {!classic && <fieldset>
           <legend>HexBoard library</legend>
+          <AssetStorageSelector client={client.current} disabled={!!busy} onChange={()=>{setFolders([]);setInstruments([]);setLoadedSource(-1);}}/>
           <div className="sampler-fields">
             <button
               disabled={!transport || !!busy}

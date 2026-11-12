@@ -29,7 +29,7 @@ class Transport implements MidiTransport {
     if(frame.payload[1]===63){const reply=[17,2,16,0,1,0,1,0,0,0,0,1,0,0,0,0,1,0,...(frame.payload[2]?this.samplerSource:[])];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x47,frame.transactionId,reply)))));return;}
     if(frame.payload[1]===64){const reply=[17,...frame.payload.slice(2,4),4,...Array(288).fill(0)];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x48,frame.transactionId,reply)))));return;}
     if(frame.payload[1]===69){const bytes=frame.payload[2]?frame.payload.slice(3):Array(256).fill(0);queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x4a,frame.transactionId,[17,...bytes])))));return;}
-    if(frame.payload[1]>=65&&frame.payload[1]<=67){const op=frame.payload[1],n=(p:number[])=>p.reduce((x,y)=>x*128+y,0),encoded=(x:number)=>Array.from({length:5},(_,i)=>Math.floor(x/128**(4-i))%128);if(op===65){const at=5+frame.payload[3]+frame.payload[4];this.samplerBytes=n(frame.payload.slice(at,at+5));this.samplerReceived=0;}if(op===66)this.samplerReceived=n(frame.payload.slice(2,7))+n(frame.payload.slice(7,9));const received=op===67?this.samplerBytes:this.samplerReceived+(this.badSamplerOffset?1:0);queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x49,frame.transactionId,[17,...encoded(received)])))));return;}
+    if(frame.payload[1]>=65&&frame.payload[1]<=67){const op=frame.payload[1],n=(p:number[])=>p.reduce((x,y)=>x*128+y,0),encoded=(x:number)=>Array.from({length:5},(_,i)=>Math.floor(x/128**(4-i))%128);if(op===65){const at=5+frame.payload[3]+frame.payload[4];this.samplerBytes=n(frame.payload.slice(at,at+5));this.samplerReceived=0;}if(op===66)this.samplerReceived=frame.payload[2]===16?n(frame.payload.slice(3,8))+n(frame.payload.slice(8,10)):n(frame.payload.slice(2,7))+n(frame.payload.slice(7,9));const received=op===67?this.samplerBytes:this.samplerReceived+(this.badSamplerOffset?1:0);queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x49,frame.transactionId,[17,...encoded(received)])))));return;}
     if(frame.payload[1]===28){queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x35,frame.transactionId,[17,this.state,...payload().slice(2)])))));return;}
     if(frame.payload[1]>=46&&frame.payload[1]<=51){queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x35,frame.transactionId,[17,this.state,...payload().slice(2)])))));return;}
     if(frame.payload[1]===52){const values=frame.payload.length===11?frame.payload.slice(2):[1,2,0,...encodeU21(0),...encodeU21(4095)];const reply=[17,...values,...encodeU21(1000),...encodeU21(2000),1,0,1,...encodeU21(32768),...encodeU21(0)];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x40,frame.transactionId,reply)))));return;}
@@ -56,19 +56,19 @@ class Transport implements MidiTransport {
   subscribe(listener: MidiMessageListener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 }
 describe("Advanced physical editor", () => {
-  it('starts a named sampler and reads its room settings on the live session',async()=>{
+  it.each([1025,8194,9217])('starts named sampler %s and reads its room settings on the live session',async id=>{
     const t=new Transport(),c=new PhysicalSynthClient(t);
     try{
-      expect((await c.start(6,1025)).instrument).toBe(6);
+      expect((await c.start(6,id)).instrument).toBe(6);
       expect(await c.playingSamplerSettings()).toHaveLength(128);
       expect(t.sent.map(decodePresetSyncFrame).map(f=>f.payload)).toEqual([
-        [17,1,6,...encodeU14(1025)],[17,63,1],[17,69,0],
+        [17,1,6,...encodeU14(id)],[17,63,1],[17,69,0],
       ]);
     }finally{c.close();}
   });
   it('refreshes SD names without stopping the active synth',async()=>{const t=new Transport(),c=new PhysicalSynthClient(t);try{expect(await c.samplerLibrary(true,32)).toEqual([]);const frames=t.sent.map(decodePresetSyncFrame);expect(frames).toHaveLength(8);expect(frames.every(f=>f.payload[1]===64&&f.payload[4]===1)).toBe(true);expect(t.state).toBe(1);}finally{c.close();}});
   it('reads and writes a settings header while stopping only the music lease',async()=>{const t=new Transport(),c=new PhysicalSynthClient(t);try{const header=await c.samplerSettings();expect(header).toHaveLength(128);header[62]=135;const readback=await c.samplerSettings(header);expect(readback[62]).toBe(135);expect(t.sent.map(decodePresetSyncFrame).filter(f=>f.payload[1]===69).map(f=>f.payload[2])).toEqual([0,1]);expect(t.sent.map(decodePresetSyncFrame).some(f=>f.payload[1]===2)).toBe(true);}finally{c.close();}});
-  it('copies named sampler instruments with verified offsets and safe human filenames',async()=>{const t=new Transport(),c=new PhysicalSynthClient(t);try{await c.uploadSamplerNamed(new Uint8Array(512),'My instruments','Warm piano.hbs');const frames=t.sent.map(decodePresetSyncFrame);const begin=frames.find(f=>f.payload[1]===65)!.payload;expect(begin.slice(5,5+14)).toEqual(Array.from('My instruments',x=>x.charCodeAt(0)));expect(frames.filter(f=>f.payload[1]===66)).toHaveLength(3);expect(frames.at(-1)!.payload[1]).toBe(67);await expect(c.uploadSamplerNamed(new Uint8Array(512),'../bad','Test.hbs')).rejects.toThrow(/plain/);t.badSamplerOffset=true;await expect(c.uploadSamplerNamed(new Uint8Array(512),'My instruments','Other.hbs')).rejects.toThrow(/offset/);}finally{c.close();}});
+  it('copies named sampler instruments with verified offsets and safe human filenames',async()=>{const t=new Transport(),c=new PhysicalSynthClient(t);try{await c.uploadSamplerNamed(new Uint8Array(512),'My instruments','Warm piano.hbs');const frames=t.sent.map(decodePresetSyncFrame);const begin=frames.find(f=>f.payload[1]===65)!.payload;expect(begin.slice(5,5+14)).toEqual(Array.from('My instruments',x=>x.charCodeAt(0)));const chunks=frames.filter(f=>f.payload[1]===66);let offset=0;for(const f of chunks){const p=f.payload;expect(p[2]).toBe(16);expect(p.slice(3,8).reduce((a,b)=>a*128+b,0)).toBe(offset);const n=p[8]*128+p[9];expect(n).toBeGreaterThan(0);expect(n).toBeLessThanOrEqual(256);expect(p).toHaveLength(10+n+Math.ceil(n/7));expect(p.slice(10).every(v=>v===0)).toBe(true);offset+=n;}expect(offset).toBe(512);expect(frames.at(-1)!.payload[1]).toBe(67);await expect(c.uploadSamplerNamed(new Uint8Array(512),'../bad','Test.hbs')).rejects.toThrow(/plain/);t.badSamplerOffset=true;await expect(c.uploadSamplerNamed(new Uint8Array(512),'My instruments','Other.hbs')).rejects.toThrow(/offset/);}finally{c.close();}});
   it("stops before selecting the SD piano and decodes sampler acknowledgements",async()=>{
     const t=new Transport(),c=new PhysicalSynthClient(t);try{
       await c.samplerSource('piano');await c.samplerParameter(4,18000);await c.samplerSource('patch');
@@ -78,9 +78,9 @@ describe("Advanced physical editor", () => {
   });
   it("uses one source-ID encoding for working, piano and stored instruments",async()=>{
     const t=new Transport(),c=new PhysicalSynthClient(t);
-    try{for(const id of [0,1,2,127,128,1025])await c.samplerInstrument(id);
-      expect(t.sent.map(decodePresetSyncFrame).filter(f=>f.payload[1]===51).map(f=>f.payload.slice(2))).toEqual([0,1,2,127,128,1025].map(encodeU14));
-      await expect(c.samplerInstrument(1026)).rejects.toThrow();
+    try{for(const id of [0,1,2,127,128,1025,8192,8194,9217])await c.samplerInstrument(id);
+      expect(t.sent.map(decodePresetSyncFrame).filter(f=>f.payload[1]===51).map(f=>f.payload.slice(2))).toEqual([0,1,2,127,128,1025,8192,8194,9217].map(encodeU14));
+      for(const id of [1026,8193,9218,16384]){await expect(c.samplerInstrument(id)).rejects.toThrow();await expect(c.start(6,id)).rejects.toThrow();}
     }finally{c.close();}
   });
   it("rejects obsolete sample metadata instead of inventing loop settings",async()=>{

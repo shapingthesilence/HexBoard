@@ -5,13 +5,12 @@ import { CapabilityFlag } from "../../protocol/index.ts";
 import { advancedNoteSurface } from "../../midi/boardContext.ts";
 import { CalibrationClient, record } from "./client.ts";
 import { RamSettingsSync, ramUpdates, type RamSyncStatus } from "./ramSync.ts";
-import { defaultConfig, fields, movePoint, movePressurePoint, respacePoints, type Capture, type LabConfig, type PressureSample, type Strike } from "./model.ts";
-import { CaptureParser, mm, to16, rawAt, windowTime } from "./protocol.mjs";
+import { defaultConfig, fields, movePoint, movePressurePoint, respacePoints, type LabConfig, type PressureSample, type Strike } from "./model.ts";
+import { mm, to16, rawAt } from "./protocol.mjs";
 import { parseVelocity } from "./live-velocity.mjs";
 import { parsePressure, pressurePercent } from "./pressure.mjs";
-import { clampRange, phaseRange, scaleRange } from "./strike-view.mjs";
 import { engineMeasurement } from "./engines.mjs";
-import { chartColors, CurveChart, PressureCurveChart, Plot } from "./Charts.tsx";
+import { CurveChart, PressureCurveChart, Plot } from "./Charts.tsx";
 import { NumberField, VelocityControls } from "./VelocityControls.tsx";
 import { HallPeakMap, parseHallPeaks, parseHallRests, parseHallRaw, parseHallLimits } from "./HallPeakMap.tsx";
 import { ColorCalibration } from "./ColorCalibration.tsx";
@@ -25,7 +24,7 @@ const steps: Array<{ id: Step; label: string; description: string }> = [
   { id: "pressure", label: "3. Pressure", description: "Set the travel range and response for held notes." },
   { id: "color", label: "LED color", description: "Match keycap colors to a screen reference with live feedback." },
   { id: "caps", label: "Cap study", description: "Collect raw Hall readings at fixture-controlled distances, cap by cap." },
-  { id: "diagnostics", label: "Diagnostics", description: "Inspect captured travel, neighboring sensors, LEDs, and scan timing." }
+  { id: "diagnostics", label: "Diagnostics", description: "Inspect live readings, LEDs, and scanner timing." }
 ];
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 function download(name: string, value: unknown) {
@@ -48,17 +47,16 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
   const [strikes, setStrikes] = useState<Strike[]>([]), [paused, setPaused] = useState(false), [filter, setFilter] = useState("all");
   const [rawPressure, setRawPressure] = useState<Record<string, string>>({});
   const [pressure, setPressure] = useState<PressureSample | null>(null), [pressureHistory, setPressureHistory] = useState<Array<{ x: number; y: number }>>([]);
-  const [curveKind, setCurveKind] = useState<"on" | "off">("on"), [windowSpeed, setWindowSpeed] = useState(1500), [pointSource, setPointSource] = useState("live");
+  const [curveKind, setCurveKind] = useState<"on" | "off">("on"), [windowSpeed, setWindowSpeed] = useState(1500);
   const [guided, setGuided] = useState(false), [guidedPoints, setGuidedPoints] = useState(4), [guidedSamples, setGuidedSamples] = useState(3);
-  const [capture, setCapture] = useState<Capture | null>(null), [capturing, setCapturing] = useState(false), [range, setRange] = useState<number[] | null>(null), [raw, setRaw] = useState(false);
-  const [hiddenNeighbors, setHiddenNeighbors] = useState<number[]>([]), [scan, setScan] = useState<Record<string, string>>({}), [monitorDropped, setMonitorDropped] = useState(0);
+  const [scan, setScan] = useState<Record<string, string>>({}), [monitorDropped, setMonitorDropped] = useState(0);
   const [ledResults, setLedResults] = useState<Array<Record<string, string>>>([]), [ledRunning, setLedRunning] = useState(false), [ledMax, setLedMax] = useState(4), [ledDuration, setLedDuration] = useState(2000), [ledSuite, setLedSuite] = useState("brightness");
   const [confirm, setConfirm] = useState<{ title: string; text: string; action: () => Promise<void> } | null>(null);
   const [ramStatus, setRamStatus] = useState<RamSyncStatus>("synced"), [ramDetail, setRamDetail] = useState("");
-  const operation = useRef(false), alive = useRef(false), captureAbort = useRef(false), ledAbort = useRef(false), selected = useRef({ key, paused, filter, step, guided, rawDamper: false, hallPeaks: false, hallLive: false });
+  const operation = useRef(false), alive = useRef(false), ledAbort = useRef(false), selected = useRef({ key, paused, filter, step, guided, rawDamper: false, hallPeaks: false, hallLive: false });
   selected.current = { key, paused, filter, step, guided, rawDamper: config.capabilities.includes("raw_damper"), hallPeaks: config.capabilities.includes("cal_peaks"), hallLive: config.capabilities.includes("cal_live") };
   const supported = Boolean(hello.capabilityFlags & CapabilityFlag.AdvancedCalibrationLab);
-  const hallActive = ["rest", "running"].includes(hall.status), locked = busy || capturing || ledRunning || hallActive || guided || capStudyActive;
+  const hallActive = ["rest", "running"].includes(hall.status), locked = busy || ledRunning || hallActive || guided || capStudyActive;
   const dirty = JSON.stringify(config) !== JSON.stringify(applied);
   const ramSync = useMemo(() => new RamSettingsSync(async action => {
     while ((operation.current || client.busy) && alive.current) await delay(10);
@@ -69,11 +67,7 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
     if (alive.current) { setRamStatus(status); setRamDetail(detail); }
   }), [client]);
   const points = config.curves[curveKind], latest = [...strikes].reverse().find(s => s.kind === curveKind && !s.engine) ?? null;
-  const channel = capture?.count ? capture.channels[0] : null;
-  const captureBounds = channel ? [channel.points[0].time, channel.points.at(-1)!.time] : null;
-  const crossing = channel && capture?.result === 0 && !capture.gaps ? windowTime(channel.points, mm(config.thresholds[0]), mm(config.thresholds[1])) : null;
-  const measurement = pointSource === "capture" ? (curveKind === "on" && crossing?.us ?
-    Math.floor(mm(config.thresholds[1]-config.thresholds[0])*1000000000/crossing.us) : null) : latest?.speed;
+  const measurement = latest?.speed;
   const freshPressure = pressure?.key === key && pressure.valid ? pressure : null;
   const notify = (text: string, failed = false) => { if (alive.current) { setMessage(text); setError(failed); } };
   async function refresh() {
@@ -99,7 +93,7 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
     finally { operation.current = false; if (alive.current) setBusy(false); }
   }
   useEffect(() => {
-    alive.current = true; captureAbort.current = ledAbort.current = false; setReady(false);
+    alive.current = true; ledAbort.current = false; setReady(false);
     let polling = false, lastStatus = 0, lastMap = 0, disposed = false;
     if (!supported) { setMessage("This board firmware needs the Sync calibration update. Update main firmware, then reconnect HexBoard."); return () => { alive.current = false; }; }
     const initialize = async () => {
@@ -149,7 +143,7 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
     return () => {
       disposed = true;
       const finalEdits = ramSync.pendingUpdates();
-      ramSync.stop(); alive.current = false; captureAbort.current = ledAbort.current = true; clearInterval(timer);
+      ramSync.stop(); alive.current = false; ledAbort.current = true; clearInterval(timer);
       // Navigating just before the debounce expires must not discard a valid
       // edit. Drain current work, send the latest RAM edits, then release tools.
       if (!finalEdits.length) { void client.close(); return; }
@@ -193,29 +187,6 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
   const requestConfirm = (title: string, text: string, action: () => Promise<void>) => setConfirm({ title, text, action });
   const changeCurve = (kind: "on" | "off", next: typeof points) => setConfig({ ...config,
     curves: { ...config.curves, [kind]: next }, customCurves: { ...config.customCurves, [kind]: true } });
-  async function captureStrike() {
-    captureAbort.current = false; setCapturing(true);
-    const parser = new CaptureParser(); let cursor = 0, completed = false;
-    try {
-      await client.command(`capture arm ${key}`); notify(`Key ${key}: release it, then strike within ten seconds.`);
-      const deadline = performance.now() + 20000;
-      while (alive.current && !captureAbort.current && performance.now() < deadline) {
-        if (client.busy) { await delay(50); continue; }
-        const lines = await client.capture(cursor);
-        if (lines.includes("capture,waiting")) { await delay(150); continue; }
-        for (const line of lines) {
-          const result = parser.feed(line);
-          if (result) { completed = true; setCapture(result); setRange(null); setHiddenNeighbors([]); notify(["Capture complete.", "No strike detected: rest capture only.", "Capture cancelled.", "Settings changed during capture.", "Calibrate this key before capturing."][result.result], result.result !== 0); return; }
-          if (line.startsWith("capture,next=")) cursor = Number(fields(line).next);
-        }
-        notify(`Reading buffered capture… ${cursor} channel samples received.`);
-      }
-      notify(captureAbort.current ? "Capture cancelled." : "Capture timed out.");
-    } finally {
-      if (!completed && !client.busy) await client.command("capture cancel").catch(() => {});
-      if (alive.current) setCapturing(false);
-    }
-  }
   async function ledTest() {
     if (!Number.isInteger(ledMax) || ledMax < 1 || ledMax > 255) throw Error("Choose a maximum brightness from 1 to 255.");
     ledAbort.current = false; setLedRunning(true); setLedResults([]);
@@ -250,7 +221,7 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
     <p className="calHint" role="status">{ramDetail || (dirty ? "Edits apply to RAM automatically after a short pause. Response edits stay in RAM; Save keeps them after restart." : "Response edits apply to RAM automatically. Save to a profile to keep them after restart.")}</p>
     {validationError && <p className="calStatus" role="alert" data-error={true}>{validationError}</p>}
     <nav className="sectionTabs" aria-label="Calibration steps">{steps.map(item => <button type="button" key={item.id} aria-current={step === item.id ? "step" : undefined}
-      disabled={hallActive || guided || capturing || ledRunning || busy || capStudyActive} onClick={() => setStep(item.id)}>{item.label}</button>)}</nav>
+      disabled={hallActive || guided || ledRunning || busy || capStudyActive} onClick={() => setStep(item.id)}>{item.label}</button>)}</nav>
     <p className="calHint">{steps.find(item => item.id === step)!.description} {step === "caps" ? "Measurements do not change calibration." : step === "color" ? "Color correction belongs to this board and preserves your layouts." : "Changes apply to all keys; the selected key is for measurements."}</p>
     {step !== "hall" && step !== "caps" && step !== "color" && <section className="calKeySelector"><div className="calActions"><NumberField label="Monitor key" value={key} min={0} max={132} disabled={locked}
       onChange={value => { if (Number.isInteger(value) && value >= 0 && value < 133) setKey(value); }} /><button type="button" aria-expanded={showKeys} onClick={() => setShowKeys(!showKeys)}>Choose on board</button>
@@ -258,7 +229,7 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
       {showKeys && <div className="calKeyGrid" aria-label="Choose a Hall key">{advancedNoteSurface.map(k => <button type="button" key={k.hallKey} disabled={locked} aria-pressed={key === k.hallKey}
         style={{ gridRow: k.row + 1, gridColumn: k.coordCol + 2 }} onClick={() => setKey(k.hallKey)}>{k.hallKey}</button>)}</div>}</section>}
     {step === "color" && ready && <ColorCalibration execute={colorCommand} available={ready && !locked} />}
-    <div hidden={step !== "caps"}><CapStudyPanel sample={pressure} available={ready && !busy && !capturing && !ledRunning && !hallActive && !guided} onTarget={setKey} onActive={setCapStudyActive} boardLabel={transport.label} /></div>
+    <div hidden={step !== "caps"}><CapStudyPanel sample={pressure} available={ready && !busy && !ledRunning && !hallActive && !guided} onTarget={setKey} onActive={setCapStudyActive} boardLabel={transport.label} /></div>
     {step === "hall" && <section className="calCard calHall"><h3>Rest position & firm press</h3>
       <p>Release every key before starting. Keep them untouched while rest readings are captured. Then press each key firmly and release it. Finish after sweeping the whole board.</p>
       <ol className="calInstructions"><li>Start with all keys released.</li><li>{hall.status === "rest" ? "Capturing rest readings. Keep keys untouched…" : "Wait for rest capture to finish."}</li>
@@ -297,8 +268,7 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
         <div className="calFields"><NumberField label="Graph speed range" value={windowSpeed} min={50} max={4000} step={50} unit="mm/s" onChange={value => { if (value >= 50 && value <= 4000) setWindowSpeed(value); }} />
           <label className="calField"><span>Curve points</span><select value={points.length || 4} disabled={locked} onChange={e => changeCurve(curveKind, respacePoints(points, Number(e.target.value)))}>{[4, 5, 6, 7, 8].map(n => <option key={n}>{n}</option>)}</select></label></div>
         <CurveChart points={points} onChange={next => changeCurve(curveKind, next)} windowSpeed={windowSpeed} last={latest} disabled={!canEdit} />
-        <label className="calField"><span>Assign speed from</span><select value={pointSource} onChange={e => setPointSource(e.target.value)}><option value="live">Latest live strike</option><option value="capture">Captured attack preview</option></select></label>
-        <p className="calHint">{measurement ? `${(measurement / 1000).toFixed(3)} mm/s available. Choose Use speed at the intended velocity.` : "Play or capture a strike to assign a measured speed."}</p>
+        <p className="calHint">{measurement ? `${(measurement / 1000).toFixed(3)} mm/s available from the latest live strike. Choose Use speed at the intended velocity.` : "Play a strike to assign a measured speed."}</p>
         <details className="calDetails"><summary>Edit points & assign measured speeds</summary><div className="calPoints">{points.map((p, i) => <div key={i}><NumberField label={`Point ${i + 1} velocity`} value={p.velocity} min={1} max={127} disabled={!canEdit} onChange={value => changeCurve(curveKind, movePoint(points, i, p.speed, value))} />
           <NumberField label="Average speed" value={p.speed / 1000} unit="mm/s" min={.001} max={4000} step={.1} disabled={!canEdit} onChange={value => changeCurve(curveKind, movePoint(points, i, value * 1000, p.velocity))} />
           <button type="button" disabled={!canEdit || !measurement} onClick={() => changeCurve(curveKind, movePoint(points, i, measurement!, p.velocity))}>Use speed</button></div>)}</div></details>
@@ -334,21 +304,6 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
       <div className="calActions"><button type="button" disabled={!canEdit} onClick={() => setConfig({ ...config, pressureCurve: [16384, 32768, 49151] })}>Reset to linear</button></div>
     </section>}
     {step === "diagnostics" && <>
-      <section className="calCard"><h3>Capture travel & neighboring sensors</h3><p>Capture the selected key and up to six neighbors. Raw ADC readings and column timestamps are retained; the board’s buffer determines sample spacing.</p>
-        <div className="calActions"><button type="button" className="primary" disabled={!canEdit || dirty} onClick={run(captureStrike)}>Capture next strike</button><button type="button" disabled={!capturing} onClick={() => { captureAbort.current = true; }}>Cancel capture</button>
-          <button type="button" disabled={!capture} onClick={() => download(`hexboard-key-${capture!.channels[0].key}-capture.json`, capture)}>Export capture</button>
-          <label>View <select value={raw ? "raw" : "travel"} onChange={e => setRaw(e.target.value === "raw")}><option value="travel">Travel · mm</option><option value="raw">Raw · ADC</option></select></label></div>
-        {channel && <div className="calActions"><button type="button" onClick={() => setRange(null)}>Full strike</button>{(["attack", "release"] as const).map(phase => { const next = capture!.result === 0 ? phaseRange(channel.points, phase, capture!.trigger) : null; return <button type="button" key={phase} disabled={!next} onClick={() => setRange(next)}>{phase === "attack" ? "Attack" : "Release"}</button>; })}
-          {[.5, 2].map(factor => <button type="button" key={factor} onClick={() => setRange(scaleRange(range ?? [channel.points[0].time, channel.points.at(-1)!.time], factor, [channel.points[0].time, channel.points.at(-1)!.time]))}>{factor < 1 ? "Zoom in" : "Zoom out"}</button>)}
-          {[-1, 1].map(direction => <button type="button" key={`pan-${direction}`} onClick={() => { const current = range ?? [channel.points[0].time, channel.points.at(-1)!.time]; const shift = (current[1] - current[0]) * .25 * direction; setRange(clampRange(current.map(n => n + shift), [channel.points[0].time, channel.points.at(-1)!.time])); }}>{direction < 0 ? "Pan earlier" : "Pan later"}</button>)}</div>}
-        <Plot series={channel ? [{ label: "Selected key", points: channel.points.map(p => ({ x: p.time, y: raw ? p.raw : p.mm })) }] : []} xLabel="Time (ms)" yLabel={raw ? "Raw ADC" : "Travel (mm)"} range={range ?? captureBounds}
-          onRange={next => channel && setRange(clampRange(next, [channel.points[0].time, channel.points.at(-1)!.time]))}
-          lines={channel ? config.thresholds.map((p, i) => ({ value: raw ? rawAt(mm(p), channel) : mm(p), label: ["Start", "End", "Release"][i] })) : []} />
-        <p className="calHint">{capture ? `${capture.count} frames · ${capture.channels.length} channels · ${capture.gaps} frame gaps. ${capture.gaps ? "Crossing-time assignment disabled because frames are missing." : crossing ? `Draft crossing time ${(crossing.us / 1000).toFixed(3)} ms.` : "No valid attack crossing in this capture."}` : "Up to 128 pre-trigger frames and 896 following frames. Drag horizontally to zoom."}</p>
-        <div className="calActions">{capture?.channels.slice(1).map((ch, i) => <label key={ch.key} style={{ color: chartColors[i + 1] }}><input type="checkbox" checked={!hiddenNeighbors.includes(ch.key)} onChange={e => setHiddenNeighbors(previous => e.target.checked ? previous.filter(k => k !== ch.key) : [...previous, ch.key])} /> Key {ch.key}</label>)}</div>
-        <Plot series={capture?.channels.slice(1).filter(ch => !hiddenNeighbors.includes(ch.key)).map((ch, i) => ({ label: `Key ${ch.key}`, color: chartColors[i + 1], points: ch.points.map(p => ({ x: p.time, y: p.delta })) })) ?? []} xLabel="Time (ms)" yLabel="Neighbor ADC change" range={range ?? captureBounds}
-          onRange={next => captureBounds && setRange(clampRange(next, captureBounds))} />
-      </section>
       <section className="calCard"><h3>Scanner timing</h3><p className="calHint">Normal-play targets: 30 µs settle, at most 893 µs period, 897 µs completed scan, and 0 µs measured jitter. Startup has a one-second warm-up.</p>
         <div className="calActions"><button type="button" disabled={!canEdit} onClick={run(async () => setScan(record(await client.command("scan status"), "scan,")))}>Read timing</button><button type="button" disabled={!canEdit} onClick={run(async () => { const reset = record(await client.command("scan reset"), "scan,"); notify(`Timing window ${reset.epoch} requested. Read timing after scanner acknowledgement; resetting is not evidence that jitter disappeared.`); })}>Start new timing window</button></div>
         {!!scan.period_max_us && <dl className="calStats">{[["Settle", scan.settle_us], ["Max period", scan.period_max_us], ["Max scan", scan.window_scan_max_us], ["Jitter", scan.jitter_pp_us]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value} µs</dd></div>)}<div><dt>Window / intervals</dt><dd>{scan.timing_epoch} / {scan.jitter_samples}</dd></div><div><dt>Overruns / dropped frames</dt><dd>{scan.window_overruns} / {scan.queue_dropped}</dd></div></dl>}

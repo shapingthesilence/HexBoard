@@ -1,3 +1,4 @@
+import {SerialAudioUpload} from "./serialAudioUpload.ts";
 import {isPhysicalPreset,isWavetablePreset,presetEngine,storedPreset,type SoundPreset} from './presetLibrary.ts';
 import {presetTable,tableReference} from './wavetable/library.ts';
 import {samePhysicalSound} from './physicalHistory.ts';
@@ -31,16 +32,16 @@ function presetLabelBytes(engine:number,label:Omit<DevicePresetLabel,'engine'>){
 }
 export interface SamplerInstrument {id:number;name:string;bytes:number}
 export function decodeSamplerLibrary(p:number[],first:number):SamplerInstrument[]{
- if(first<0||first>1052||first%4||p.length!==292||p[0]!==17||decodeU14(p.slice(1,3))!==first||p[3]!==4)throw Error('Invalid sampler library page.');
+ if(first<0||first>=16384||first%8192>1052||first%4||p.length!==292||p[0]!==17||decodeU14(p.slice(1,3))!==first||p[3]!==4)throw Error('Invalid sampler library page.');
  const raw=Uint8Array.from({length:144},(_,i)=>{if(p[4+i*2]>1||p[5+i*2]>127)throw Error('Invalid sampler directory byte.');return p[4+i*2]*128+p[5+i*2];});const v=new DataView(raw.buffer),entries:SamplerInstrument[]=[];
- for(let i=0;i<4;i++){const bytes=v.getUint32(i*36+32,true),nameBytes=raw.slice(i*36,i*36+32),end=nameBytes.indexOf(0),text=nameBytes.slice(0,end<0?32:end);if(end>=0&&nameBytes.slice(end).some(Boolean)||text.some(c=>c<32||c>126)||bytes&&(!text.length||bytes%512||bytes<512||bytes>0x40000000)||!bytes&&text.length)throw Error('Invalid sampler instrument entry.');if(bytes)entries.push({id:first>=1024?first-1024+i:first+i+2,name:new TextDecoder().decode(text),bytes});}
+ for(let i=0;i<4;i++){const bytes=v.getUint32(i*36+32,true),nameBytes=raw.slice(i*36,i*36+32),end=nameBytes.indexOf(0),text=nameBytes.slice(0,end<0?32:end);if(end>=0&&nameBytes.slice(end).some(Boolean)||text.some(c=>c<32||c>126)||bytes&&(!text.length||bytes%512||bytes<512||bytes>0x40000000)||!bytes&&text.length)throw Error('Invalid sampler instrument entry.');if(bytes)entries.push({id:first%8192>=1024?first%8192-1024+i:first+i+2,name:new TextDecoder().decode(text),bytes});}
  return entries;
 }
 export interface SamplerLoadingState {phase:0|1|2|3;voices:number;ready:number;total:number;loadedBytes:number;totalBytes:number;streaming?:boolean;source?:number}
 export function decodeSamplerLoading(p:number[]):SamplerLoadingState {
   if((p.length!==18&&p.length!==20)||p[0]!==17||p[1]>3||p[17]>1)throw Error('Invalid sampler loading response.');
   const source=p.length===20?decodeU14(p.slice(18,20)):undefined;
-  if(source!==undefined&&source>1025)throw Error('Invalid sampler source.');
+  if(source!==undefined&&(source>=16384||source%8192>1025||source===8193))throw Error('Invalid sampler source.');
   const state={phase:p[1] as 0|1|2|3,voices:p[2],ready:decodeU14(p.slice(3,5)),total:decodeU14(p.slice(5,7)),loadedBytes:p.slice(7,12).reduce((a,b)=>a*128+b,0),totalBytes:p.slice(12,17).reduce((a,b)=>a*128+b,0)};
   if(state.total>128||state.ready>state.total||state.loadedBytes>state.totalBytes||state.totalBytes>0x40000000||state.voices>16||state.phase===0&&(state.voices||state.ready||state.total||state.loadedBytes||state.totalBytes)||(state.phase===1||state.phase===3)&&(!state.total||!state.totalBytes||(state.voices<1||state.voices>4))||state.phase===2&&(!state.total||state.ready!==state.total||state.loadedBytes!==state.totalBytes||state.voices<1))throw Error('Invalid sampler loading progress.');
   return {...state,streaming:!!p[17],source};
@@ -94,9 +95,15 @@ export class PhysicalSynthClient {
   private mono=defaultMono();
   private controllerRoutes:number[]=Array(66).fill(0);
   private motion:MotionState={detected:false,valid:false,tiltX:0,tiltY:0,tiltRoutes:Array(66).fill(0)};
-  private abort?: () => void;
+  private aborts=new Set<() => void>();
+  private serialUpload?:SerialAudioUpload;
+  async enableFastUploads(){this.serialUpload=await SerialAudioUpload.choose();}
+  disableFastUploads(){this.serialUpload?.cancel();this.serialUpload=undefined;}
+  assetMedium: "sd"|"flash"="sd";
+  setAssetMedium(medium:"sd"|"flash"){this.assetMedium=medium;}
+  assetStorage(medium=this.assetMedium,format=false){return this.request<{freeBytes:number;totalBytes:number}>(80,[+(medium==="flash"),+format]);}
   constructor(private transport: MidiTransport,private onProgress?:(progress?:SynthProgress)=>void,private advanced=false) {}
-  close() { this.closed = true; this.abort?.(); }
+  close() { this.closed = true; this.serialUpload?.cancel();for(const abort of this.aborts)abort(); }
   async readSound(name:string){const state=await this.status();if(state.instrument===wavetableEngine){
     const {patch}=await this.readWavetable(),effects=await this.readEffects(),mono=await this.monoSettings();
     const table=await tableReference(tableCrc(patch)).catch(()=>undefined);
@@ -182,9 +189,10 @@ export class PhysicalSynthClient {
   monoSettings(config?:MonoConfig){return this.request<MonoConfig>(56,config?[config.flags,...encodeU21(config.glideMs)]:[]);}
   async controllerRoute(id:number,source:number,value:number){await this.request<number[]>(54,[id,source,...encodeU21(value+65536)]);return this.request(0);}
   async read() {
-    const state=await this.request(0);if(this.advanced){this.controllerRoutes=await this.request<number[]>(55);this.mono=await this.monoSettings();}this.fx=await this.request<FxRack>(10);this.motion=await this.request<MotionState>(12);this.modulation=await this.request<ModulationSources>(16);
+    let state=await this.request(0);if(this.advanced){this.controllerRoutes=await this.request<number[]>(55);this.mono=await this.monoSettings();}this.fx=await this.request<FxRack>(10);this.motion=await this.request<MotionState>(12);this.modulation=await this.request<ModulationSources>(16);
     const meta=await this.request<SampleMeta>(20);
     if(!meta.busy&&(meta.crc!==this.sampleCrc||meta.length!==this.sample.frames.length)){
+      if(state.state!=="stopped"){await this.stopAndWait();state=await this.request(0);}
       const frames:number[]=[];
       this.onProgress?.({label:"Reading sample…",completed:0,total:meta.length});
       try{for(let offset=0;offset<meta.length;offset+=64){frames.push(...await this.request<number[]>(26,[...encodeU21(offset),Math.min(64,meta.length-offset)]));if(offset%512===0||frames.length===meta.length)this.onProgress?.({label:"Reading sample…",completed:frames.length,total:meta.length});}}finally{this.onProgress?.();}
@@ -204,9 +212,10 @@ export class PhysicalSynthClient {
     if(force||crc!==this.sampleCrc||sample.frames.length!==this.sample.frames.length){
       const state=await this.request(0),wasPlaying=state.state!=="stopped";
       if(wasPlaying){await this.stop();for(let i=0;i<80;i++){if((await this.request(0)).state==="stopped")break;await new Promise(r=>setTimeout(r,30));}}
-      await this.request<SampleMeta>(21,[...encodeU21(sample.frames.length),...u32(crc)]);
+      await this.request<SampleMeta>(21,[...encodeU21(sample.frames.length),...u32(crc),+(this.assetMedium==="flash")]);
       this.onProgress?.({label:"Sending sample…",completed:0,total:sample.frames.length});
-      for(let offset=0;offset<sample.frames.length;offset+=64){const chunk=sample.frames.slice(offset,offset+64);await this.request<SampleMeta>(22,[...encodeU21(offset),chunk.length,...chunk.flatMap(v=>encodeU21(v+32768))]);if(offset%512===0||offset+chunk.length===sample.frames.length)this.onProgress?.({label:"Sending sample…",completed:offset+chunk.length,total:sample.frames.length});}
+      const bytes=new Uint8Array(sample.frames.length*2),view=new DataView(bytes.buffer);sample.frames.forEach((v,i)=>view.setInt16(i*2,v,true));
+      await this.transferBlocks(22,bytes,(completed,total)=>this.onProgress?.({label:"Sending sample…",completed:completed/2,total:total/2}));
       this.onProgress?.({label:"Applying sample…"});
       await this.request<SampleMeta>(23);this.sampleCrc=crc;this.sample=sample;
       if(sample.loop?.mode)await this.configureSampleLoop(sample.loop);
@@ -215,7 +224,7 @@ export class PhysicalSynthClient {
     }else{if(policyChanged)await this.configureSampleLoop(sample.loop!);await this.request<SampleMeta>(24,[+sample.enabled,...encodeU21(sample.gain),...encodeU21(sample.direct)]);this.sample=sample;}
     if(resume){await this.start();await this.waitSample();}
     return await this.request(0);
-    }finally{this.onProgress?.();}
+    }catch(error){try{await this.request(81);}catch{}throw error;}finally{this.onProgress?.();}
   }
   private async configureSampleLoop(loop:SampleLoop){return this.request<SampleMeta>(27,[loop.mode,...encodeU21(loop.start),...encodeU21(loop.end),...encodeU21(loop.crossfade)]);}
   private async waitSample(){this.onProgress?.({label:"Preparing synth…"});for(let i=0;i<300;i++){if(!(await this.request<SampleMeta>(20)).busy)return;await new Promise(r=>setTimeout(r,20));}throw Error("Sample transfer did not finish.");}
@@ -231,16 +240,17 @@ export class PhysicalSynthClient {
   status(){return this.request(0);}
   samplerLoading(includeSource=false){return this.request<SamplerLoadingState>(63,includeSource?[1]:[]);}
   async samplerSource(source:'patch'|'piano'){return this.samplerInstrument(source==='piano'?1:0);}
-  async samplerInstrument(id:number){if(!Number.isInteger(id)||id<0||id>1025)throw Error('Invalid sampler instrument.');await this.stopAndWait();return this.request(51,encodeU14(id));}
-  async samplerLibrary(refresh=false,folder=0):Promise<SamplerInstrument[]>{if(!Number.isInteger(folder)||folder<0||folder>32)throw Error("Invalid sampler folder.");const entries:SamplerInstrument[]=[];for(let first=folder*32;first<folder*32+32;first+=4)entries.push(...await this.request<SamplerInstrument[]>(64,[...encodeU14(first),refresh?1:0]));return entries;}
+  async samplerInstrument(id:number){if(!Number.isInteger(id)||id<0||id>=16384||id%8192>1025||id===8193)throw Error('Invalid sampler instrument.');await this.stopAndWait();return this.request(51,encodeU14(id));}
+  async samplerLibrary(refresh=false,folder=0):Promise<SamplerInstrument[]>{if(!Number.isInteger(folder)||folder<0||folder>32)throw Error("Invalid sampler folder.");const entries:SamplerInstrument[]=[];for(let first=folder*32+(this.assetMedium==="flash"?8192:0);first<folder*32+32+(this.assetMedium==="flash"?8192:0);first+=4)entries.push(...await this.request<SamplerInstrument[]>(64,[...encodeU14(first),refresh?1:0]));return entries;}
   samplerParameter(id:number,value:number){return this.request(46,[id,...encodeU21(value)]);}
   async uploadSampler(bytes:Uint8Array,progress?:(received:number,total:number)=>void){
     if(bytes.length<512||bytes.length%512)throw Error('Invalid prepared sampler file.');
+    if(this.assetMedium==="flash"&&(new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength).getUint16(18,true)&1))throw Error("This instrument needs SD streaming. Choose SD card storage.");
     await this.stopAndWait();
     const {crc32}=await import('./sampler/prepare.mjs');
     try{
-      await this.request(47,[...u32(bytes.length),...u32(crc32(bytes))]);
-      for(let offset=0;offset<bytes.length;offset+=128){const chunk=bytes.subarray(offset,offset+128);await this.request(48,[...u32(offset),...encodeU14(chunk.length),...Array.from(chunk).flatMap(byte=>[byte>>7,byte&127])]);progress?.(offset+chunk.length,bytes.length);}
+      await this.request(47,[...u32(bytes.length),...u32(crc32(bytes)),+(this.assetMedium==="flash")]);
+      await this.transferBlocks(48,bytes,progress);
       await this.request(49);
     }catch(error){try{await this.request(50);}catch{/* Explicit retry starts a new temporary-file transaction. */}throw error;}
   }
@@ -251,9 +261,10 @@ export class PhysicalSynthClient {
   async uploadSamplerNamed(bytes:Uint8Array,folder:string,filename:string,progress?:(received:number,total:number)=>void){
     const text=(s:string)=>{if(!s.length||s.length>64||/[^\x20-\x7e]|[\\/:*?"<>|]/.test(s)||s.startsWith('.')||/[. ]$/.test(s))throw Error('Use a plain folder and filename.');return Array.from(s,c=>c.charCodeAt(0));};
     const f=text(folder),n=text(filename);if(!/\.hbs$/i.test(filename)||bytes.length<512||bytes.length%512)throw Error('Invalid prepared sampler file.');
+    if(this.assetMedium==="flash"&&(new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength).getUint16(18,true)&1))throw Error("This instrument needs SD streaming. Choose SD card storage.");
     await this.stopAndWait();const {crc32}=await import('./sampler/prepare.mjs');
-    try{const initial=await this.request<number>(65,[0,f.length,n.length,...f,...n,...u32(bytes.length),...u32(crc32(bytes))]);if(initial!==0)throw Error('Invalid sampler initial offset.');
-    for(let offset=0;offset<bytes.length;offset+=176){const chunk=bytes.subarray(offset,offset+176);const end=await this.request<number>(66,[...u32(offset),...encodeU14(chunk.length),...Array.from(chunk).flatMap(b=>[b>>7,b&127])]);if(end!==offset+chunk.length)throw Error('Sampler transfer offset mismatch.');progress?.(end,bytes.length);}
+    try{const initial=await this.request<number>(65,[this.assetMedium==="flash"?2:0,f.length,n.length,...f,...n,...u32(bytes.length),...u32(crc32(bytes))]);if(initial!==0)throw Error('Invalid sampler initial offset.');
+    await this.transferBlocks(66,bytes,progress);
     const received=await this.request<number>(67);if(received!==bytes.length)throw Error('Sampler transfer commit mismatch.');
     }catch(error){try{await this.request(50);}catch{/* A fresh transaction retries the temporary file. */}throw error;}
   }
@@ -294,7 +305,7 @@ export class PhysicalSynthClient {
   }
   private async transferWavetableTable(crc:number,bytes:Uint8Array,durableOnly=false,progress?:(done:number,total:number)=>void){
     const {crc32,validateAsset}=await import('./wavetable/prepare.mjs');if(validateAsset(bytes)!==crc)throw Error('The table does not match this sound.');
-    try {await this.request(73,[...u32(bytes.length),...u32(crc32(bytes))]);for(let at=0;at<bytes.length;at+=176){const chunk=bytes.subarray(at,at+176);const end=await this.request<number>(74,[...u32(at),...encodeU14(chunk.length),...Array.from(chunk).flatMap(b=>[b>>7,b&127])]);if(end!==at+chunk.length)throw Error('Table transfer offset mismatch.');progress?.(end,bytes.length);}if(await this.request<number>(75,durableOnly?[1]:[])!==crc)throw Error('The board received a different table.');}catch(error){try{await this.request(76);}catch{}throw error;}
+    try {await this.request(73,[...u32(bytes.length),...u32(crc32(bytes)),+(this.assetMedium==="flash")]);await this.transferBlocks(74,bytes,progress);if(await this.request<number>(75,durableOnly?[1]:[])!==crc)throw Error('The board received a different table.');}catch(error){try{await this.request(76);}catch{}throw error;}
   }
   editWavetable(index:number,value:number){return this.retryAdvanced(34,[...encodeU21(index),...encodeU21(value),wavetableEngine]);}
   routeWavetable(index:number,source:number,destination:number,depth:number){return this.retryAdvanced(35,[...encodeU21(index),...encodeU21(source*256+destination),...encodeU21(depth+65536),wavetableEngine]);}
@@ -327,7 +338,7 @@ export class PhysicalSynthClient {
     finally{this.onProgress?.();}
   }
   async start(instrument = 2, samplerSource?:number) {
-    if(samplerSource!==undefined&&(instrument!==6||!Number.isInteger(samplerSource)||samplerSource<0||samplerSource>1025))throw Error('Invalid sampler instrument.');
+    if(samplerSource!==undefined&&(instrument!==6||!Number.isInteger(samplerSource)||samplerSource<0||samplerSource>=16384||samplerSource%8192>1025||samplerSource===8193))throw Error('Invalid sampler instrument.');
     this.previewNeedsStartup=true;const startedAt=Date.now();this.onProgress?.({label:`Preparing ${engineNames[instrument]??'synth'}…`,startedAt,expectedMs:prepareEstimate(instrument,this.voiceLimit)});
     try{let state=await this.request(1,samplerSource===undefined?[instrument]:[instrument,...encodeU14(samplerSource)]);while(state.state==='loading'){
       if(Date.now()-startedAt>(instrument===6?90000:45000))throw Error('The synth did not become playable. Retry the connection.');await new Promise(r=>setTimeout(r,50));
@@ -382,6 +393,22 @@ export class PhysicalSynthClient {
     // The model batch may still be draining through SPI. Retry rack backpressure.
     for(let attempt=0;;++attempt){try{await this.effects(p.effects);if(this.advanced)await retry(()=>this.request(53,(p.controllerRoutes??Array(66).fill(0)).flatMap(v=>encodeU21(v+65536))));const result=withSample?await this.setSample(p.sample,!p.sample.frames.length):await this.request(0);if(this.advanced)await this.restoreVoiceBudget(p);return result;}catch(error){if(attempt>=12 || !(error instanceof Error) || error.message!=="The board rejected this synth operation.")throw error;await new Promise(resolve=>setTimeout(resolve,30));}}
   }
+  private transferBlocks(operation:number,bytes:Uint8Array,progress?:(done:number,total:number)=>void){
+    const task=this.tail.catch(()=>undefined).then(async()=>{
+      if(this.serialUpload)return this.serialUpload.transfer(operation===22?2:operation===74?1:0,bytes,progress);
+      for(let offset=0;offset<bytes.length;offset+=1024){
+        const batch=[];
+        for(let index=0;index<4&&offset+index*256<bytes.length;++index){
+          const at=offset+index*256,chunk=bytes.subarray(at,at+256),packed:number[]=[];
+          for(let i=0;i<chunk.length;i+=7){const group=chunk.subarray(i,i+7);packed.push(group.reduce((mask,b,j)=>mask|((b>>7)<<j),0),...Array.from(group,b=>b&127));}
+          batch.push(this.rpc<number>(operation,[16,...u32(at),...encodeU14(chunk.length),...packed]).then(end=>{if(operation!==22&&end!==at+chunk.length)throw Error("Audio transfer offset mismatch.");}));
+        }
+        const results=await Promise.allSettled(batch);const failed=results.find(r=>r.status==="rejected");if(failed?.status==="rejected")throw failed.reason;
+        progress?.(Math.min(bytes.length,offset+1024),bytes.length);
+      }
+    });
+    this.tail=task;return task;
+  }
   protected request<T = PhysicalState>(operation: number, data: number[] = []): Promise<T> {
     const run = this.tail.catch(() => undefined).then(() => this.rpc<T>(operation, data));
     this.tail = run; return run;
@@ -393,11 +420,11 @@ export class PhysicalSynthClient {
       let unsubscribe = () => {}; let done = false;
       const finish = (error?: Error, state?: T) => {
         if (done) return;
-        done = true; clearTimeout(timer); unsubscribe(); this.abort = undefined;
+        done = true; clearTimeout(timer); unsubscribe(); this.aborts.delete(cancel);
         if (error) reject(error); else resolve(state!);
       };
       const timer = setTimeout(() => finish(Error("The board did not reply. Reconnect to retry.")), operation===49||operation===67?90000:5000);
-      this.abort = () => finish(new SynthRequestCancelledError());
+      const cancel = () => finish(new SynthRequestCancelledError());this.aborts.add(cancel);
       unsubscribe = this.transport.subscribe(bytes => {
         if (bytes[0] !== 0xf0 || bytes[1] !== 0x7d || bytes[2] !== 0x10) return;
         try {
@@ -405,6 +432,8 @@ export class PhysicalSynthClient {
           if (frame.transactionId !== transaction) return;
           if (frame.message === 7) {
             finish(Error(operation===41?"Update Advanced main firmware to use the global arpeggiator.":frame.payload[1] === 3 ? operation>=16?"Update Advanced firmware for envelope and LFO modulation.":"Update Advanced main firmware for preset velocity engines." : frame.payload[1] === 9 ? "DSP budget full. Reduce another effect, feature or modulation first." : frame.payload[1] === 8 ? "Stop Learn or Calibration and release keys before changing the velocity engine or loading a sound." : operation===21?"Release the keys and stop the synth before importing a sample.":operation===25?"Release the keys before sample preview.":operation===42?"Release the keys before switching Arp on/off or changing its output. If playback is being tested, wait for it to finish.":operation===44?"Stop the synth, clear held arp notes, and release the keys before saving performance settings.":"The board rejected this synth operation."));
+          } else if(operation===80&&frame.message===0x4f){
+            const p=frame.payload;if(frame.message!==0x4f||p.length!==11||p[0]!==17)throw Error("Invalid storage status.");const value=(at:number)=>p.slice(at,at+5).reduce((a,b)=>a*128+b,0);finish(undefined,{freeBytes:value(1),totalBytes:value(6)} as T);return;
           } else if((operation===57||operation===58)&&frame.message===0x43){
             const p=frame.payload,capacity=decodeU14(p.slice(21,23)),slot=decodeU14(p.slice(4,6));if(p.length<27||p.length>29||p[0]!==17||p[1]!==2||p[2]>3||p[3]>8||![3072,4096].includes(capacity)||slot>=capacity||p[6]>2||p[7]>100||p[19]!==[2,4,5,7][Math.floor(slot/1024)]||p[20]>=32||p[23]!==32)throw Error('Update Advanced firmware for the folder preset library.');const mask=p.slice(8,13).reduce((a,b)=>a*128+b,0);if(mask>0xffffffff)throw Error('Invalid preset folder mask.');finish(undefined,{phase:p[2],action:p[3],slot:decodeU14(p.slice(4,6)),medium:p[6],progress:p[7],mask,elapsedMs:decodeU21(p.slice(13,16)),maxSliceUs:decodeU21(p.slice(16,19)),engine:p[19],folder:p[20],capacity,folderCapacity:32,heapMin:decodeU21(p.slice(24,27)),error:p.length>27?p[27]:0,awaiting:p[28]===1} as T);
           } else if(operation===59&&frame.message===0x44){
@@ -443,7 +472,7 @@ export class PhysicalSynthClient {
           } else if(operation>=30&&operation<=35&&frame.message===0x3d){
             const p=frame.payload;if(p.length<9||p[0]!==17||!(p[1]>=2&&p[1]<=5&&p[8]===2||p[1]===wavetableEngine&&p[8]===wavetableSchema)||p[2]>1||p[3]>1||p[7]>64||p.length!==9+p[7]*3||(operation===33&&(decodeU21(p.slice(4,7))!==decodeU21(data.slice(0,3))||p[7]!==data[3])))throw Error("Invalid Advanced engine response.");
             finish(undefined,{engine:p[1],state:p[2],busy:!!p[3],words:Array.from({length:p[7]},(_,i)=>decodeU21(p.slice(9+i*3,12+i*3)))} as T);
-          } else if(operation>=20&&operation<=27&&frame.message===(operation===26?0x3c:0x3b)){
+          } else if((operation>=20&&operation<=27||operation===81)&&frame.message===(operation===26?0x3c:0x3b)){
             if(operation===26){const p=frame.payload;if(p[0]!==17||p.length!==2+3*p[1]||p[1]>64)throw Error("Invalid sample chunk.");const values=Array.from({length:p[1]},(_,i)=>decodeU21(p.slice(2+3*i,5+3*i))-32768);if(values.some(v=>v<-32768||v>32767))throw Error("Invalid sample PCM.");finish(undefined,values as T);}
             else finish(undefined,decodeSample(frame.payload) as T);
           } else if(frame.message===0x42&&operation===56){const p=frame.payload;if(p.length!==5||p[0]!==17)throw Error('Invalid mono response.');this.mono=validateMono({flags:p[1],glideMs:decodeU21(p.slice(2,5))});finish(undefined,this.mono as T);

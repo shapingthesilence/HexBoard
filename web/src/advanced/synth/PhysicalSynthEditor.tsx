@@ -1,3 +1,4 @@
+import {AssetStorageSelector} from "./AssetStorageSelector.tsx";
 import {springBase,springNames,springRouteWord,springWord,springSourceNames,springSourceWords} from './pitchSpring.ts';
 import {isPhysicalPreset,presetDraftKey} from './presetLibrary.ts';
 import {PresetLibrary} from './PresetLibrary.tsx';
@@ -440,6 +441,7 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
       </fieldset>
     </div>
     </div><div className="engine-side"><FxRackEditor before={bodyPanel} rack={preset.effects} canApply={rack=>dspAllows(preset,{...preset,effects:rack})} onPreview={rack=>{setFxPreview(rack);setBudgetSource(undefined);}} targeting={{tool,source,values:[],finish:()=>{if(!locked)setTool("value");},focus:()=>setSourceEditor(undefined)}} busy={busy} waiting={fxWaiting} onChange={(rack,reorder)=>reorder?setEffects(rack):setRackControls(rack)}/></div></div>
+    {advanced&&<AssetStorageSelector client={client??undefined} disabled={busy}/>}
     {sampleEditor&&<SampleEditor progress={progress} sample={preset.sample} onApply={sample=>applySample(sample)} onPreview={sample=>applySample(sample,true)} onClose={()=>setSampleEditor(false)}/>}
     {advanced&&<VoiceBudgetEditor dsp preset={namedPreset} busy={busy} testing={busy&&/voic/.test(progress?.label??operationLabel)} connected={!!client&&ready} onCancel={()=>void client?.cancelVoiceTest().catch(fail)} onInvalidate={()=>{replacePreset(p=>({...p,voiceBudget:undefined}));if(client&&ready)void client.resetVoiceBudget().catch(fail);}} onTest={()=>{replacePreset(p=>({...p,voiceBudget:undefined}));edits.current.clear();clearTimeout(fxTimer.current);void operation(async()=>{const value=await client!.testVoiceLimit({...preset,name});replacePreset(value);return client!.status();},"Testing voice limit…");}}/>}
       </section></PreviewContext.Provider>;

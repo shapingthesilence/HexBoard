@@ -22,9 +22,10 @@ settings** writes one of eight response profiles after pending edits are acknowl
 Hall saves are separate. Release keys before saving; explicit saves briefly pause
 scanning. Invalid edits keep the last valid RAM settings until corrected.
 
-**Diagnostics** captures raw travel/neighbors, supports shared zoom/pan and JSON
-export, reads scanner timing, and compares LED loads to an off baseline/recovery.
-A capture timeout is labeled rest-only. Monitoring and automatic edits write no flash.
+**Diagnostics** retains live Hall, velocity and pressure readings, scanner
+timing/fault telemetry and LED baseline/recovery checks. Recorded strikes,
+neighbor traces and capture export are removed. Monitoring and automatic edits
+write no flash.
 Closing Calibration releases its tools; a lost connection expires after five
 seconds. Use **Reconnect Calibration** after an error. Leave this tab before
 starting Learn or previewing a layout.
@@ -1075,8 +1076,14 @@ excludes command positions. Kit/Slices use the assigned recording's root pitch
 rather than the tuning layout's notes/chords. Undo restores sample/key edits.
 
 Quick shape exposes Attack, Release, Tone and Expression. Export sound writes
-a prepared HBS2 package. Save sound to SD stops playback, transfers and validates
-the package, then Start synth loads it. The current resident engine accepts up
+a prepared HBS2 package. Send to HexBoard stops playback, transfers and validates
+the package, then Start synth loads it. Audio storage defaults to SD, with internal
+audio flash as an explicit option. Check space reports capacity; Initialize audio
+flash is an explicit erase operation and never runs at boot. Enable fast USB
+uploads grants optional Web Serial access to the Advanced main port; MIDI uploads
+remain available. Main uses fixed buffers for large instruments. The 12 MiB audio
+flash partition accepts resident instruments; streamed/larger instruments use SD.
+The current resident engine accepts up
 to 5.5 MiB of prepared PCM. The compact mono piano now passes the hardware
 16-held-note target with four release tails, continuous microtonal retunes and
 ±2-semitone bends. Its short reader accepts subtle spectral artifacts to keep
@@ -1097,8 +1104,8 @@ or hand-edited activation file is required.
 Choose **Saved sampler patch** to return to the authored HBS2 sound. Source
 selection is held in RAM; saving a new sound also selects the saved patch.
 
-The full stereo bank, long-sample streaming, generic SFZ import and library
-browsing remain planned. Compact piano notes cover A0–C8 and continuous ±2 bends;
+The Advanced editor supports SD streaming and named instrument libraries; internal
+flash libraries are browsed through Sync. The standalone joystick library retains SD. Compact piano notes cover A0–C8 and continuous ±2 bends;
 very large held upward retunes beyond the captured root's octave are unsupported.
 The Advanced repository's `docs/sampler.md` gives the current workflow and
 `docs/sampler-loading-qualification-2026-10-26.md` records current loading tests;
@@ -1221,6 +1228,7 @@ the fan moves inward while keeping its width and spacing.
 Sources and choices stay in this browser. Export a sound or table to move it to
 another browser. Connecting and starting a sound uploads its table when needed;
 this pauses audio. The board retains the last complete table across engine
-switches, but needs a reupload after power-off. Device table catalogs and startup
-persistence are not yet implemented. See Advanced's `docs/wavetable-import.md`
+switches. Uploaded tables are durable on SD or explicit audio flash and can be
+reused after reboot; unavailable storage fails without a volatile fallback.
+A standalone table catalog remains planned. See Advanced's `docs/wavetable-import.md`
 for fidelity, prepared format and maintenance transport ownership.
