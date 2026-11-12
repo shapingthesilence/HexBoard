@@ -48,7 +48,7 @@ describe("Classic sampler sounds in Sync", () => {
     expect(() => decodeHexSound(new Uint8Array([1, 2, 3, 4, 5, 6, 7]))).toThrow("Not a HexBoard sound file");
   });
 
-  it("shows Inst for stages that follow the instrument and no wavetable controls", async () => {
+  it("shows Smpl for stages that follow the samples and no wavetable controls", async () => {
     const { createElement } = await import("react");
     const { renderToStaticMarkup } = await import("react-dom/server");
     const { ClassicSamplerSoundEditor } = await import("../views/classicSynth/ClassicSamplerSoundEditor.tsx");
@@ -58,9 +58,9 @@ describe("Classic sampler sounds in Sync", () => {
       envelopeOverride: 0b00001, onEnvelopeOverrideChange: () => {}, modWheel: 0
     }));
     expect(html).toContain("Felt Piano");
-    expect(html).toContain("Edit instrument");
-    // Attack is replaced; hold, decay, sustain and release follow the instrument.
-    expect(html.match(/<output>Inst<\/output>/g)?.length).toBe(4);
+    expect(html).toContain("Edit samples");
+    // Attack is replaced; hold, decay, sustain and release follow the samples.
+    expect(html.match(/<output>Smpl<\/output>/g)?.length).toBe(4);
     for (const hidden of ["Wavetable", "Motion sources", "LFO"]) expect(html).not.toContain(hidden);
     for (const shown of ["Amp envelope", "Vibrato", "Wheel amount", "Drive", "Synth mode"]) expect(html).toContain(shown);
   });

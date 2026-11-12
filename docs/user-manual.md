@@ -138,11 +138,14 @@ using the desktop HexBoard Backup GUI with saved `.hbseq` sequences.
 `Sound:<current sound>` opens the `Sounds` list from the top level. Sounds are
 the HexBoard's saved synth presets. If the current sound has changed since it was loaded or saved, its
 name is shown with a leading `*`.
-Resting on a sound in the `Sounds` list for 200 ms auditions it, so you can
-play it before choosing it. Press to choose the highlighted sound; leaving the
-list without choosing returns to the sound that was playing. An audition is
-never saved, even with Auto-save on, and a restart starts with the chosen
-sound.
+Resting on an item in the `Sounds`, `Tuning`, `Layout` or `Scales` list for
+200 ms auditions it, so you can play it before choosing it. Press to choose
+the highlighted item; leaving the list without choosing returns to what was
+chosen, which keeps its diamond meanwhile. An audition is never saved, even
+with Auto-save on, and a restart starts with the chosen item. Auditioning a
+layout keeps the screen's current rotation; choosing it applies the layout's
+rotation. Changing the key in `Scales` while a scale is auditioned keeps that
+scale.
 Library browsers use arrows for folders and actions, and a diamond marks the
 loaded item. Long names scroll when you leave the selection on them.
 
@@ -486,8 +489,9 @@ leave the HexBoard powered until the menu returns. The supplied presets are orga
 `Leads`, `Pads`, and `Plucks`. They can be changed or erased like any other
 preset. The web app
 shows folders with preset counts. Search
-narrows the compact preset list within the selected folder. Open a preset from
-its name or use its more-actions menu for rename, move, copy, export, and
+narrows the preset list within the selected folder. Load a preset from
+its name, copy it with the row's `→ HexBoard` or `→ Browser` button, or use its
+more-actions menu for rename, move, export, and
 delete. The app can also create foldered presets.
 `Rename / Move` changes a saved Browser or HexBoard preset in place, so changing
 its name or folder does not require making a copy and deleting the old preset.
@@ -496,10 +500,10 @@ which preset will be replaced and requires confirmation. `Delete` also requires
 confirmation and states that it cannot be undone.
 
 Use the selection boxes in either preset library for batch work. The batch
-toolbar appears after at least one preset is selected. `Select shown`
+actions appear after at least one preset is selected. `Select shown`
 selects the presets visible under the current folder filter. The selected
 presets can be copied together to the other library or exported as one JSON
-library file. `Import Preset Files` accepts several individual preset files, a
+library file. `Import files` accepts several individual preset files, a
 bulk library file, or both in one file selection. Before a batch import or copy,
 the app lists how many existing destination presets will be replaced and waits
 for confirmation.

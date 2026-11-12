@@ -959,8 +959,147 @@ void writeCurrentGeometryReference(GeometryProfileReference& reference) {
   }
 }
 
+namespace {
+// A geometry audition plays a tuning, layout or scale without choosing it.
+// These settings are written by geometry loads; while the audition is
+// unchanged, saves record their values from before it.
+constexpr SettingKey geometryAuditionKeys[] = {
+  SettingKey::CurrentTuning, SettingKey::CurrentLayout, SettingKey::CurrentScale,
+  SettingKey::CurrentKeyStepsFromA, SettingKey::CurrentKeyStepsFromAHigh, SettingKey::ColorMode,
+  SettingKey::DeviceRotation, SettingKey::LayoutRotation, SettingKey::MirrorLeftRight, SettingKey::MirrorUpDown
+};
+constexpr size_t GEOMETRY_AUDITION_KEY_COUNT = sizeof(geometryAuditionKeys) / sizeof(geometryAuditionKeys[0]);
+
+struct GeometryAuditionSnapshot {
+  GeometryProfileReference reference = {};
+  uint8_t values[GEOMETRY_AUDITION_KEY_COUNT] = {};
+  int tuningIndex = 0;
+  int layoutIndex = 0;
+  int scaleIndex = 0;
+  int keyStepsFromA = 0;
+};
+
+bool geometryAuditionActive = false;
+GeometryAuditionSnapshot geometryAuditionCommitted;
+GeometryAuditionSnapshot geometryAuditionPlayed;
+uint8_t geometryAuditionHeldValues[GEOMETRY_AUDITION_KEY_COUNT] = {};
+bool geometryAuditionValuesSwapped = false;
+
+void captureGeometryAuditionSnapshot(GeometryAuditionSnapshot& snapshot) {
+  writeCurrentGeometryReference(snapshot.reference);
+  for (size_t i = 0; i < GEOMETRY_AUDITION_KEY_COUNT; ++i) {
+    snapshot.values[i] = settings[static_cast<uint8_t>(geometryAuditionKeys[i])];
+  }
+  snapshot.tuningIndex = current.tuningIndex;
+  snapshot.layoutIndex = current.layoutIndex;
+  snapshot.scaleIndex = current.scaleIndex;
+  snapshot.keyStepsFromA = current.keyStepsFromA;
+}
+
+bool sameGeometryAuditionSnapshot(const GeometryAuditionSnapshot& a, const GeometryAuditionSnapshot& b) {
+  return memcmp(&a.reference, &b.reference, sizeof(a.reference)) == 0
+         && memcmp(a.values, b.values, sizeof(a.values)) == 0
+         && a.tuningIndex == b.tuningIndex && a.layoutIndex == b.layoutIndex
+         && a.scaleIndex == b.scaleIndex && a.keyStepsFromA == b.keyStepsFromA;
+}
+
+bool restoreGeometryReference(const GeometryProfileReference& reference);
+}  // namespace
+
+bool geometryAuditionUnchanged() {
+  if (!geometryAuditionActive) return false;
+  GeometryAuditionSnapshot now;
+  captureGeometryAuditionSnapshot(now);
+  return sameGeometryAuditionSnapshot(now, geometryAuditionPlayed);
+}
+
+void beginGeometryAudition() {
+  // A changed audition was committed by whatever changed it.
+  if (geometryAuditionActive && !geometryAuditionUnchanged()) geometryAuditionActive = false;
+  if (!geometryAuditionActive) captureGeometryAuditionSnapshot(geometryAuditionCommitted);
+}
+
+void markGeometryAuditionPlayed() {
+  captureGeometryAuditionSnapshot(geometryAuditionPlayed);
+  geometryAuditionActive = true;
+}
+
+void commitGeometryAudition() {
+  geometryAuditionActive = false;
+}
+
+const GeometryProfileReference* geometryAuditionCommittedReference() {
+  return geometryAuditionActive ? &geometryAuditionCommitted.reference : nullptr;
+}
+
+bool restoreGeometryAuditionCommitted() {
+  if (!geometryAuditionActive) return false;
+  if (!geometryAuditionUnchanged()) { geometryAuditionActive = false; return false; }
+  geometryAuditionActive = false;
+  const GeometryAuditionSnapshot& committed = geometryAuditionCommitted;
+  current.tuningIndex = committed.tuningIndex;
+  current.layoutIndex = committed.layoutIndex;
+  current.scaleIndex = committed.scaleIndex;
+  if (committed.reference.flags & GEOMETRY_PROFILE_HAS_TUNING) {
+    const bool previousApplyDefaultColorMode = applyGeometryBundleDefaultColorMode;
+    applyGeometryBundleDefaultColorMode = false;
+    restoreGeometryReference(committed.reference);
+    applyGeometryBundleDefaultColorMode = previousApplyDefaultColorMode;
+  }
+  for (size_t i = 0; i < GEOMETRY_AUDITION_KEY_COUNT; ++i) {
+    settings[static_cast<uint8_t>(geometryAuditionKeys[i])] = committed.values[i];
+  }
+  current.keyStepsFromA = committed.keyStepsFromA;
+  colorMode = settingValue(SettingKey::ColorMode);
+  layoutRotation = settingValue(SettingKey::LayoutRotation) % 6;
+  deviceRotation = settingValue(SettingKey::DeviceRotation) % 4;
+  mirrorLeftRight = settingEnabled(SettingKey::MirrorLeftRight);
+  mirrorUpDown = settingEnabled(SettingKey::MirrorUpDown);
+  return true;
+}
+
+void beginSavingCommittedGeometrySettings() {
+  geometryAuditionValuesSwapped = false;
+  if (!geometryAuditionUnchanged()) {
+    geometryAuditionActive = false;
+    return;
+  }
+  for (size_t i = 0; i < GEOMETRY_AUDITION_KEY_COUNT; ++i) {
+    const uint8_t key = static_cast<uint8_t>(geometryAuditionKeys[i]);
+    geometryAuditionHeldValues[i] = settings[key];
+    settings[key] = geometryAuditionCommitted.values[i];
+  }
+  geometryAuditionValuesSwapped = true;
+}
+
+void endSavingCommittedGeometrySettings() {
+  if (!geometryAuditionValuesSwapped) return;
+  for (size_t i = 0; i < GEOMETRY_AUDITION_KEY_COUNT; ++i) {
+    settings[static_cast<uint8_t>(geometryAuditionKeys[i])] = geometryAuditionHeldValues[i];
+  }
+  geometryAuditionValuesSwapped = false;
+}
+
+void applyCommittedGeometryAuditionSettings(uint8_t* profileSettings) {
+  if (!profileSettings || !geometryAuditionUnchanged()) return;
+  for (size_t i = 0; i < GEOMETRY_AUDITION_KEY_COUNT; ++i) {
+    profileSettings[static_cast<uint8_t>(geometryAuditionKeys[i])] = geometryAuditionCommitted.values[i];
+  }
+}
+
 void rememberCurrentGeometryReferenceForProfile(uint8_t profileIndex) {
-  if (profileIndex >= PROFILE_COUNT || !userGeometryRuntime.tuningObjectSelected) {
+  if (profileIndex >= PROFILE_COUNT) {
+    return;
+  }
+  // An unchanged audition is never saved; the selection before it is.
+  if (geometryAuditionUnchanged()) {
+    if (geometryAuditionCommitted.reference.flags & GEOMETRY_PROFILE_HAS_TUNING) {
+      geometryProfileReferences[profileIndex] = geometryAuditionCommitted.reference;
+    }
+    return;
+  }
+  geometryAuditionActive = false;
+  if (!userGeometryRuntime.tuningObjectSelected) {
     return;
   }
   writeCurrentGeometryReference(geometryProfileReferences[profileIndex]);
@@ -970,7 +1109,12 @@ bool restoreGeometryReferenceForProfile(uint8_t profileIndex) {
   if (profileIndex >= PROFILE_COUNT) {
     return false;
   }
-  const GeometryProfileReference& reference = geometryProfileReferences[profileIndex];
+  geometryAuditionActive = false;
+  return restoreGeometryReference(geometryProfileReferences[profileIndex]);
+}
+
+namespace {
+bool restoreGeometryReference(const GeometryProfileReference& reference) {
   if ((reference.flags & GEOMETRY_PROFILE_HAS_TUNING) == 0) {
     return false;
   }
@@ -1034,6 +1178,8 @@ bool restoreGeometryReferenceForProfile(uint8_t profileIndex) {
   }
   return true;
 }
+
+}  // namespace
 
 bool loadGeometryRuntimeForProfile(uint8_t profileIndex) {
   bool previousApplyDefaultColorMode = applyGeometryBundleDefaultColorMode;

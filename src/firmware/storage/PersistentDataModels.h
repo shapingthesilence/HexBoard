@@ -179,7 +179,7 @@ struct SynthPresetSlot {
   // Sampler presets name an installed Classic sampler instrument; empty
   // selects the wavetable engine. Bit n set replaces amp envelope stage n
   // (attack, hold, decay, sustain, release) with the preset's own value;
-  // a clear bit keeps the instrument's per-region value ("Inst").
+  // a clear bit keeps each sample's per-region value ("Smpl").
   char samplerName[SYNTH_PRESET_NAME_LENGTH] = {};
   uint8_t samplerEnvelopeOverride = 0;
 };

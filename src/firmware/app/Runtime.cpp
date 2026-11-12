@@ -170,6 +170,7 @@ void hexboardLoop() {        // run on first core
   serviceSynthPresetMenuAudition();
   serviceSynthWavetableMenuRebuild();
   serviceUserGeometryMenuRebuild();
+  serviceUserGeometryMenuAudition();
   restoreMenuAfterDelegatedControl();
   serviceVirtualListLauncherLabelScroll();
   serviceFlashSaveScreen();

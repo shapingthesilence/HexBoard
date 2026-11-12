@@ -32,7 +32,7 @@ struct Voice {
 Voice readers[POLYPHONY_LIMIT];
 std::atomic<int16_t> pendingRegions[POLYPHONY_LIMIT];
 std::atomic<uint32_t> pendingSteps[POLYPHONY_LIMIT];
-// Region envelope with the sound's "Inst" overrides applied, prepared on Core 0
+// Region envelope with the sound's "Smpl" overrides applied, prepared on Core 0
 // when a note starts and copied by Core 1 when it consumes the attack command.
 EnvelopeParams pendingEnvelopes[POLYPHONY_LIMIT];
 // Mod wheel vibrato, refreshed on Core 1 at the synth control rate. The amount

@@ -150,9 +150,8 @@
 .physical-workspace .spatial-panel{display:block;}
 .physical-workspace .spatial-panel .mini-controls{grid-column:auto;grid-row:auto;}
 
-/* Dark instrument surface, shared by every engine and the preset library dialog. Engine colors live in SynthIdentity.css. */
-:root[data-theme="dark"] .physical-editor,
-:root[data-theme="dark"] .soundLibraryDialog {
+/* Dark instrument surface, shared by every engine. Engine colors live in SynthIdentity.css. */
+:root[data-theme="dark"] .physical-editor {
   --surface: #172129; --surface-raised: #202b34; --surface-muted: #2a3741;
   --surface-accent: #3b4d59; --text: #e4eaf0; --text-soft: #9cabb6;
   --border: #3a4853; --border-strong: #637582;

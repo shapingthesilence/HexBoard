@@ -519,7 +519,7 @@ void showMissingWavetableNotice(const char* wavetableName) {
 }
 
 void showMissingSamplerInstrumentNotice(const char* instrumentName) {
-  showMissingSoundSourceNotice("Upload instrument", instrumentName, "Using wavetable");
+  showMissingSoundSourceNotice("Resend sound", instrumentName, "Using wavetable");
 }
 
 void showSynthPresetSaveRefusedNotice(const char* reason, const char* detail,
@@ -2564,10 +2564,10 @@ void previewPBSpeed(GEMPreviewCallbackData previewData) {
 }
 
 // --- Sampler presets -------------------------------------------------------
-// The instrument is fixed by the preset, so it is shown read-only. Each amp
-// envelope stage offers "Inst" (the instrument's own per-region value) before
+// A sampler sound's samples are fixed, so their name is shown read-only. Each
+// amp envelope stage offers "Smpl" (each sample's own per-region value) before
 // the usual values; choosing a value replaces that stage for every region.
-char samplerInstrumentMenuLabel[40] = "Inst:";
+char samplerInstrumentMenuLabel[40] = "Smpl:";
 void samplerInstrumentMenuAction() {}
 GEMItem menuItemSamplerInstrument(samplerInstrumentMenuLabel, samplerInstrumentMenuAction, true);
 GEMPage menuPageSamplerAmpEnv("Amp Env", menuPageSynth);
@@ -2581,9 +2581,9 @@ SelectOptionByte optionByteSamplerEnvelopeTimes[ENVELOPE_TIME_OPTION_COUNT + 1];
 SelectOptionByte optionByteSamplerSustain[SUSTAIN_OPTION_COUNT + 1];
 struct InitializeSamplerEnvelopeOptions {
   InitializeSamplerEnvelopeOptions() {
-    optionByteSamplerEnvelopeTimes[0] = { "Inst", SAMPLER_ENVELOPE_INST };
+    optionByteSamplerEnvelopeTimes[0] = { "Smpl", SAMPLER_ENVELOPE_INST };
     for (uint8_t i = 0; i < ENVELOPE_TIME_OPTION_COUNT; ++i) optionByteSamplerEnvelopeTimes[i + 1] = optionByteEnvelopeTimes[i];
-    optionByteSamplerSustain[0] = { "Inst", SAMPLER_ENVELOPE_INST };
+    optionByteSamplerSustain[0] = { "Smpl", SAMPLER_ENVELOPE_INST };
     for (uint8_t i = 0; i < SUSTAIN_OPTION_COUNT; ++i) optionByteSamplerSustain[i + 1] = optionByteSustain[i];
   }
 } initializeSamplerEnvelopeOptions;
@@ -2651,7 +2651,7 @@ void updateSynthMenuVisibility() {
 
   // A sampler preset shows only the edits the sampler supports.
   const bool sampler = compactSamplerRequestedName()[0] != '\0';
-  snprintf(samplerInstrumentMenuLabel, sizeof(samplerInstrumentMenuLabel), "Inst: %s", compactSamplerRequestedName());
+  snprintf(samplerInstrumentMenuLabel, sizeof(samplerInstrumentMenuLabel), "Smpl: %s", compactSamplerRequestedName());
   refreshSamplerEnvelopeChoices();
   menuItemSamplerInstrument.hide(!sampler);
   menuGotoSamplerAmpEnv.hide(!sampler);

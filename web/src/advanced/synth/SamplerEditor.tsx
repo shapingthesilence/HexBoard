@@ -74,7 +74,7 @@ function LoopReviewDialog({children, onClose}: {children: ReactNode; onClose: ()
   return <dialog ref={ref} className="sampler-review-dialog" aria-labelledby="samplerLoopReviewTitle" onCancel={event => { event.preventDefault(); onClose(); }}>{children}</dialog>;
 }
 const empty = (): Patch => ({
-  name: "New instrument",
+  name: "New sound",
   assets: [],
   zones: [],
   settings: { ...defaults },
@@ -111,7 +111,7 @@ export function samplerFilename(name: string) {
     .replace(/^\.+/, "")
     .slice(0, 60)
     .replace(/[. ]+$/, "");
-  return `${base || "Instrument"}.hbs`;
+  return `${base || "Sound"}.hbs`;
 }
 const bytes = (n: number) =>
   n >= 1048576
@@ -121,13 +121,13 @@ const bytes = (n: number) =>
  *  stay, and sending or saving keeps its name, folder and object id. */
 export interface SamplerSoundTarget { name: string; folderPath: string; presetBody: Uint8Array; instrument: Uint8Array }
 
-export function SamplerEditor({ transport, target = "advanced", sound }: { transport?: MidiTransport; target?: "advanced" | "classic"; sound?: SamplerSoundTarget }) {
+export function SamplerEditor({ transport, target = "advanced", sound, onBack }: { transport?: MidiTransport; target?: "advanced" | "classic"; sound?: SamplerSoundTarget; /** Returns to the sound library and editor this was opened from. */ onBack?: () => void }) {
   const classic = target === "classic";
   const compactClient = useMemo(() => classic && transport ? new ClassicSamplerClient(transport) : undefined, [classic, transport]);
   // Classic: an instrument lives inside its sound. Sending makes or updates one sound.
   const [soundTarget, setSoundTarget] = useState<SamplerSoundTarget | undefined>(sound);
   const [presetName, setPresetName] = useState("");
-  const [presetFolder, setPresetFolder] = useState("Instruments");
+  const [presetFolder, setPresetFolder] = useState("Sampler");
   const [presetStatus, setPresetStatus] = useState("");
   const [preparationMessage, setPreparationMessage] = useState("");
   const [preparationError, setPreparationError] = useState("");
@@ -183,7 +183,7 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
     [auditionChoice, setAuditionChoice] = useState(0),
     [adaptation, setAdaptation] = useState<"faithful" | "compact">(classic ? "compact" : "faithful"),
     [sourceNote, setSourceNote] = useState(60),
-    [exportFolder, setExportFolder] = useState("My instruments"),
+    [exportFolder, setExportFolder] = useState("My sounds"),
     [deviceSpace, setDeviceSpace] = useState(0),
     [deviceSettings, setDeviceSettings] = useState(false),
     [loadedSource, setLoadedSource] = useState(-1);
@@ -214,7 +214,7 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
       setPreparationMessage(""); setPreparationError("Classic supports up to 16 recordings and 32 regions. Use fewer recordings or a smaller preset."); return;
     }
     let alive = true, preparationWorker: Worker | undefined;
-    setPreparationMessage("Updating instrument…"); setPreparationError("");
+    setPreparationMessage("Updating sound…"); setPreparationError("");
     const timer = setTimeout(() => {
       preparationWorker = new Worker(new URL("./sampler/prepare.worker.ts", import.meta.url), { type: "module" });
       preparationWorker.onmessage = event => {
@@ -244,8 +244,8 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
       if (!alive || !draft || !draftWorthSaving(draft.patch) || patchRef.current.assets.length) return;
       savedDraft.current={patch:draft.patch,template:draft.template,id:draftId};
       setPatch(draft.patch); setTemplate(draft.template); setSelected(0); setZoneIndex(0);
-      setDraftNotice(`Restored your unsaved instrument from ${new Date(draft.savedAt).toLocaleString(undefined,{dateStyle:"medium",timeStyle:"short"})}.`);
-    }).catch(e => { if (alive) setDraftError(`Couldn’t restore the autosaved instrument: ${e instanceof Error ? e.message : e}`); })
+      setDraftNotice(`Restored your unsaved sound from ${new Date(draft.savedAt).toLocaleString(undefined,{dateStyle:"medium",timeStyle:"short"})}.`);
+    }).catch(e => { if (alive) setDraftError(`Couldn’t restore the autosaved sound: ${e instanceof Error ? e.message : e}`); })
       .finally(() => { if(alive)setDraftReady(true); });
     return () => { alive = false; };
   }, [draftId]);
@@ -255,7 +255,7 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
     if(old?.id===draftId&&old.patch===patch&&old.template===template)return;
     await (draftWorthSaving(patch) ? samplerDrafts.save(draftId, patch, template) : samplerDrafts.remove(draftId));
     savedDraft.current={patch,template,id:draftId};setDraftError("");
-  }, [patch, template, draftId, draftReady], e => setDraftError(e instanceof DOMException && e.name === "QuotaExceededError" ? "This instrument is too large to autosave in the browser. Export it to keep it." : `Autosave failed: ${e instanceof Error ? e.message : e}`), 800);
+  }, [patch, template, draftId, draftReady], e => setDraftError(e instanceof DOMException && e.name === "QuotaExceededError" ? "This sound is too large to autosave in the browser. Export it to keep it." : `Autosave failed: ${e instanceof Error ? e.message : e}`), 800);
   useEffect(() => {
     client.current = transport && !classic ? new PhysicalSynthClient(transport) : undefined;
     return () => client.current?.close();
@@ -294,7 +294,7 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
   useEffect(() => {
     if (!classic || !sound) return;
     setSoundTarget(sound);
-    restore({ ...readCompactPatch(sound.instrument), report: [`Opened the instrument of “${sound.name}”.`] });
+    restore({ ...readCompactPatch(sound.instrument), report: [`Opened the samples of “${sound.name}”.`] });
   }, [sound]);
   const restore = (p: ImportedPatch) => {
     preview.current!.clear();
@@ -408,7 +408,7 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
   async function importFiles(files: FileList | File[] | null) {
     if (!files?.length) return;
     setError("");
-    setBusy("Reading instrument…");
+    setBusy("Reading sound…");
     try {
       const all = Array.from(files),
         soundfont = all.find((f) => /\.sf[23]$/i.test(f.name)),
@@ -456,17 +456,17 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
         const decoded = decodeHexSound(new Uint8Array(await hexSound.arrayBuffer()));
         const title = hexSoundTitle(decoded.presetBody);
         setSoundTarget({ ...title, ...decoded });
-        restore({ ...readCompactPatch(decoded.instrument), report: [`Opened the instrument of “${title.name}”.`] });
+        restore({ ...readCompactPatch(decoded.instrument), report: [`Opened the samples of “${title.name}”.`] });
         return;
       }
       const hbc = all.find((f) => /\.hbc$/i.test(f.name));
-      if (hbc) { setSoundTarget(undefined); restore({ ...readCompactPatch(new Uint8Array(await hbc.arrayBuffer())), report: ["Opened Classic mono instrument."] }); return; }
+      if (hbc) { setSoundTarget(undefined); restore({ ...readCompactPatch(new Uint8Array(await hbc.arrayBuffer())), report: ["Opened Classic mono samples."] }); return; }
       const hbs = all.find((f) => /\.hbs$/i.test(f.name));
       if (hbs) {
         restore({
           ...readBank(new Uint8Array(await hbs.arrayBuffer())),
           report: [
-            "Opened prepared audio. Editing and exporting prepares a new device instrument.",
+            "Opened prepared audio. Editing and exporting prepares a new device sound.",
           ],
         });
         return;
@@ -501,7 +501,7 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
     setBusy("Finding compact loops…"); setError("");
     try {
       const result = await run<(LoopCandidate | null)[]>({operation: "suggestLoops", assets: sourcePatch.assets});
-      if (patchRef.current !== sourcePatch) throw Error("The instrument changed during analysis. Try again.");
+      if (patchRef.current !== sourcePatch) throw Error("The sound changed during analysis. Try again.");
       setLoopAuditionError("");
       setLoopSelection(result.map(Boolean));
       setLoopSuggestions(result);
@@ -551,12 +551,12 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
   async function exportPatch(usb = false, prepareOnly = false) {
     if (!patch.assets.length) return;
     const preparingPatch = patch;
-    setBusy(classic ? "Preparing instrument…" : "Preparing pitch protection…");
+    setBusy(classic ? "Preparing sound…" : "Preparing pitch protection…");
     setError("");
     try {
       const result =
         prepared ?? (await run<Prepared>({ operation: "prepare", patch, target }));
-      if (patchRef.current !== preparingPatch) throw Error("The instrument changed during preparation. Prepare it again before sending.");
+      if (patchRef.current !== preparingPatch) throw Error("The sound changed during preparation. Prepare it again before sending.");
       setPrepared(result);
       if (classic) setAuditionVersion("converted");
       setReport((r) => [...new Set([...r, ...result.warnings])]);
@@ -576,7 +576,7 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
       if (usb) {
 
         if (!client.current) throw Error("Connect HexBoard first.");
-        const targetName = samplerFilename(patch.name ?? "Instrument");
+        const targetName = samplerFilename(patch.name ?? "Sound");
         const folderList = await client.current.samplerLibrary(true, 32),
           existingFolder = folderList.find((f) => f.name === exportFolder);
         const entries = existingFolder
@@ -584,15 +584,15 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
           : [];
         if (!existingFolder && folderList.length >= 32)
           throw Error(
-            "The card already has 32 instrument folders. Choose an existing USB folder or copy directly to SD.",
+            "The card already has 32 sound folders. Choose an existing USB folder or copy directly to SD.",
           );
         if (entries.some((item) => item.name === targetName.slice(0, -4)))
           throw Error(
-            "An instrument with this name already exists in that folder. Choose a new name.",
+            "A sound with this name already exists in that folder. Choose a new name.",
           );
         if (entries.length >= 32)
           throw Error(
-            "This folder already shows 32 instruments. Choose a new USB folder so the instrument stays visible in the menu.",
+            "This folder already shows 32 sounds. Choose a new USB folder so the sound stays visible in the menu.",
           );
         await client.current.uploadSamplerNamed(
           result.bytes,
@@ -613,7 +613,7 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
           if (item) setSdSource(item.id);
         }
       } else
-        download(result.bytes, samplerFilename(patch.name ?? "Instrument"));
+        download(result.bytes, samplerFilename(patch.name ?? "Sound"));
     } catch (e) {
       setError(String(e));
     } finally {
@@ -646,7 +646,7 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
   async function devicePlay(value = sdSource) {
     if (effectTimer.current) clearTimeout(effectTimer.current);
     setPlaying(false);
-    setBusy("Loading instrument…");
+    setBusy("Loading sound…");
     setError("");
     try {
       await client.current!.start(6, value);
@@ -684,7 +684,7 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
   };
   async function saveDeviceSpace() {
     if (!client.current || !deviceSettings || loadedSource !== sdSource) return;
-    setBusy("Saving instrument reverb…");
+    setBusy("Saving sound reverb…");
     setError("");
     const resume = playing;
     try {
@@ -824,7 +824,7 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
           </div>}
           {library.length > 0 && (
             <>
-              <h3>Imported instruments</h3>
+              <h3>Imported sounds</h3>
               {library.map((p, i) => (
                 <button key={i} onClick={() => restore(p)}>
                   {p.name}
@@ -1195,13 +1195,13 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
                     Arpeggiator · {patch.performance?.values[0] ? "On" : "Off"}
                   </button>
                 </div>
-                <p className="panel-note">Saved with the instrument. Recalled when HexBoard’s Follow preset setting is on.</p>
+                <p className="panel-note">Saved with the sound. Recalled when HexBoard’s Follow preset setting is on.</p>
               </fieldset>
             </div>
           </div>}
           <div className="sampler-sound-focus" hidden={soundPage!=='motion'}>{zone?<MotionEditor classic={classic} value={{...patch.motion,...zone?.motion}} onEnd={()=>{gesture.current=false;}} onChange={change=>{if(!zone)return;const m=motionSettings({...patch.motion,...zone.motion,...change});edit({...patch,zones:zones.map(z=>z===zone?{...z,motion:m}:z)},!gesture.current);gesture.current=true;}} onApplyAll={()=>{const m=motionSettings({...patch.motion,...zone?.motion});edit({...patch,motion:m,zones:zones.map(z=>({...z,motion:m}))});}}/>:<p className="panel-note">Select a recording with a mapped region to edit its motion.</p>}</div>
           <div className="sampler-sound-focus" hidden={soundPage!=='room'}><fieldset><legend>Room</legend><button aria-pressed={settings.space>0} onClick={()=>{if(settings.space>0)lastSpace.current=settings.space;global('space',settings.space>0?0:lastSpace.current);gesture.current=false;}}>Room · {settings.space>0?'On':'Off'}</button>
-            <p className="panel-note">{classic?'Heard in the browser only; Classic export omits reverb.':'One shared reverb for the whole instrument.'}</p>
+            <p className="panel-note">{classic?'Heard in the browser only; Classic export omits reverb.':'One shared reverb for the whole sound.'}</p>
             <div className="knob-bank">{([['space','Amount',0,1,''],['roomDecay','Decay',200,8000,'ms'],['roomTone','Tone',0,1,''],['roomWidth','Width',0,1,'']] as const).map(([k,label,min,max,unit])=><label className="sampler-knob" key={k}><span>{label}</span><Knob label={'Room '+label} min={min} max={max} value={settings[k]} onChange={v=>global(k,v)} onRelease={()=>{gesture.current=false;}}/><output>{settings[k].toFixed(max>1?0:2)} {unit}</output></label>)}</div></fieldset></div>
       </>}/></main>
       </div>
@@ -1222,23 +1222,24 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
       }}
     >
       <div className="instrument-title">
+        {onBack && <button type="button" className="sampler-back" onClick={onBack}>← Sounds</button>}
         <h2>Sampler</h2>
-        {classic && <span>One instrument · eight voices</span>}
+        {classic && <span>HexBoard Classic · eight voices</span>}
         {(busy || draftError || draftNotice) && <p role="status" className={!busy && draftError ? "error" : ""}>{busy || draftError || draftNotice}</p>}
       </div>
       <div className="sampler-toolbar">
         <input
-          aria-label="Instrument name"
+          aria-label="Sound name"
           disabled={!!busy}
           value={patch.name ?? ""}
           maxLength={32}
           onChange={(e) => edit({ ...patch, name: e.target.value }, false)}
         />
-        <button disabled={!!busy || (!patch.assets.length && patch.name === "New instrument")} title="Start an empty instrument (Undo brings this one back)" onClick={newInstrument}>New</button>
-        <label className="sampler-file primary" title="WAV recordings, SF2/SF3 SoundFonts, SFZ or saved instruments">
-          Add recordings or instrument
+        <button disabled={!!busy || (!patch.assets.length && patch.name === "New sound")} title="Start an empty sampler sound (Undo brings this one back)" onClick={newInstrument}>New</button>
+        <label className="sampler-file primary" title="WAV recordings, SF2/SF3 SoundFonts, SFZ or saved sampler sounds">
+          Add recordings or sound file
           <input
-            aria-label="Add recordings or instrument"
+            aria-label="Add recordings or sound file"
             type="file"
             multiple
             accept={classic ? `.sf2,.sf3,.sfz,.wav,.hbs,.hbc,${HEXSOUND_EXTENSION}` : ".sf2,.sf3,.sfz,.wav,.hbs"}
@@ -1284,9 +1285,9 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
         <InstrumentResources patch={patch} classic={classic} disabled={!!busy} onSetup={()=>setSetupOpen(true)}/>
         <button className="sampler-toolbar-end" disabled={!!busy} onClick={()=>setExportOpen(true)}>Save / export…</button>
       </div>
-      {classic && <section className="sampler-workflow" aria-label="Prepare and send instrument">
+      {classic && <section className="sampler-workflow" aria-label="Prepare and send sound">
         <div>
-          <strong>{prepared ? "Ready for HexBoard" : preparationMessage || "Import an instrument"}</strong>
+          <strong>{prepared ? "Ready for HexBoard" : preparationMessage || "Add recordings to begin"}</strong>
           <p>{prepared
             ? `${bytes(prepared.residentBytes)} of 48 KiB sample RAM · ${prepared.auditionPatch?.assets.length ?? 0} mono recordings`
             : "48 KiB sample RAM · conversion updates automatically as you edit."}</p>
@@ -1298,11 +1299,11 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
         </div>
         {soundTarget
           ? <div className="sampler-fields" aria-label="HexBoard sound">
-              <p>Replaces the instrument in “{soundTarget.name}” ({soundTarget.folderPath === "/" ? "root folder" : soundTarget.folderPath}); its settings stay.</p>
+              <p>Replaces the samples in “{soundTarget.name}” ({soundTarget.folderPath === "/" ? "root folder" : soundTarget.folderPath}); its settings stay.</p>
               <button disabled={!!busy} onClick={() => { setSoundTarget(undefined); setPresetName(soundTarget.name); }}>Make a new sound instead</button>
             </div>
           : <div className="sampler-fields" aria-label="HexBoard sound">
-              <label>Sound name<input aria-label="HexBoard sound name" value={presetName} placeholder={patch.name ?? "Instrument"} maxLength={HEXBOARD_PRESET_NAME_MAX_BYTES} onChange={e=>setPresetName(e.target.value)}/></label>
+              <label>Sound name<input aria-label="HexBoard sound name" value={presetName} placeholder={patch.name ?? "Sound"} maxLength={HEXBOARD_PRESET_NAME_MAX_BYTES} onChange={e=>setPresetName(e.target.value)}/></label>
               <label>Folder<input aria-label="HexBoard sound folder" value={presetFolder} maxLength={47} placeholder="Root" onChange={e=>setPresetFolder(e.target.value)}/></label>
             </div>}
         {presetStatus && <p role="status">{presetStatus}</p>}
@@ -1312,9 +1313,9 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
       {editingControls}
       {auditionControls}
       {exportOpen&&<WorkspaceDialog title="Save, export and HexBoard library" onClose={()=>setExportOpen(false)}><div className="sampler-bottom">
-        <label className="sampler-export-name">Instrument name<input aria-label="Export instrument name" value={patch.name??""} maxLength={32} onChange={e=>edit({...patch,name:e.target.value},false)}/></label>
+        <label className="sampler-export-name">Sound name<input aria-label="Export sound name" value={patch.name??""} maxLength={32} onChange={e=>edit({...patch,name:e.target.value},false)}/></label>
         {!classic && <fieldset>
-          <legend>Export instrument</legend>
+          <legend>Export sound</legend>
           <div className="sampler-fields">
             <label>
               Pitch quality
@@ -1365,7 +1366,7 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
               disabled={!patch.assets.length || !!busy}
               onClick={() => void exportPatch()}
             >
-              Export {filename(patch.name ?? "Instrument")}
+              Export {filename(patch.name ?? "Sound")}
             </button>
             <button
               disabled={!transport || !patch.assets.length || !!busy}
@@ -1376,7 +1377,7 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
           </div>
           {!transport&&<p className="panel-note">Connect your HexBoard in Sync to send over USB.</p>}
           <p className="panel-note">
-            {prepared ? `${bytes(prepared.bytes.length)} prepared. ` : ""}USB supports large SD instruments with a bounded transfer buffer. A card reader is another option for large files. Each folder holds up to 32 instruments.
+            {prepared ? `${bytes(prepared.bytes.length)} prepared. ` : ""}USB supports large SD sounds with a bounded transfer buffer. A card reader is another option for large files. Each folder holds up to 32 sounds.
           </p>
         </fieldset>}
         {!classic && <fieldset>
@@ -1415,7 +1416,7 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
               ))}
             </select>
             <select
-              aria-label="SD instrument"
+              aria-label="SD sound"
               disabled={!transport || !!busy}
               value={sdSource}
               onChange={(e) => {
@@ -1478,12 +1479,12 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
               }
               onClick={() => void saveDeviceSpace()}
             >
-              Save effect to instrument
+              Save effect to sound
             </button>
           </div>
           <p className="panel-note">
-            Try reverb on the instrument playing from the SD card, then save it
-            to that instrument.
+            Try reverb on the sound playing from the SD card, then save it
+            to that sound.
           </p>
           <SamplerLoadingStatus client={client} playing={playing}/>
         </fieldset>}
@@ -1532,7 +1533,7 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
           >
             <header>
               <div>
-                <h2>Choose your instruments</h2>
+                <h2>Choose sounds to import</h2>
                 <p>
                   Audition the original, then import only the presets you want.
                 </p>
@@ -1600,7 +1601,7 @@ export function SamplerEditor({ transport, target = "advanced", sound }: { trans
                         <strong>{p.name}</strong>
                         <small>
                           {bank.sfz
-                            ? "SFZ instrument"
+                            ? "SFZ sound"
                             : `Bank ${p.bank} · program ${p.program}${p.drums ? " · drums" : ""}`}
                         </small>
                       </span>

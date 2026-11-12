@@ -452,16 +452,22 @@ narrow windows stack the panels.
 
 In the tuning/layout editor, you can create EDO tunings, equal-step tunings,
 Scala `.scl` imports, vector layouts, scales, custom scale-degree colors, and
-per-button pitch, color, direct-MIDI, or chord overrides. Choose a tuning in
-`Library` to open the tuning library over the editor. Choose a bundle to close
+per-button pitch, color, direct-MIDI, or chord overrides.
+
+Both editors (Tunings & Layouts and the Synth Editor) start with the same bar: **Library**, the **Name** and **Folder** of
+the open item, its save state for this browser and the HexBoard, then
+**Save to Browser**, **Save to HexBoard**, and a more-actions menu. Choose
+**New folder…** in the Folder field to
+create a browser folder for the open item; use `/` for subfolders. The bar stays at the top while you scroll.
+
+`Library` opens the tuning library over the editor. Choose a tuning to close
 the library and edit it, or use the **×** button at the top right or Escape to
-return to the current bundle. Switch freely between `Tuning`, `Layout`, and `Scale & color`.
-Open **Name & folder** to rename or move the tuning. The board shows your changes
+return to the current tuning. Switch freely between `Tuning`, `Layout`, and
+`Scale & color` at the top of the settings panel. The board shows your changes
 as you edit. The whole board fits the available window height. The button editor
 appears below the preview and opens without shrinking it; scroll the page to edit
-a key. Sync and save
-actions sit next to the bundle name and its save/connection status, below the
-section buttons, and scroll with the page. Valid, in-range numeric edits
+a key. Undo, redo and, when connected, the live-preview controls sit in the
+bar beside the save actions. Valid, in-range numeric edits
 update the preview as you type. Empty, incomplete, or out-of-range drafts remain
 editable without changing the preview, then restore or clamp when you leave the
 field. Names and descriptions likewise apply their
@@ -530,9 +536,14 @@ to `Rainbow`.
 
 ## Tuning Libraries
 
-In Library, click a tuning name to edit it, or drag tuning rows to reorder them. `Copy to HexBoard` and
-`Copy to Browser` copy a tuning between libraries. The item’s more-actions menu
-contains rename, move, copy, export, and delete. `Export File` saves a
+Every library window has the same layout: **Browser Library** and **HexBoard
+Library** side by side, each with search,
+folder chips and its own list. `New`, `Import files` and `Folders` sit in the
+window's header; **Refresh** sits on the HexBoard Library.
+
+In Library, click a tuning name to edit it, or drag tuning rows to reorder them. Each row's
+`→ HexBoard` or `→ Browser` button copies it to the other library. The item’s more-actions menu
+contains rename, move, export, and delete. `Export file` saves a
 portable tuning file to the computer, and older exported tuning files remain
 importable. Uploads and downloads show progress while the transfer is active.
 If HexBoard has no usable stored tunings, the app shows a
@@ -548,7 +559,7 @@ actions also require confirmation.
 Selection boxes provide the same batch workflow as the synth preset library.
 Select the tunings shown by the current folder filter, then copy them together
 to the other library or export them as one tuning-library file. `Import
-Files` accepts several individual tuning files and bulk tuning-library files in
+files` accepts several individual tuning files and bulk tuning-library files in
 one selection. A single warning summarizes any destination tunings that a batch
 copy or import will replace.
 
@@ -564,14 +575,16 @@ deleted.
 
 In the synth editor, you can manage synth presets and user wavetables. Presets
 can be saved on the computer, uploaded to HexBoard, downloaded from HexBoard,
-exported/imported as JSON, edited, erased, and organized into folders.
-Use **Presets** and **Wavetables** inside the **Synth Library** panel to switch
-between the two libraries. Click the star on a sound to favorite it (HexBoard
+exported/imported as JSON, edited, deleted, and organized into folders.
+**Library** in the editor bar opens the sound library; use **Sounds** and
+**Wavetables** in its header to switch
+between the two libraries. Click a sound to load it: the library stays open so
+you can audition several, and the sound open in the editor is highlighted. Click the star on a sound to favorite it (HexBoard
 sounds need a connection); **★ Favorites** then lists starred sounds from every
-folder, and the sound open in the editor is highlighted. `New sound` starts a preset. Opening a preset restores its draft, if
-one exists. Name, folder, and favorite controls share the top bar with
+folder. `New sound` starts a preset and closes the library. Opening a preset restores its draft, if
+one exists. Name, folder, and favorite controls share the editor bar with
 **Save to Browser** and **Save to HexBoard**. Choose **New folder…** from the
-top Folder menu to create a browser folder and select it for the current draft.
+Folder field to create a browser folder and select it for the current draft.
 Use `/` in the name for subfolders; saving the sound remains a separate action.
 The sound’s more-actions menu contains export, `Load current HexBoard sound`,
 and `Discard draft`; `Other drafts` resumes unfinished sounds. Connecting does
