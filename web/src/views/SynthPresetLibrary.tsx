@@ -2921,7 +2921,7 @@ export function SynthPresetLibrary({ transport, onEditInstrument, onNewSamplerSo
       {libraryOpen ? (
         <LibraryDialog
           title="Sound library"
-          eyebrow="HexBoard Classic"
+          eyebrow="HexBoard"
           onClose={() => setLibraryOpen(false)}
           tabs={<LibraryTabs label="Sound library sections" value={libraryKind} options={[{ value: "presets", label: "Sounds" }, { value: "wavetables", label: "Wavetables" }]} onChange={setLibraryKind} />}
           actions={libraryKind === "presets" ? <>
@@ -3226,7 +3226,7 @@ export function SynthPresetLibrary({ transport, onEditInstrument, onNewSamplerSo
       <div className="card physical-editor wavetable-editor stack synthMainPanel">
         <div className="editorBody">
         {preset.sampler ? <>
-        <header className="instrument-title"><h2>Sampler</h2><span>HexBoard Classic · samples inside the sound</span></header>
+        <header className="instrument-title"><h2>Sampler</h2><span>HexBoard · samples inside the sound</span></header>
         <ClassicSamplerSoundEditor
           values={preset.values}
           onChange={updateValue}
@@ -3238,7 +3238,7 @@ export function SynthPresetLibrary({ transport, onEditInstrument, onNewSamplerSo
           modWheel={previewMod}
         />
         </> : <>
-        <header className="instrument-title"><h2>Wavetable</h2><span>HexBoard Classic · 16-frame wavetables</span></header>
+        <header className="instrument-title"><h2>Wavetable</h2><span>HexBoard · 16-frame wavetables</span></header>
 
         <section className={auditionOpen ? "auditionPanel" : "auditionPanel collapsed"}>
           <SynthMidiPreview transport={transport} connected={connected} controller={previewController}

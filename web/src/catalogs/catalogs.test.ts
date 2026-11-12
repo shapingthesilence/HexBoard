@@ -756,7 +756,7 @@ Example scale
   it("falls back to the default bundle for an empty layout library", () => {
     const library = parseTuningBundleLibrary([]);
     expect(library).toHaveLength(1);
-    expect(library[0].tuning.name).toBe("19 EDO Wicki");
+    expect(library[0].tuning.name).toBe("12 EDO Wicki-Hayden");
   });
 
   it("resolves scale degree color before per-button overrides", () => {
