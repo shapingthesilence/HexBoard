@@ -136,15 +136,13 @@ include `File Management` -> `USB Backup` for
 using the desktop HexBoard Backup GUI with saved `.hbseq` sequences.
 
 `Sound:<current sound>` opens the `Sounds` list from the top level. Sounds are
-the HexBoard's saved synth presets, whether they play a wavetable or a sampler
-instrument. If the current sound has changed since it was loaded or saved, its
+the HexBoard's saved synth presets. If the current sound has changed since it was loaded or saved, its
 name is shown with a leading `*`.
 Resting on a sound in the `Sounds` list for 200 ms auditions it, so you can
 play it before choosing it. Press to choose the highlighted sound; leaving the
 list without choosing returns to the sound that was playing. An audition is
 never saved, even with Auto-save on, and a restart starts with the chosen
-sound. Sampler sounds with a different instrument take about 0.2 s to
-switch.
+sound.
 Library browsers use arrows for folders and actions, and a diamond marks the
 loaded item. Long names scroll when you leave the selection on them.
 
@@ -391,28 +389,6 @@ the last frame. These menu positions land directly on the named frame; modulatio
 can still add to or subtract from this base position, so setting `WT Pos` above
 frame `1` lets a negative envelope or LFO amount move backward through the
 wavetable.
-
-Sampler presets play an imported mono instrument instead of a wavetable; the
-preset you load chooses the engine. Use HexBoard Sync's Synth → Instruments editor
-to convert your own SoundFonts or recordings: **Send to HexBoard** saves a
-sampler sound with the instrument inside it (in `Instruments` unless you choose
-another folder). Each sampler sound holds its own instrument, so copying or
-sharing the sound takes the instrument along, and deleting the sound deletes
-it. `Save Sound` and `Save as new` on the HexBoard copy the playing instrument
-into the saved sound. The HexBoard holds up to 128 sampler sounds. In the
-`Sounds` list, a small wave icon marks wavetable sounds and a sample icon marks
-sampler sounds; the diamond on the right marks the loaded sound. Sync edits
-sampler sounds with the same controls as the board.
-
-With a sampler preset loaded, the `Synth` page shows `Inst: <name>` (fixed by
-the preset), and hides the wavetable, `WT Pos`, `Wheel FX`, `FX Env` and `LFO`
-items. Its `Amp Env` page starts every stage at `Inst`, the instrument's own
-envelope; choosing a value replaces that stage for the whole instrument, and
-choosing `Inst` again restores it. New notes use the change. The mod wheel adds
-vibrato to sampler sounds: `Wheel Amt` sets how deep and `Vib Speed` how fast.
-Engine changes briefly mute audio; held keys need a fresh press afterward. If a sampler sound's instrument
-can't be read, the HexBoard shows `Upload instrument` and plays the wavetable
-engine instead. See [Classic sampler](compact-sampler.md) for importing and limits.
 
 `Drive` adds soft saturation after the voices are mixed:
 

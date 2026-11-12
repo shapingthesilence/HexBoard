@@ -143,7 +143,7 @@ engineering preview, not part of the teaching narrative.
 Refer to navigation by action names, such as Continue, Hear example, and Repeat
 without hints. Course prose must not name navigation buttons by color, number,
 or location, or assume a side-button bank. Device-specific control mappings
-belong in operation guides so the same material can serve HexBoard Advanced.
+belong in operation guides.
 
 ### Retention, agency, and enjoyment
 

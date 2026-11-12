@@ -1,48 +1,6 @@
 # HexBoard Preset Sync SysEx Reference
 
-## Advanced saved-content extension
-
-Advanced capability bit 23 adds 256 tuning-bundle slots and 16-bit geometry
-handles. Its `0x50`/`0x51` list exchange supports four records per batch;
-`0x52`/`0x53` read and `0x54` delete use three seven-bit bytes per handle.
-The app negotiates this extension; original HexBoard keeps its existing
-64-bundle messages. Portable HGB/HBS1 files and the 32-layout/32-scale limits
-are unchanged. Advanced order files use HGO version 2 with a 16-bit count;
-original HexBoard uses version 1. Internal Advanced name-index files are
-not portable content. See the Advanced repository’s
-`docs/web-control-protocol.md` for the full current wire contract.
-
-## Advanced additive runtime extension (initial bring-up history)
-
-Advanced main identifies hardware version `0x20` and advertises capability bit 17
-(AtomicGeometryPreview). Its first port supports tuning/layout/scale/palette/map
-and cents runtime, with zero storage slots, no synth schema and no wavetable or
-HGB-file capability. Unsupported writes must remain disabled in the app.
-Existing HexBoard retains per-object preview; use the extension only when its
-capability is present.
-
-Messages `0x2c` PreviewBegin, `0x2d` PreviewCommit and `0x2e` PreviewAbort have empty
-payloads and normal ACK/NACK. Begin copies live state to staging; existing HBS1
-schema 2 object writes with runtime flag 1 modify staging. Commit requires types
-3/4/5/10 (tuning/layout/palette/scale), plus optional type 6 explicit map; cycles
-and references must match. Publish only after the complete map resolves. Failure,
-CRC mismatch, abort or timeout preserves live state. Capacity is 16 KiB/object,
-64 raw chunk bytes (74 packed), 256-byte frames, 15-second abandoned transfer
-expiry. These runtime operations never save flash.
-
-`0x30` CalibrationRequest takes one byte (0 status, 1 start, 2 finish).
-`0x31` CalibrationResponse is five bytes: stage:u7, validKeys:u14, totalKeys:u14.
-Stages are 0 unavailable, 1 untouched-rest capture, 2 key sweep, 3 calibrated.
-Commands require no held key or active delegated/preview owner. New web calibration changes are RAM only; partial coverage is reported and only calibrated keys generate input. It does not imply flash qualification.
-
-Portable content retains logical IDs 0–139; Advanced explicitly excludes fixed
-command IDs 0/20/40/60/80/100/120 and maps remaining IDs to Hall 0–132. This is a
-board adapter boundary, not a different bundle format. Storage/export support and
-secondary synthesis are deferred to later Advanced stages.
-
-
 This reference describes the implemented protocol for synth presets, named wavetables,
-Classic compact sampler instruments,
 atomic geometry bundles, and live EDO/equal-step/cents-list geometry
 preview. Factory libraries are ordinary editable catalog records.
 
@@ -86,7 +44,7 @@ File headers:
 | `/.synth_profile_<0..8>.hsp` | `HSP` | Synth preset file schema `13` | Hidden full synth patch for a modified profile |
 | `/geometry/*.hgb` | `HGB` | Geometry bundle file schema `3`; object schema `2` | One tuning root and all linked layout/scale/color/map records |
 | `/geometry_order.dat` | `HGO` | Geometry order file schema `1` | Ordered tuning object IDs used by device and web library menus |
-| `/presets/<0-F>/*.hsp` | `HSP` | Synth preset file schema `13` | One named preset, folder, values, wavetable reference, and optional sampler instrument |
+| `/presets/<0-F>/*.hsp` | `HSP` | Synth preset file schema `13` | One named preset, folder, values, and wavetable reference |
 | `/preset_index/folders.hpf` | `HPF` | Folder table schema `1` | 32 folder slots |
 | `/preset_index/<slot>.hpi` | `HPI` | Folder index schema `2` | Object id, name and flags of each preset in one folder slot |
 | `/synth_wavetables.dat` | `SYW` | Synth wavetable catalog schema | Named user wavetable objects and sample-file paths |
@@ -1145,8 +1103,7 @@ Recommended TLVs:
 | `0x24` | `LastModifiedUnixTime` | Optional `u32-le` timestamp from the web app |
 | `0x26` | `SynthWavetableName` | UTF-8 wavetable name dependency |
 | `0x27` | `SynthWavetableFolderPath` | UTF-8 compatibility/display metadata; not used for dependency lookup |
-| `0x28` | `SynthSamplerName` | UTF-8 Classic sampler instrument name; present only on sampler presets |
-| `0x29` | `SynthSamplerEnvelopeOverride` | `u8` mask of amp envelope stages replacing the instrument's (bit 0 attack, 1 hold, 2 decay, 3 sustain, 4 release); sent with `0x28` |
+| `0x28`, `0x29` | Reserved | Unreleased sampler fields; a preset carrying a non-empty `0x28` is rejected |
 
 The current synth preset key set is:
 
@@ -1420,105 +1377,3 @@ present the rescue tuning as an editable catalog item.
    and a HexBoard-owned MIDI byte parser for SysEx receive.
 9. Current firmware paces device-to-host object reads by waiting for host ACKs
    after `READ_BEGIN`, after each `DATA_CHUNK`, and after `TRANSFER_END`.
-
-## Advanced Physical Strings
-
-Advanced main capability bit 19 exposes the narrow physical-model RAM editor
-through messages `0x34`/`0x35`. This does not advertise generic HBS1 synth objects
-or device preset storage. The shared app owns its browser preset schema in
-`web/src/advanced/synth/schema.ts` and uses the normal MidiTransport. The wire
-contract and audio handoff are owned by
-[Advanced web-control protocol](../../HexBoard_Advanced/docs/web-control-protocol.md#physical-synth-editor-over-sysex).
-
-## Classic Compact Sampler
-
-Negotiate capability bit 24 (`CompactSampler`). This is independent of Advanced
-sampler capability bit 22 and its physical-synth transport. Limits and runtime
-ownership are described in [Classic sampler](compact-sampler.md).
-
-Messages `0x36` / `0x37` carry a request and matching response. Every response
-starts with the requested operation. Numbers use the existing seven-bit wire
-encoding. `ascii` is one u7 byte count followed by at most 31 ASCII bytes.
-
-| Operation | Request payload | Response payload |
-| --- | --- | --- |
-| Status | `0` | `0, active:u7, assets:u7, zones:u7, pcmBytes:u21, freeHeap:u28, name:ascii` |
-| Save startup settings | `4` | `4` |
-
-Status `active` is 0 while a sampler sound's instrument plays and 127 for the
-wavetable engine; `name` is the playing instrument or `Wavetable`. Status
-reports limits, not the current patch's counts. Invalid requests use normal
-NACKs. Operations are busy during read/write transfers or the explicit audio
-benchmark. Save startup settings uses the ordinary settings writer and profile
-1; it does not change AutoSave.
-
-Object type `0x0e` is a **sampler sound**: one sound with its instrument, in the
-`.hexsound` layout that HexBoard Sync also exports and imports:
-
-| Offset | Size | Content |
-| --- | --- | --- |
-| 0 | 4 | `HXS1` |
-| 4 | 2 | Synth preset object body length *n*, little-endian (1–2048) |
-| 6 | *n* | Synth preset object body (`HBS1`, type `0x07`, the TLVs above) |
-| 6 + *n* | to the end | HBC1 instrument (below), at most 51,264 bytes |
-
-Writes use the existing WRITE_BEGIN / DATA_CHUNK / TRANSFER_END / WRITE_COMMIT
-exchange, schema 1.0, with handle `0x3FFF`. Flags must include SaveToFlash (2);
-ApplyToRuntime (1) also loads the stored sound, and DryRun is refused. The
-object streams into the temporary file. Commit validates the preset body and
-the complete instrument (metadata and PCM CRCs), takes `SynthSamplerName` from
-the instrument's own name, and stores the sound like a synth preset write: a
-sound with the same object id is replaced in place, otherwise it is appended to
-its folder. Library, folder and sampler-sound limits NACK with STORAGE_FULL
-before anything is written. READ_REQ for `0x0e` takes a synth preset handle and
-streams that sampler sound in the same layout; a wavetable sound or a sound
-without an instrument NACKs with OBJECT_MISSING. Failure, abort and the
-transfer timeout leave stored sounds intact and restore the muted audio
-transport.
-
-A synth preset write (type `0x07`) for a sampler sound keeps the instrument
-already stored under its object id, so settings edits, renames and moves do not
-resend it. A sampler sound that is not on the board yet NACKs with
-OBJECT_MISSING; send it as object `0x0e` instead.
-
-### HBC1 File Layout
-
-All integers are little-endian; floats are IEEE binary32. PCM is mono signed
-PCM16 with no padding between recordings. The PCM pool is at most 49,152 bytes.
-Header, asset and region records have sizes 64, 32 and 48 bytes respectively.
-The maximum counts are 16 assets and 32 regions. Metadata occupies exactly
-`64 + assetCount*32 + regionCount*48` bytes, immediately followed by PCM.
-
-Header offsets:
-
-| Offset | Field |
-| ---: | --- |
-| 0 | ASCII `HBC1` |
-| 4 | version:u16 = 1 |
-| 6 | headerBytes:u16 = 64 |
-| 8 | totalFileBytes:u32 |
-| 12 | totalPcmFrames:u32 |
-| 16 | CRC32 of PCM bytes |
-| 20 | CRC32 of all metadata with this field zeroed |
-| 24 | assetCount:u16 |
-| 26 | regionCount:u16 |
-| 28 | reserved:u32 = 0 |
-| 32 | NUL-terminated ASCII name, 32 bytes |
-
-Asset offsets: frame offset:u32 at 0, frame count:u32 at 4, loop start/end:u32
-at 8/12, source rate:f32 at 16, root frequency:f32 at 20, mode:u8 at 24, then
-seven zero bytes. Assets cover the PCM pool contiguously in order, each with at
-least two frames. Rates are 100–384,000 Hz and roots 1–50,000 Hz. Modes: 0 natural
-end, 1 loop while envelope lives, 2 one-shot ignoring note-off, 3 sustain loop
-followed by the recorded tail on release. Loop end is exclusive; modes 0/2 have
-zero loop bounds. Playback increments are bounded separately from source rates.
-
-Region offsets: asset index:u16 at 0, velocity low/high:u8 at 2/3, frequency
-low/high:f32 at 4/8 (low inclusive, high exclusive), gain:u16 Q15 at 12,
-key tracking:u16 Q8 at 14, attack/decay:u16 milliseconds at 16/18, sustain:u16
-Q16 at 20, release/delay/hold:u16 milliseconds at 22/24/26, then 20 zero bytes.
-Velocity bounds are inclusive in 1–127. Gain is below 2, tracking is 0–2;
-attack/delay are at most 10 seconds, decay/release/hold at most 20 seconds.
-Regions must not overlap in both pitch and velocity. Delay and envelope parameters
-are captured at note-on; release is at least 4 ms at runtime. Unsupported bounds,
-nonfinite frequencies, reserved bytes, counts and CRCs are rejected before activation.

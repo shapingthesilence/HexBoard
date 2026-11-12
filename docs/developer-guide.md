@@ -274,10 +274,8 @@ references come from the referenced named preset or hidden profile draft.
 
 `CURRENT_SETTINGS_VERSION` is 37. `SettingsMigration.h` defines frozen profile
 widths for supported versions: 57 non-synth bytes for version 32, 60 for versions
-33 through 35 and 37, and 61 for version 36. Version 36's final byte was a
-sampler slot; version 37 drops it, because the profile's synth preset or draft
-now records the engine and instrument (a sampler sound's file holds its
-instrument); profiles fall back to their preset's engine.
+33 through 35 and 37, and 61 for version 36. Version 36's final byte was an
+unreleased engine selector; version 37 drops it.
 Wheel depths retain their legacy positive bytes; negative depths use previously
 unused bytes, so supported older settings and preset values remain unchanged.
 The loader checks the exact size and original CRC before expanding each profile
@@ -496,9 +494,10 @@ Core 1 renders two 64-sample DMA buffers. A PWM timer slice paces output at abou
 piezo.
 
 Active wavetables use a `16 × 512` base table and fixed mip levels. Their samples
-and sampler PCM share an exclusive 48 KiB sample workspace. Engine selection is
-dispatched at the DMA buffer boundary; the sampler's preparation, rendering and
-limits are described in [Classic sampler](compact-sampler.md). Wavetable modulation
+use an exclusive 48 KiB sample workspace. `HEXBOARD_ENABLE_SAMPLER` (default 0,
+`config/FeatureFlags.h`) holds an unreleased sampler engine out of the build:
+the board advertises no sampler capability and rejects sampler objects and
+presets that name a sampler instrument. Wavetable modulation
 and envelopes update on a 32-sample control quantum. Per-sample rendering uses
 cached ramps and RAM-resident drive lookup tables. Wheel-only volume-envelope
 targets are computed on core 0 at most every 50 ms, only when the wheel target,
@@ -785,23 +784,3 @@ Manually cover affected categories:
 - sequencer playback, files, and USB Backup when enabled
 
 Docs-only changes require `git diff --check`, not a firmware compile.
-
-
-## Sampler ownership and selective verification
-
-Sync's `web/src/advanced/synth/sampler/prepare.mjs` and encoder own pure sampler
-preparation for the browser and Advanced command-line tools. Advanced resolves
-this checkout with `WEB_SOURCE`; do not maintain another editable copy. Keep one
-shared authoring model/editor, explicit Classic/Advanced conversion and transport,
-and separate native engines for their different memory and timing budgets.
-Language-specific validators remain at trust boundaries; browser-produced files
-must pass native codec tests. HBC1 and HBS2-v3 are current unreleased formats;
-regenerate obsolete sampler data instead of adding runtime migration chains.
-Released original-HexBoard settings migrations from version 32 remain supported.
-
-Iterate with affected Vitest files and native host contract checks, then build
-the changed target. Focus on preparation quality/pitch, malformed format/CRC,
-workspace replacement acknowledgements, captured generations/releases, exhausted
-voice capacity, interrupted installation, and safe storage failure. At integration
-boundaries use `python3 scripts/test_host.py`, the full web suite/build, and `make`.
-Keep timing, physical playing and listening qualification separate from host tests.

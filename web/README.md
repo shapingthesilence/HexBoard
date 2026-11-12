@@ -81,9 +81,7 @@ and `TRANSFER_END` so firmware can pace object transfers.
 
 `src/navigation.ts` owns hash routes for the main modes and Learn sections:
 `#/layouts`, `#/synth`, `#/learn/practice`, `#/learn/courses`,
-`#/learn/progress`, and connected-only `#/calibration`. The Calibration tab and
-workspace require an actual Advanced Hello identity; offline/original-board
-connections fall back to layouts for that route. Learn's section, stable course ID, and stable lesson ID are
+and `#/learn/progress`. Learn's section, stable course ID, and stable lesson ID are
 saved as JSON in localStorage, separately from the URL. Course and lesson
 changes update that saved location without adding browser history. Explicit
 section links take priority over the saved section while retaining the saved
@@ -112,8 +110,7 @@ without a 404 fallback. Dialogs and course-editor previews do not change the URL
 | `audio/` | Browser synth audition worklet and audio lifecycle |
 | `animation.ts` | Visible animation scheduling, capped at 60 updates per second, with hidden/offscreen suspension |
 | `views/Learn.tsx`, `learn/` | Tuning-aware scale practice, lazy device library, beat grading, delegated sessions, and LED hints |
-| `advanced/calibration/` | Connected-only Hall, velocity, pressure and diagnostic workflow; scoped SysEx client, validated records and charts |
-| `advanced/synth/` | Shared sampler import/editing tools and Classic compact target; Advanced engine editors, factory banks and typed clients |
+| `advanced/` | Unreleased work, shown only to hardware that identifies itself as supporting it |
 | `catalogs/layoutKey.ts` | Shared generated/manual layout pitch resolution |
 
 ## Learning and Course Authoring
@@ -175,10 +172,6 @@ heartbeat or timeout after entry; abandoned browsers require encoder hold.
 - Firmware implements synth presets, wavetables, geometry preview, complete
   geometry bundle storage and geometry ordering. Negotiate capabilities;
   reserved profile/snapshot/backup object types are not implemented.
-- Advanced advertises capability bit 23 for 256 tuning bundles, progressive
-  four-record listings and 16-bit handles. Original HexBoard retains its 64-bundle
-  protocol. Both use the same HGB files and 32 layouts/scales per tuning;
-  Advanced uses its own compact on-device name index.
 - Individual geometry objects are runtime previews. Persist a complete `HGB`
   bundle, then apply its active records. Opening or exporting a device tuning
   reads the complete stored bundle once. Rescue geometry is not an editable
@@ -295,58 +288,7 @@ all reward voices stop with the Learn lifecycle. Built-in melody excerpts and
 adaptations are documented in [Course repertoire](../docs/course-repertoire.md).
 
 
-## Shared board contexts
-
-`midi/boardContext.ts` owns connected identity, logical-key translation, recovery
-and synth context. Learn and tuning/layout/library content remain shared. The
-Advanced adapter uses atomic RAM preview and a lazy-loaded React calibration
-workspace. Calibration uses the existing MIDI transport and capability bit 18, with
-a five-second session owner, bounded replies and pull-paced capture pages. `RamSettingsSync` debounces edits for 400 ms, validates the complete batch, sends
-only changed groups and records each acknowledgment. Held keys retry after release;
-capture/guided/profile work pauses updates. Explicit Save is separate. It
-imports no firmware sources or Web Serial APIs. Explicit Hall/response saves use
-existing board storage. Connected Advanced also provides a Physical Strings
-editor with independent exciter/contact materials, per-note envelope/LFO
-sources using a shared modulation capacity, a localized preparation pin,
-irregular tension/bow texture, a shared formant Body EQ and an ordered singleton
-FX rack with five distortion characters, programmable Volume Steps and a stereo
-low/band/high-pass Filter. Global tilt, joystick and expression sources route
-to continuous rack knobs; Physical Strings also provides shared free-running
-LFO routing. The shared DSP budget includes these connections. A short
-mono sample import/trim editor includes baked fade-in/out editing, a waveform
-envelope and actual-engine preview. Physical JSON v22
-and synth wire v17 are paired with current Advanced firmware. Physical preset
-imports accept only v22; earlier development formats are unsupported. Durable tuning
-bundles and device synth-preset storage remain unavailable. Until hardware release, Advanced UI is hidden offline and
-manual Advanced target selection is unavailable. Original synth drafts retain their
-context. The app builds/tests independently of either firmware checkout;
-keep these boundaries when moving it to a standalone repository later.
-
-## Advanced synth editors
-
-The Advanced Synth context offers Physical Strings, Juno, DX7, and a
-Wavetable engine and capability-gated Sampler, with shared modulation and effects where supported. Updated Advanced firmware advertises capability bit 20. Classic
-presets use `hexboard.advanced.v2`; DX7 Import accepts checksum-validated single
-voices and 32-voice SysEx banks. Imported voices remain dry until you choose
-Add Advanced expression. Explicit Load/Preview/Start saves the numeric startup
-sound; ordinary drags update RAM. There is no macro system or compatibility loader for macro presets.
-
-Workspaces and individual synth editors load on demand. The synth views use
-`visualPreview.ts` and `SynthVisualPreview.tsx` for bounded live snapshots and
-subscriptions to the displayed values, separate from editable presets and undo
-history. Each engine's continuous preview has one visible animation clock capped
-at 60 updates per second; Physical Strings samples its motion at 30 Hz on that clock.
-Moving waveform and filter plots reuse canvas surfaces, with backing pixels capped
-at 2× display density and 2048×1024 per plot. They retain the waveform geometry,
-colors and glow; unison and flow decorations use that same clock without seeking
-native animation timelines. Drawing inputs are cached until they change, and
-unmounted plots release their backing surfaces.
-
-`stringDrive.ts` mirrors the Advanced Physical Strings bridge saturation
-(`saturateWave` and its per-block thresholds in HexBoard_Advanced
-`physical_model.cpp`); update both together. The String response plot and the
-motion preview share it. The plot subscribes only to Ring time, Release, Drive,
-character and Irregularity, redraws only when those change, and has no clock.
+## Synth editor
 
 The HexBoard Classic editor (`src/views/classicSynth/`) owns Classic's option
 tables and value conversions in `classicSynthModel.ts`. Its drive curve and
@@ -364,84 +306,9 @@ Keep React and React DOM on matching versions, at least 19.3.1. Development
 performance tracks must release emitted timing records rather than accumulating
 them for the lifetime of an animated editor tab.
 
-Hidden pages and offscreen animation surfaces suspend visual work. Device
-telemetry does not queue overlapping polls. Live expression/meter updates are
-isolated from the editor shell; sampler loading telemetry belongs to its status
-component. Identical performance polls preserve the shared config snapshot and
-skip storage writes and editor notifications; external-clock tempo changes still
-publish. Continuous meter/readout outputs disable live-region announcements;
-operation status and errors keep their announcements. Audio rendering, sampler motion and MIDI retain their own timing and
-are independent of the visual cap.
-
-Browser autosaves coalesce edits after 400 ms of quiet (800 ms for sampler audio),
+Browser autosaves coalesce edits after 400 ms of quiet,
 with at most one write in flight and one latest pending edit per writer. Pending
 work flushes when the editor unmounts or the page becomes hidden. Local-storage
 writes compare with the stored value; navigation, preferences and libraries skip
 identical writes. Explicit saves, imports and earned lesson progress persist
 immediately. Animation and unchanged telemetry never schedule draft saves.
-
-The **Presets** pop-up manages an IndexedDB computer library, factory banks, and
-a 3,072-entry device catalog per medium, grouped by engine and folder (32 sounds per folder). Device storage defaults to audio
-SD with main-flash fallback. Presets embed active excitation PCM and discard unused
-imports; switching sounds resets old sample undo references. Device auditioning
-stays in the dialog and defers USB editor readback until closing. Names appear from top to bottom in small batches while a folder loads; rows keep their saved order. Slot loads
-remember a compact startup reference instead of duplicating PCM into flash. The
-resident sampler's kit/package storage is still separate. The Advanced repository
-contains the native format, load-safety contract and measured load times in
-`docs/synth-presets.md`.
-
-For offline authoring and visual QA, `npm run dev` also serves
-`/advanced-preview.html`. Engine previews work without a device connection;
-connected engine availability follows advertised capabilities.
-
-Juno/DX7 reuse their native LFO and voice envelopes for assignments. Juno currently offers Distortion, Volume
-Steps, Chorus and Filter; DX7 also offers Reverb, based on the measured full-stack budget.
-
-Physical Strings provides Poly (eight held plus two tails), Mono Retrigger and
-Legato (one reused object). A compact selector shares the arpeggiator row;
-priority, glide and velocity behavior open in a pop-up. Captured absolute pitches
-and pressure survive held-note fallback; outgoing MIDI remains polyphonic.
-Optional `mono:{flags,glideMs}` belongs to v22 physical presets. The shared DSP
-estimate accounts for the selected voice mode, sources, sample loops, feedback
-features, Body and rack; over-budget additions are blocked. A return to Poly is
-unavailable until the draft fits its eight-voice allowance.
-
-**Test DSP budget** measures three registers for Physical Strings. **Test voice
-limit** qualifies higher Juno/DX7 counts. Both mute output and use a 99% render
-deadline ceiling. Measured profiles save with presets and startup recall;
-revision 4 invalidates older qualifications, and sound edits invalidate the
-measurement. Poly/mono allocations stay eight/one; unqualified classic patches
-return to eight. The estimate is not measured whole-processor CPU utilization.
-
-Joystick menu/play ownership is automatic. Pedal type, reversal and learned
-endpoints are device-menu settings with explicit save; Web operation 52 reads
-input state only. Joystick Mod and Expression routes remain editable Web sources.
-
-
-Engine-switch progress uses measured main-USB load-to-playable timings: about 3.2 seconds into Juno, 3.4 into DX7 and 3.5 into Physical Strings at eight voices. Larger qualified presets extend the preparation estimate. The bar finishes only after the device reports DAC and patch readiness. See the Advanced firmware repository’s `docs/juno-dx7.md` and `docs/juno-dx7-load-times.json` for measured scope.
-
-The factory picker includes 128 AMY Juno voices and all 1,024 bundled DX7 default voices (128 built-ins plus 896 additional voices), grouped by bank and searchable by name or number. Data and source hashes are in `src/advanced/synth/amy-factory/`. Juno conversions show notes for unsupported ranges and adapted HPF/chorus behavior; DX7 native fields are retained without added FX or expression. The direct-only engine schema is revision 2, with 220 words and seven sources × four routes. Macro fields and migration code are removed.
-
-Classic sampler authoring reuses `advanced/synth/SamplerEditor.tsx` with
-`target="classic"`. `sampler/compact.mjs` is the bounded native-rate export
-backend; `classicClient.ts` adapts the standard ACK-paced preset-sync transport.
-Advanced preparation and its device client remain independent target backends.
-Use `sampler-preview.html?target=classic` with the development server for offline
-workflow checks. See [Classic sampler](../docs/compact-sampler.md) for runtime
-limits and [preset sync](../docs/preset-sync-sysex.md#classic-compact-sampler) for
-the negotiated capability and format.
-
-`sampler/SamplerWaveform.tsx` and `loopEditing.ts` own the shared zoom, frame
-controls, stereo seam measurements and length-preserving snap/match operations.
-Display gain affects drawing only. `encode.mjs` bakes constant-period crossfades
-and calibrates Advanced roots for integer loop-rate rounding, splitting recordings
-by tracking slope when required. Fixed/zero-tracking loops with uncorrectable
-rounding are rejected. WAV import retains native data until target preparation.
-The tests verify odd/short periods, release-tail joins and serialized tuning for
-both HBC and HBS pitch variants. See [loop operation](../docs/web-app-guide.md#sampler-loop-editing).
-
-WAV imports label detected pitch or show an explicit uncertain C4 placeholder; measurement details expose detector confidence. Accepting a pitch suggestion updates an untouched automatic map; manually edited regions remain unchanged. Compact-loop suggestions can be auditioned and selected in a dialog before applying them to unlooped recordings; existing loops are preserved. Pitch and loop analysis results open in a dialog. Conversion reports identify recordings with uncertain or out-of-range loop measurements.
-
-Sampler authoring uses a single Recording/Mapping workspace and a fixed audition dock. `sampler/authoring.ts` owns tiny-periodic search and reversible PCM edits; `SamplerMidiInput.ts` preserves channel/note identity for browser audition. See [the workflow guide](../docs/sampler-tuning.md).
-
-Source pitch recognition uses short-frame normalized correlation with conservative precision refinement; rendered-loop verification retains its strict precision path. The Iowa pizzicato E2 regression fixture includes its source/license record. Native-rate filtering/downsampling is exposed only for Classic export.

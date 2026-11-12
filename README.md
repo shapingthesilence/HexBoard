@@ -6,7 +6,7 @@ The firmware in this repository drives:
 - a `140`-button illuminated hex grid
 - USB and serial MIDI output
 - microtonal and isomorphic layouts
-- onboard wavetable and compact mono sampler engines with mono retrigger, mono legato, polyphonic, and arpeggiated playback
+- an onboard wavetable synth with mono retrigger, mono legato, polyphonic, and arpeggiated playback
 - an OLED menu system for tuning, layout, color, MIDI, synth, and profile management
 
 You can [order a HexBoard](https://shapingthesilence.com/) if you are interested in the hardware.
@@ -52,7 +52,6 @@ HexBoard supports:
 - standard MIDI, extended multi-channel MIDI mapping, and MPE behavior
 - dynamic just intonation and BPM-linked retuning options
 - onboard synth waveform/wavetable banks, Serum/Vital and HexBoard wavetable import, mono portamento, AHDSR envelope, phase-warp/wavetable/LFO modulation, presets, and arpeggiator settings
-- a [compact sampler](docs/compact-sampler.md) with shared Advanced import/editing tools, native-rate mono samples, eight voices and up to 128 sampler sounds that each carry their instrument
 - an external-only delegated-control mode for host-driven buttons and LEDs
 - persistent settings with `9` profile slots stored in LittleFS
 - storage status and recovery information under `Advanced`
@@ -76,7 +75,7 @@ The current source targets:
 - `16 MB` flash with `8 MB` LittleFS
 - Pico SDK USB stack
 - USB manufacturer/product descriptor `HexBoard`
-- Generic SPI `/4` boot2
+- Single-line SPI `/6` boot2 (`boot2/`)
 
 The default `make` target builds the current `250 MHz` firmware as two files:
 
