@@ -221,6 +221,18 @@ const unsigned char* synthPresetVirtualIcon(void*, uint16_t index) {
   return synthPresetMenuPresets[itemIndex].sampler ? samplerEngineBits : wavetableEngineBits;
 }
 
+// Set while a sound auditioned from the list is playing.
+bool auditionStartedFromMenu = false;
+uint16_t auditionedPresetHandle = 0;
+
+bool synthPresetVirtualIsAuditioning(void*, uint16_t index) {
+  uint16_t itemIndex = 0;
+  return auditionStartedFromMenu
+         && activeSynthPresetMenuMode == SynthPresetMenuMode::Load
+         && synthPresetRowKind(index, itemIndex) == SynthPresetMenuRowKind::Preset
+         && synthPresetMenuPresets[itemIndex].handle == auditionedPresetHandle;
+}
+
 bool synthPresetVirtualIsCurrent(void*, uint16_t index) {
   uint16_t itemIndex = 0;
   uint16_t currentHandle = 0;
@@ -328,6 +340,8 @@ void openSynthPresetMenu(SynthPresetMenuMode mode, SynthPresetMenuReturn destina
   provider.getRowType = synthPresetVirtualRowType;
   provider.isCurrent = synthPresetVirtualIsCurrent;
   provider.getIcon = synthPresetVirtualIcon;
+  provider.isAuditioning = synthPresetVirtualIsAuditioning;
+  provider.auditionIcon = virtualListHeadphonesBits;
   provider.getInitialSelection = synthPresetVirtualInitialSelection;
   provider.select = synthPresetVirtualSelect;
   provider.back = synthPresetVirtualBack;
@@ -344,13 +358,13 @@ uint32_t auditionWatchedRow = SYNTH_PRESET_AUDITION_NO_ROW;
 uint32_t auditionRowSinceMs = 0;
 bool auditionRowMoved = false;
 bool auditionRowDone = false;
-bool auditionStartedFromMenu = false;
 
 void finishSynthPresetMenuAudition() {
   if (auditionStartedFromMenu) {
     auditionStartedFromMenu = false;
     endSynthAudition();
     refreshVirtualListLauncherLabels();
+    redrawVirtualListMenu();
   }
 }
 
@@ -370,6 +384,8 @@ void auditionHighlightedSynthPreset(uint16_t row) {
   }
   auditionSynthPreset(preset);
   auditionStartedFromMenu = true;
+  auditionedPresetHandle = synthPresetMenuPresets[itemIndex].handle;
+  redrawVirtualListMenu();
 }
 }  // namespace
 

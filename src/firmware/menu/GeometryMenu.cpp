@@ -531,6 +531,22 @@ bool userGeometryVirtualIsCurrent(void*, uint16_t index) {
   return userGeometryHandleIsCurrent(userGeometryVirtualKind, userGeometryVirtualRows[index].handle);
 }
 
+// Set while a tuning, layout or scale auditioned from the list is playing.
+bool geometryAuditionStartedFromMenu = false;
+UserGeometryMenuKind geometryAuditionedKind = UserGeometryMenuKind::Tuning;
+uint16_t geometryAuditionedHandle = USER_GEOMETRY_MENU_INVALID_HANDLE;
+
+bool userGeometryVirtualIsAuditioning(void*, uint16_t index) {
+  if (!geometryAuditionStartedFromMenu || geometryAuditionedKind != userGeometryVirtualKind) return false;
+  if (userGeometryVirtualKind == UserGeometryMenuKind::Scale) {
+    if (index < 2) return false;
+    index -= 2;
+  }
+  return index < userGeometryVirtualCount
+         && userGeometryVirtualRows[index].kind == UserGeometryMenuRowKind::Item
+         && userGeometryVirtualRows[index].handle == geometryAuditionedHandle;
+}
+
 bool userGeometryVirtualInitialSelection(void*, uint16_t* index) {
   if (!index) {
     return false;
@@ -658,6 +674,8 @@ void openUserGeometryMenu(UserGeometryMenuKind kind) {
   provider.getLabel = userGeometryVirtualLabelProvider;
   provider.getRowType = userGeometryVirtualRowType;
   provider.isCurrent = userGeometryVirtualIsCurrent;
+  provider.isAuditioning = userGeometryVirtualIsAuditioning;
+  provider.auditionIcon = virtualListTryingDiamondBits;
   provider.getInitialSelection = userGeometryVirtualInitialSelection;
   provider.select = userGeometryVirtualSelect;
   provider.back = userGeometryVirtualBack;
@@ -676,7 +694,6 @@ uint32_t geometryAuditionWatchedRow = USER_GEOMETRY_AUDITION_NO_ROW;
 uint32_t geometryAuditionRowSinceMs = 0;
 bool geometryAuditionRowMoved = false;
 bool geometryAuditionRowDone = false;
-bool geometryAuditionStartedFromMenu = false;
 
 void finishUserGeometryAudition() {
   if (!geometryAuditionStartedFromMenu) return;
@@ -714,6 +731,8 @@ void auditionUserGeometryHandle(UserGeometryMenuKind kind, uint16_t handle) {
   }
   markGeometryAuditionPlayed();
   geometryAuditionStartedFromMenu = true;
+  geometryAuditionedKind = kind;
+  geometryAuditionedHandle = handle;
   redrawVirtualListMenu();
 }
 

@@ -32,6 +32,17 @@ static const unsigned char currentDiamondBits[] U8X8_PROGMEM = {
   0xc0, 0xc4, 0xce, 0xdf, 0xce, 0xc4, 0xc0, 0xc0
 };
 
+}  // namespace
+
+const unsigned char virtualListHeadphonesBits[] U8X8_PROGMEM = {
+  0xc0, 0xde, 0xe1, 0xe1, 0xf3, 0xf3, 0xf3, 0xc0
+};
+
+const unsigned char virtualListTryingDiamondBits[] U8X8_PROGMEM = {
+  0xc0, 0xc4, 0xca, 0xd1, 0xca, 0xc4, 0xc0, 0xc0
+};
+
+namespace {
 VirtualListMenuProvider activeProvider;
 bool active = false;
 bool editing = false;
@@ -125,6 +136,24 @@ bool rowIsCurrent(uint16_t itemIndex) {
          && activeProvider.isCurrent(activeProvider.context, providerIndex);
 }
 
+// The marker beside a Button row: the diamond for the chosen item, or the
+// provider's audition icon for the one being auditioned.
+const unsigned char* rowMarker(uint16_t itemIndex) {
+  if (rowIsCurrent(itemIndex)) {
+    return currentDiamondBits;
+  }
+  uint16_t itemCount = providerItemCount();
+  if (itemIndex == VIRTUAL_LIST_BACK_INDEX || itemCount == 0
+      || !activeProvider.isAuditioning || !activeProvider.auditionIcon) {
+    return nullptr;
+  }
+  uint16_t providerIndex = static_cast<uint16_t>(itemIndex - 1);
+  return providerIndex < itemCount
+         && rowType(itemIndex) == VirtualListMenuRowType::Button
+         && activeProvider.isAuditioning(activeProvider.context, providerIndex)
+    ? activeProvider.auditionIcon : nullptr;
+}
+
 uint16_t defaultSelectionIndex() {
   return virtualItemCount() > 1 ? 1 : VIRTUAL_LIST_BACK_INDEX;
 }
@@ -163,7 +192,7 @@ void drawRows() {
       u8g2.drawXBMP(5, yDraw, VIRTUAL_LIST_SPRITE_WIDTH, VIRTUAL_LIST_SPRITE_HEIGHT, arrowLeftBits);
     } else {
       rowLabel(itemIndex, label, sizeof(label));
-      bool currentRow = rowIsCurrent(itemIndex);
+      const unsigned char* marker = rowMarker(itemIndex);
       const unsigned char* icon = nullptr;
       if (providerItemCount() == 0) {
         u8g2.setCursor(5, yText);
@@ -191,13 +220,13 @@ void drawRows() {
                           yDraw,
                           VIRTUAL_LIST_SPRITE_WIDTH,
                           VIRTUAL_LIST_SPRITE_HEIGHT,
-                          icon ? icon : (currentRow ? currentDiamondBits : arrowButtonBits));
-            if (icon && currentRow) {
+                          icon ? icon : (marker ? marker : arrowButtonBits));
+            if (icon && marker) {
               u8g2.drawXBMP(u8g2.getDisplayWidth() - 8,
                             yDraw,
                             VIRTUAL_LIST_SPRITE_WIDTH,
                             VIRTUAL_LIST_SPRITE_HEIGHT,
-                            currentDiamondBits);
+                            marker);
             }
             break;
         }

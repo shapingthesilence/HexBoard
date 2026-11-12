@@ -141,7 +141,8 @@ name is shown with a leading `*`.
 Resting on an item in the `Sounds`, `Tuning`, `Layout` or `Scales` list for
 200 ms auditions it, so you can play it before choosing it. Press to choose
 the highlighted item; leaving the list without choosing returns to what was
-chosen, which keeps its diamond meanwhile. An audition is never saved, even
+chosen, which keeps its diamond meanwhile. The auditioned sound shows
+headphones; an auditioned tuning, layout or scale shows a hollow diamond. An audition is never saved, even
 with Auto-save on, and a restart starts with the chosen item. Auditioning a
 layout keeps the screen's current rotation; choosing it applies the layout's
 rotation. Changing the key in `Scales` while a scale is auditioned keeps that
