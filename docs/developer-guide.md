@@ -53,6 +53,13 @@ LittleFS image, firmware payload, complete touched sectors, flash ranges, and
 both UF2 variants. The filesystem occupies `0x107ff000` through `0x10fff000`;
 the final 4 KiB EEPROM reservation is excluded.
 
+Both UF2 variants differ from the raw `HexBoard.ino.uf2` in one word. The
+Arduino core's pre-boot OTA stage mounts LittleFS before the clocks are
+configured, which keeps the board dark for several seconds; the builder sets
+that stage's recorded filesystem end equal to its start (`0x10002ff4`) so it
+skips the mount. Firmware takes its filesystem bounds from linker symbols.
+Flash the `_Update` or `_Factory` files, not the raw UF2.
+
 Keep Node tooling inside `web/`; use `web/README.md` for app commands.
 
 ## Runtime Architecture

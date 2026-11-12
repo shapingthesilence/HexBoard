@@ -195,11 +195,37 @@ def pad_firmware_sectors(blocks: list[bytearray], family_id: int) -> list[bytear
     return padded
 
 
+OTA_PARTITION_WORDS = 0x10002FF0
+
+
+def skip_boot_filesystem_scan(blocks: list[bytearray]) -> None:
+    """Stop the core's pre-boot update stage from mounting LittleFS.
+
+    Before the firmware starts, the Arduino core's OTA stage mounts the
+    filesystem to look for an update command. It runs before the clocks are
+    configured, so on an 8 MB library that takes several seconds of dark
+    board. HexBoard updates by UF2 only. The stage skips the mount when the
+    filesystem bounds recorded at 0x10002FF0 are equal; the firmware itself
+    takes its bounds from linker symbols and is unaffected.
+    """
+    for block in blocks:
+        target, payload_size = uf2_header(block)[3:5]
+        if target <= OTA_PARTITION_WORDS and OTA_PARTITION_WORDS + 8 <= target + payload_size:
+            offset = 32 + OTA_PARTITION_WORDS - target
+            start, end = struct.unpack_from("<II", block, offset)
+            if start != LITTLEFS_START or end != LITTLEFS_END:
+                raise BuildError("firmware does not record the expected LittleFS bounds for its boot stage")
+            struct.pack_into("<I", block, offset + 4, start)
+            return
+    raise BuildError("firmware UF2 does not contain the boot stage's filesystem bounds")
+
+
 def merge_uf2(firmware_path: Path, firmware_binary_path: Path,
               filesystem_path: Path, output_path: Path) -> None:
     firmware_blocks = parse_uf2(firmware_path.read_bytes())
     validate_firmware_ranges(firmware_blocks)
     validate_firmware_binary(firmware_blocks, firmware_binary_path)
+    skip_boot_filesystem_scan(firmware_blocks)
     family_id = family_id_for(firmware_blocks)
     filesystem = filesystem_path.read_bytes()
     if len(filesystem) != LITTLEFS_SIZE:
@@ -226,11 +252,11 @@ def write_update_uf2(firmware_path: Path, firmware_binary_path: Path, output_pat
     validate_firmware_binary(blocks, firmware_binary_path)
     if any(LITTLEFS_START <= uf2_header(block)[3] < LITTLEFS_END for block in blocks):
         raise BuildError("firmware-only UF2 unexpectedly contains LittleFS blocks")
+    skip_boot_filesystem_scan(blocks)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_bytes(firmware_path.read_bytes())
-    copied = parse_uf2(output_path.read_bytes())
-    if len(copied) != len(blocks):
-        raise BuildError("firmware-only UF2 changed while copying")
+    output_path.write_bytes(b"".join(blocks))
+    if parse_uf2(output_path.read_bytes()) != blocks:
+        raise BuildError("firmware-only UF2 changed while writing")
 
 
 def validate_combined_uf2(output_path: Path, firmware_blocks: list[bytearray]) -> None:
