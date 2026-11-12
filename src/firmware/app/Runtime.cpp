@@ -45,7 +45,6 @@
 namespace {
 std::atomic<bool> normalRuntimeReady = false;
 std::atomic<bool> bootLedAnimationReady = false;
-std::atomic<bool> bootLedSplashComplete = false;
 std::atomic<bool> normalLedFrameReady = false;
 std::atomic<bool> bootLedAnimationComplete = false;
 constexpr uint64_t AUDIO_STARTUP_TIMEOUT_MICROS = 3000000ULL;
@@ -67,11 +66,6 @@ void waitForBootLedAnimation() {
   }
 }
 
-void waitForBootLedSplash() {
-  while (!bootLedSplashComplete.load(std::memory_order_acquire)) {
-    tight_loop_contents();
-  }
-}
 }  // namespace
 
 void hexboardSetup() {
@@ -105,10 +99,9 @@ void hexboardSetup() {
   setupMenu();
   setupHardware();
   initializeSynthWaveTables();
-  // Keep the OLED blank until every startup task has completed and the menu
-  // can accept input. Core 1 may animate the LEDs once their runtime colors
-  // and current limit are final.
-  waitForBootLedSplash();
+  // Core 1 is still playing the LED splash, which reads only the LED limits
+  // set above and fixed hardware positions. Apply the saved state now so the
+  // board is ready when the splash ends. The OLED stays blank until then.
   syncSettingsToRuntime(false);
   recomputePitchBendFactor();
   synthRuntimeReady.store(true, std::memory_order_release);
@@ -193,7 +186,6 @@ void hexboardSetup1() {  // set up on second core
     tight_loop_contents();
   }
   runBootLedSelfCheckSplash();
-  bootLedSplashComplete.store(true, std::memory_order_release);
   while (!normalLedFrameReady.load(std::memory_order_acquire)) {
     tight_loop_contents();
   }

@@ -107,6 +107,18 @@ bool geometryBundleStoragePath(const uint8_t* tuningObjectId, char* output, size
   return true;
 }
 
+// Reading past a record keeps the file streaming; a seek makes LittleFS
+// refill its cache for every record, which dominated the startup scan.
+bool skipGeometryBytes(File& file, uint32_t length) {
+  uint8_t discard[256];
+  while (length > 0) {
+    const size_t chunk = std::min<size_t>(sizeof(discard), length);
+    if (file.read(discard, chunk) != chunk) return false;
+    length -= chunk;
+  }
+  return true;
+}
+
 bool readGeometryRecordMetadata(File& file,
                                 const char* storagePath,
                                 GeometryObjectIndexEntry& object) {
@@ -136,7 +148,7 @@ bool readGeometryRecordMetadata(File& file,
   object.storageOffset = file.position();
   if (object.bodyLength == 0 || object.bodyLength > GEOMETRY_OBJECT_MAX_RAW_BYTES
       || object.storageOffset + object.bodyLength > file.size()
-      || !file.seek(object.storageOffset + object.bodyLength)) return false;
+      || !skipGeometryBytes(file, object.bodyLength)) return false;
   object.recordLength = file.position() - object.recordOffset;
   return true;
 }
@@ -169,7 +181,9 @@ bool validateGeometryBundleFile(const char* path,
   }
   bundle.catalogOrder = header.catalogOrder;
   uint32_t crc = crc32Begin();
-  uint8_t buffer[128] = {};
+  // Core 0 only. Reads of this size go straight to flash instead of through
+  // the LittleFS cache, which shortens the startup library scan.
+  static uint8_t buffer[1024];
   while (file.available() > 0) {
     size_t chunk = std::min<size_t>(sizeof(buffer), file.available());
     if (file.read(buffer, chunk) != chunk) {
@@ -628,20 +642,17 @@ void load_geometry_objects() {
     sendToLog("File system not available. Using empty geometry catalog.");
     return;
   }
-  File directory = LittleFS.open(GEOMETRY_STORAGE_ROOT, "r");
-  if (!directory || !directory.isDirectory()) {
-    if (directory) directory.close();
+  if (!LittleFS.exists(GEOMETRY_STORAGE_ROOT)) {
     reportStorageHealthIssue(GEOMETRY_STORAGE_ROOT, "missing");
     sendToLog("Geometry bundle directory not found. Starting with an empty geometry library.");
     return;
   }
-  File entry;
-  while ((entry = directory.openNextFile())) {
+  // List names without opening each entry; validation opens the file once.
+  Dir directory = LittleFS.openDir(GEOMETRY_STORAGE_ROOT);
+  while (directory.next()) {
     char path[GEOMETRY_STORAGE_PATH_LENGTH] = {};
-    snprintf(path, sizeof(path), "%s", entry.fullName());
-    bool candidate = !entry.isDirectory() && pathHasGeometryBundleExtension(path);
-    entry.close();
-    if (!candidate) continue;
+    snprintf(path, sizeof(path), "%s/%s", GEOMETRY_STORAGE_ROOT, directory.fileName().c_str());
+    if (!directory.isFile() || !pathHasGeometryBundleExtension(path)) continue;
     GeometryBundleIndexEntry bundle = {};
     if (!validateGeometryBundleFile(path, bundle, true, false)) {
       reportStorageHealthIssue(path, "invalid bundle");
@@ -663,7 +674,6 @@ void load_geometry_objects() {
     geometryBundles.push_back(bundle);
     geometryCatalogObjectCount += bundle.recordCount;
   }
-  directory.close();
   if (!loadGeometryCatalogOrder()) sortGeometryBundlesAndAssignHandles();
   sendToLog("Geometry bundles loaded successfully (" + std::to_string(geometryBundles.size()) + " bundles, "
             + std::to_string(geometryCatalogObjectCount) + " objects).");

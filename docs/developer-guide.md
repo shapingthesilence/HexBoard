@@ -205,8 +205,9 @@ Startup coordinates both cores:
 1. Core 0 initializes USB/MIDI, mounts LittleFS, detects hardware, and loads settings.
 2. Core 0 initializes LEDs and releases Core 1 to run the optional LED self-check
    and splash while Core 0 loads catalogs, synth state, OLED, rotary, and menus.
-3. Core 0 waits for the splash, synchronizes runtime settings, and publishes
-   synth readiness and the normal LED frame.
+3. Core 0 synchronizes runtime settings while the splash is still playing, then
+   publishes synth readiness and the normal LED frame. The splash reads only the
+   saved LED limits and fixed hardware key positions, never layout state.
 4. Core 1 completes the LED fade and initializes audio DMA. Core 0 restores the
    sequencer and builds the storage-status menu, then waits for LED completion
    and performs the bounded audio-readiness wait.
