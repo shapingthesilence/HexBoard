@@ -350,6 +350,7 @@ void finishSynthPresetMenuAudition() {
   if (auditionStartedFromMenu) {
     auditionStartedFromMenu = false;
     endSynthAudition();
+    refreshVirtualListLauncherLabels();
   }
 }
 

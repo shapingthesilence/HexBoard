@@ -2981,15 +2981,29 @@ void redrawMenuAfterVirtualListLauncherScroll() {
   }
 }
 
+static bool virtualListLauncherPageHidden() {
+  return virtualListMenuIsActive()
+         || delegatedControlState.active
+         || presetSyncTransferActive
+         || flashSaveScreenVisible
+         || commandWheelOverlayActive()
+         || noteBadgeVisible
+         || noteOverlayVisible
+         || screenSaverOn;
+}
+
+// An audition ends one loop after its list closes, so the labels drawn on the
+// way out still name the auditioned item. Redraw them for the chosen one.
+void refreshVirtualListLauncherLabels() {
+  resetVirtualListLauncherScrollTracking(false);
+  restoreVirtualListLauncherLabels();
+  if (!virtualListLauncherPageHidden()) {
+    menu.drawMenu();
+  }
+}
+
 void serviceVirtualListLauncherLabelScroll() {
-  if (virtualListMenuIsActive()
-      || delegatedControlState.active
-      || presetSyncTransferActive
-      || flashSaveScreenVisible
-      || commandWheelOverlayActive()
-      || noteBadgeVisible
-      || noteOverlayVisible
-      || screenSaverOn) {
+  if (virtualListLauncherPageHidden()) {
     resetVirtualListLauncherScrollTracking(true);
     return;
   }

@@ -685,6 +685,7 @@ void finishUserGeometryAudition() {
     refreshMenuChoicesForCurrentTuning();
     updateLayoutAndRotate();
     requestUserGeometryMenuRebuild();
+    refreshVirtualListLauncherLabels();
   }
 }
 
