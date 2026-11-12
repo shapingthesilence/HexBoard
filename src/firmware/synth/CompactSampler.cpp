@@ -10,6 +10,11 @@
 #include <memory>
 #include <new>
 
+std::atomic<bool> synthWorkspacePauseRequested{false};
+std::atomic<bool> synthWorkspacePauseAcknowledged{false};
+
+#if HEXBOARD_ENABLE_SAMPLER
+
 static_assert(sizeof(SynthSampleWorkspace) == CompactSampler::kPcmBytes, "Shared sample workspace size mismatch");
 
 namespace {
@@ -114,8 +119,6 @@ void RAM_FUNC(finishReader)(unsigned i) {
 }
 }
 
-std::atomic<bool> synthWorkspacePauseRequested{false};
-std::atomic<bool> synthWorkspacePauseAcknowledged{false};
 
 bool RAM_FUNC(compactSamplerActive)() { return active.load(std::memory_order_acquire); }
 const char* compactSamplerName() { return compactSamplerActive() ? directory.name : "Wavetable"; }
@@ -329,3 +332,4 @@ void handleCompactSamplerRequest(uint16_t transaction, const uint8_t* p, size_t 
   } else { presetSyncSendNack(transaction, request, PRESET_SYNC_ERROR_BAD_LENGTH); return; }
   presetSyncSendFrame(response, transaction, out);
 }
+#endif  // HEXBOARD_ENABLE_SAMPLER

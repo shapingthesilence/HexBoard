@@ -156,6 +156,10 @@ bool parseSynthPresetObjectBody(const std::vector<uint8_t>& body, SynthPresetSlo
         copyPresetSyncText(preset.wavetableFolderPath, sizeof(preset.wavetableFolderPath), value, length);
         break;
       case PRESET_SYNC_TLV_SYNTH_SAMPLER_NAME:
+        if (!HEXBOARD_ENABLE_SAMPLER && length > 0) {
+          error = "sampler sounds are not supported";
+          return false;
+        }
         copyPresetSyncText(preset.samplerName, sizeof(preset.samplerName), value, length);
         break;
       case PRESET_SYNC_TLV_SYNTH_SAMPLER_ENVELOPE_OVERRIDE:
@@ -852,7 +856,7 @@ size_t presetSyncMaxRawObjectBytesForType(uint8_t objectType) {
     case PRESET_SYNC_OBJECT_TYPE_USER_SCALE:
       return GEOMETRY_OBJECT_MAX_RAW_BYTES;
     case PRESET_SYNC_OBJECT_TYPE_COMPACT_SAMPLER:
-      return 6 + PRESET_SYNC_MAX_SYNTH_PRESET_BYTES + CompactSampler::kFileBytes;
+      return HEXBOARD_ENABLE_SAMPLER ? 6 + PRESET_SYNC_MAX_SYNTH_PRESET_BYTES + CompactSampler::kFileBytes : 0;
     case PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET:
       return PRESET_SYNC_MAX_SYNTH_PRESET_BYTES;
     case PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE:

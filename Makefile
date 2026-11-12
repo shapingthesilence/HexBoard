@@ -2,6 +2,7 @@
 FQBN = rp2040:rp2040:generic:flash=16777216_8388608,freq=250,opt=Small,os=none,profile=Disabled,rtti=Disabled,stackprotect=Disabled,exceptions=Disabled,dbgport=Disabled,dbglvl=None,usbstack=picosdk,ipbtstack=ipv4only,uploadmethod=default
 PWM_BITS ?= 10
 HEXBOARD_ENABLE_SEQUENCER ?= 0
+HEXBOARD_ENABLE_SAMPLER ?= 0
 USB_MANUFACTURER ?= \"HexBoard\"
 USB_PRODUCT ?= \"HexBoard\"
 BUILD_DIR ?= build
@@ -23,7 +24,7 @@ else
 FACTORY_UF2 = $(BUILD_DIR)/HexBoard_Factory.uf2
 UPDATE_UF2 = $(BUILD_DIR)/HexBoard_Update.uf2
 endif
-BUILD_PROPERTIES = --build-property compiler.cpp.extra_flags="-DPWM_BITS=$(PWM_BITS) -DHEXBOARD_ENABLE_SEQUENCER=$(HEXBOARD_ENABLE_SEQUENCER)" \
+BUILD_PROPERTIES = --build-property compiler.cpp.extra_flags="-DPWM_BITS=$(PWM_BITS) -DHEXBOARD_ENABLE_SEQUENCER=$(HEXBOARD_ENABLE_SEQUENCER) -DHEXBOARD_ENABLE_SAMPLER=$(HEXBOARD_ENABLE_SAMPLER)" \
 	--build-property build.usb_manufacturer="$(USB_MANUFACTURER)" \
 	--build-property build.usb_product="$(USB_PRODUCT)" \
 	--build-property 'recipe.hooks.linking.prelink.2.pattern="{compiler.path}{compiler.S.cmd}" {compiler.c.elf.flags} {compiler.c.elf.extra_flags} -c "{build.source.path}/$(BOOT2_SOURCE)" -o "{build.path}/boot2.o"'

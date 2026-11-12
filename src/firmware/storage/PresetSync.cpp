@@ -50,7 +50,10 @@ void presetSyncHandleHello(uint16_t transactionId, const uint8_t* payload, size_
                       | PRESET_SYNC_CAP_SCOPED_GEOMETRY_LIST
                       | PRESET_SYNC_CAP_GEOMETRY_BUNDLE_FILES
                       | PRESET_SYNC_CAP_LIVE_SYNTH_WAVETABLE_SELECT
-                      | PRESET_SYNC_CAP_COMPACT_SAMPLER);
+#if HEXBOARD_ENABLE_SAMPLER
+                      | PRESET_SYNC_CAP_COMPACT_SAMPLER
+#endif
+                      );
   presetSyncAppendU28(response, PRESET_SYNC_MAX_RAW_OBJECT_BYTES);
   response.push_back(CURRENT_SETTINGS_VERSION);
   response.push_back(SYNTH_PRESET_SCHEMA_VERSION);
@@ -749,7 +752,7 @@ void presetSyncHandleReadRequest(uint16_t transactionId, const uint8_t* payload,
   }
   uint8_t objectType = payload[0];
   if (!isPresetSyncSupportedObjectType(objectType)
-      && objectType != PRESET_SYNC_OBJECT_TYPE_COMPACT_SAMPLER
+      && !(HEXBOARD_ENABLE_SAMPLER && objectType == PRESET_SYNC_OBJECT_TYPE_COMPACT_SAMPLER)
       && objectType != PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_BAD_OBJECT_TYPE);
     return;
@@ -1297,9 +1300,11 @@ bool processPresetSyncSysEx(const uint8_t* data, const unsigned int len) {
   }
 
   switch (message) {
+#if HEXBOARD_ENABLE_SAMPLER
     case 0x36:
       handleCompactSamplerRequest(transactionId, payload, payloadLength);
       break;
+#endif
     case PRESET_SYNC_MSG_HELLO_REQ:
       presetSyncHandleHello(transactionId, payload, payloadLength);
       break;
