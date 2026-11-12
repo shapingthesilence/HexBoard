@@ -23,7 +23,12 @@ The `Makefile` targets Earle Philhower's RP2040 core with:
 
 - `rp2040:rp2040:generic`
 - 16 MiB flash split into 8 MiB sketch and 8 MiB LittleFS
-- 250 MHz CPU and `Generic SPI /4` boot2
+- 250 MHz CPU with the repo's `boot2/boot2_generic_03h_6_padded_checksum.S`:
+  single-line `03h` flash reads at 250 MHz / 6 = 41.7 MHz. Winbond rates `03h`
+  Read Data at 50 MHz; the stock `Generic SPI /4` boot2 runs it at 62.5 MHz,
+  where an occasional cache fill arrives shifted one bit late, corrupting code
+  or constants and crashing the board after hours of use. Quad boot2 variants
+  hang Classic units fitted with the JW chip.
 - Pico SDK USB with the core `MIDIUSB` wrapper
 - `U8g2`, `Adafruit GFX Library`, and `GEM`
 
