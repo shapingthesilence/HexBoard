@@ -242,7 +242,9 @@ void save_settings() {
     return;
   }
   uint8_t persistedProfileSettings[SETTINGS_PROFILE_VALUES_DATA_SIZE] = {};
+  beginSavingCommittedGeometrySettings();
   packPersistedProfileSettings(persistedProfileSettings);
+  endSavingCommittedGeometrySettings();
   SettingsHeader header = {};
   header.magic[0] = 'S'; header.magic[1] = 'T'; header.magic[2] = 'G';
   header.version = CURRENT_SETTINGS_VERSION;
@@ -347,6 +349,7 @@ void copyCurrentSettingsToProfile(uint8_t profileIndex) {
   // When profileIndex matches the active profile we are already editing its backing array.
   if (profileIndex != activeProfileIndex) {
     memcpy(settingsProfiles[profileIndex], settings, NUM_SETTINGS);
+    applyCommittedGeometryAuditionSettings(settingsProfiles[profileIndex]);
   }
   rememberCurrentGeometryReferenceForProfile(profileIndex);
   queueCurrentSynthStateForProfile(profileIndex);

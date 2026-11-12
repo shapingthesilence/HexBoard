@@ -139,12 +139,14 @@ using the desktop HexBoard Backup GUI with saved `.hbseq` sequences.
 the HexBoard's saved synth presets, whether they play a wavetable or a sampler
 instrument. If the current sound has changed since it was loaded or saved, its
 name is shown with a leading `*`.
-Resting on a sound in the `Sounds` list for 200 ms auditions it, so you can
-play it before choosing it. Press to choose the highlighted sound; leaving the
-list without choosing returns to the sound that was playing. An audition is
-never saved, even with Auto-save on, and a restart starts with the chosen
-sound. Sampler sounds with a different instrument take about 0.2 s to
-switch.
+Resting on an item in the `Sounds`, `Tuning`, `Layout` or `Scales` list for
+200 ms auditions it, so you can play it before choosing it. Press to choose
+the highlighted item; leaving the list without choosing returns to what was
+chosen, which keeps its diamond meanwhile. An audition is never saved, even
+with Auto-save on, and a restart starts with the chosen item. Auditioning a
+layout keeps the screen's current rotation; choosing it applies the layout's
+rotation. Changing the key in `Scales` while a scale is auditioned keeps that
+scale. Sampler sounds with a different instrument take about 0.2 s to switch.
 Library browsers use arrows for folders and actions, and a diamond marks the
 loaded item. Long names scroll when you leave the selection on them.
 
