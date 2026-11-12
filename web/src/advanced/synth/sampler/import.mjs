@@ -191,7 +191,7 @@ export function directSoundFont(bank, id) {
     if(z.modulators.length){complex=true;report.add("Custom SoundFont MIDI modulators require adaptation; supported envelope and LFO generators remain live.");}
     if (g(z, "chorusEffectsSend") || g(z, "reverbEffectsSend"))
       report.add(
-        "Source chorus/reverb sends are omitted. Add effects on the instrument.",
+        "Source chorus/reverb sends are omitted. Add effects on the sound.",
       );
     zones.push(zone);
   }

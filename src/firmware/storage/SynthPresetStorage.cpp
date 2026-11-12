@@ -790,7 +790,7 @@ void showBoardSaveRefusal(SynthPresetStoreResult result) {
       snprintf(detail, sizeof(detail), "%u sampler sounds max", static_cast<unsigned>(SYNTH_PRESET_MAX_SAMPLER_COUNT));
       break;
     case SynthPresetStoreResult::MissingInstrument:
-      showSynthPresetSaveRefusedNotice("No instrument", "", "Send it with", "HexBoard Sync");
+      showSynthPresetSaveRefusedNotice("No samples", "", "Send it with", "HexBoard Sync");
       return;
     default:
       showSynthPresetSaveRefusedNotice(reason, "", "See Settings >", "Storage Status");

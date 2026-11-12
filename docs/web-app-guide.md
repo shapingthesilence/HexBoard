@@ -653,16 +653,24 @@ narrow windows stack the panels.
 
 In the tuning/layout editor, you can create EDO tunings, equal-step tunings,
 Scala `.scl` imports, vector layouts, scales, custom scale-degree colors, and
-per-button pitch, color, direct-MIDI, or chord overrides. Choose a tuning in
-`Library` to open the tuning library over the editor. Choose a bundle to close
+per-button pitch, color, direct-MIDI, or chord overrides.
+
+Every editor (Tunings & Layouts, the Classic synth editor, and each Advanced
+engine) starts with the same bar: **Library**, the **Name** and **Folder** of
+the open item, its save state for this browser and the HexBoard, then
+**Save to Browser**, **Save to HexBoard**, and a more-actions menu. Choose
+**New folder…** in the Folder field of the tuning and Classic sound editors to
+create a browser folder for the open item; use `/` for subfolders. Advanced
+engines take a typed folder name. The bar stays at the top while you scroll.
+
+`Library` opens the tuning library over the editor. Choose a tuning to close
 the library and edit it, or use the **×** button at the top right or Escape to
-return to the current bundle. Switch freely between `Tuning`, `Layout`, and `Scale & color`.
-Open **Name & folder** to rename or move the tuning. The board shows your changes
+return to the current tuning. Switch freely between `Tuning`, `Layout`, and
+`Scale & color` at the top of the settings panel. The board shows your changes
 as you edit. The whole board fits the available window height. The button editor
 appears below the preview and opens without shrinking it; scroll the page to edit
-a key. Sync and save
-actions sit next to the bundle name and its save/connection status, below the
-section buttons, and scroll with the page. Valid, in-range numeric edits
+a key. Undo, redo and, when connected, the live-preview controls sit in the
+bar beside the save actions. Valid, in-range numeric edits
 update the preview as you type. Empty, incomplete, or out-of-range drafts remain
 editable without changing the preview, then restore or clamp when you leave the
 field. Names and descriptions likewise apply their
@@ -734,9 +742,14 @@ to `Rainbow`.
 
 ## Tuning Libraries
 
-In Library, click a tuning name to edit it, or drag tuning rows to reorder them. `Copy to HexBoard` and
-`Copy to Browser` copy a tuning between libraries. The item’s more-actions menu
-contains rename, move, copy, export, and delete. `Export File` saves a
+Every library window has the same layout: **Browser Library** and **HexBoard
+Library** side by side (Advanced engines add **Factory**), each with search,
+folder chips and its own list. `New`, `Import files` and `Folders` sit in the
+window's header; **Refresh** sits on the HexBoard Library.
+
+In Library, click a tuning name to edit it, or drag tuning rows to reorder them. Each row's
+`→ HexBoard` or `→ Browser` button copies it to the other library. The item’s more-actions menu
+contains rename, move, export, and delete. `Export file` saves a
 portable tuning file to the computer, and older exported tuning files remain
 importable. Uploads and downloads show progress while the transfer is active.
 If HexBoard has no usable stored tunings, the app shows a
@@ -752,7 +765,7 @@ actions also require confirmation.
 Selection boxes provide the same batch workflow as the synth preset library.
 Select the tunings shown by the current folder filter, then copy them together
 to the other library or export them as one tuning-library file. `Import
-Files` accepts several individual tuning files and bulk tuning-library files in
+files` accepts several individual tuning files and bulk tuning-library files in
 one selection. A single warning summarizes any destination tunings that a batch
 copy or import will replace.
 
@@ -768,14 +781,16 @@ deleted.
 
 In the synth editor, you can manage synth presets and user wavetables. Presets
 can be saved on the computer, uploaded to HexBoard, downloaded from HexBoard,
-exported/imported as JSON, edited, erased, and organized into folders.
-Use **Presets** and **Wavetables** inside the **Synth Library** panel to switch
-between the two libraries. Click the star on a sound to favorite it (HexBoard
+exported/imported as JSON, edited, deleted, and organized into folders.
+**Library** in the editor bar opens the sound library; use **Sounds** and
+**Wavetables** in its header to switch
+between the two libraries. Click a sound to load it: the library stays open so
+you can audition several, and the sound open in the editor is highlighted. Click the star on a sound to favorite it (HexBoard
 sounds need a connection); **★ Favorites** then lists starred sounds from every
-folder, and the sound open in the editor is highlighted. `New sound` starts a preset. Opening a preset restores its draft, if
-one exists. Name, folder, and favorite controls share the top bar with
+folder. `New sound` starts a preset and closes the library. Opening a preset restores its draft, if
+one exists. Name, folder, and favorite controls share the editor bar with
 **Save to Browser** and **Save to HexBoard**. Choose **New folder…** from the
-top Folder menu to create a browser folder and select it for the current draft.
+Folder field to create a browser folder and select it for the current draft.
 Use `/` in the name for subfolders; saving the sound remains a separate action.
 The sound’s more-actions menu contains export, `Load current HexBoard sound`,
 and `Discard draft`; `Other drafts` resumes unfinished sounds. Connecting does
@@ -783,19 +798,21 @@ not replace your open sound. Previewing or saving to HexBoard requires a connect
 
 Both engines share one library. A small wave icon marks wavetable sounds and a
 sample icon marks Classic sampler sounds, as in the HexBoard's `Sounds` list.
-A sampler sound holds its instrument, so copying it between the HexBoard and
-Browser Library, exporting it or importing it always takes the instrument
+A sampler sound holds its samples, so copying it between the HexBoard and
+Browser Library, exporting it or importing it always takes them
 along. **Export file** saves a sampler sound as one `.hexsound` file to share;
-a library export of several sounds embeds each instrument; import accepts both.
-Sampler sounds are made in **Instruments** (**Send to HexBoard**). The sound
+a library export of several sounds embeds each sound's samples; import accepts both.
+With a sampler-capable HexBoard connected, the library offers **New wavetable
+sound** and **New sampler sound**; the latter opens the sampler editor, where
+**Send to HexBoard** saves the sound. The sound
 editor offers what the board offers: Playback, an **Amp envelope** whose
-stages start at `Inst` (the instrument's own values), **Vibrato** (`Wheel
+stages start at `Smpl` (each sample's own values), **Vibrato** (`Wheel
 amount`, `Vibrato speed`) and **Drive**. Turning a stage replaces it for the
-whole instrument; tick `Inst` to restore it. **Edit instrument** opens the
-sound's instrument in **Instruments**; sending it back replaces it in that
-sound. The browser can't play instruments, so the test keyboard is hidden;
+whole sound; tick `Smpl` to restore it. **Edit samples** opens the
+sound's samples in the sampler editor; sending from there replaces them in that
+sound, and **← Sounds** returns. The browser can't play sampler sounds, so the test keyboard is hidden;
 **Preview on HexBoard** works once the sound is saved on the HexBoard. The
-Browser Library keeps instruments in the browser's IndexedDB storage.
+Browser Library keeps samples in the browser's IndexedDB storage.
 
 Preset names are limited to 23 characters, the length the HexBoard's preset
 list shows. The HexBoard Library holds up to 512 presets in up to 32 folders,
@@ -1025,7 +1042,7 @@ Use **Test voice limit** after finishing a patch and its effects. Playback is mu
 
 Switching engines shows measured loading progress and waits for actual device readiness before completing. Typical eight-voice switches take about 3.2 seconds into Juno, 3.4 into DX7 and 3.5 into Physical Strings.
 
-**Presets** opens a compact pop-up library with Computer, HexBoard and Factory tabs.
+**Library** opens the sound library with Browser, HexBoard and Factory columns.
 Search sounds, organize folders and favorites, rename/move entries, and import or
 export JSON. Factory banks include the AMY Juno and DX7 voices; DX7 SysEx banks can
 also be imported here. Save current as new preserves a separate sound; Update
@@ -1034,7 +1051,7 @@ stored with the preset, while dormant imports are discarded on a sound switch.
 
 HexBoard groups sounds by engine and folder: 32 folders of up to 32 presets for each of Physical Strings, Juno and DX7 (3,072 presets per medium, subject to free storage bytes). SD is preferred
 when available, with internal flash fallback; the storage selector can choose
-either library. Load leaves the pop-up open for auditioning. The last audition is
+either library. Load leaves the library open for auditioning. The last audition is
 read into the editor when closing, so browsing does not repeatedly download PCM. Names appear from top to bottom in small batches while a folder loads; rows keep their saved order.
 Resident multi-zone sampler kits retain their separate prepared-kit workflow.
 Envelope/LFO editors still open from their toolbar buttons and FX stay in the
@@ -1057,10 +1074,10 @@ the file name disagree, the Sample view offers the file-name note; libraries
 number octaves differently, so check by ear. Set **Original pitch** as a note,
 octave and cents. Pitch warnings apply only to Instrument mapping.
 
-The instrument autosaves in this browser and returns after a reload, separately
-for Advanced and Classic. **New** starts an empty instrument (Undo brings the
+The sound autosaves in this browser and returns after a reload, separately
+for Advanced and Classic. **New** starts an empty sound (Undo brings the
 previous one back). Rename or **Remove** the selected recording in the Sample
-view. Undo history is not kept across reloads; export to keep an instrument.
+view. Undo history is not kept across reloads; export to keep a sound.
 
 The shared **Region ADSR** panel provides direct sliders and exact time/percent
 entry. Choose a region there, use **Edit all regions** for linked changes, or
@@ -1188,17 +1205,18 @@ set the final hardware accuracy.
 
 ## Classic Sampler
 
-With updated Classic firmware connected, Synth offers **Sounds** (the sound
-library and editor for both engines) and **Instruments** (the sampler instrument
-editor). Instruments shares Advanced's import, waveform, loop and region tools
+Classic sounds use one of two engines, Wavetable or Sampler, and share one
+library. With updated Classic firmware connected, **New sampler sound** in the
+library or **Edit samples** on a sampler sound opens the sampler editor;
+**← Sounds** returns to the library and sound editor. The sampler editor shares Advanced's import, waveform, loop and region tools
 with controls limited to Classic playback. Import and edits automatically
 prepare the Classic conversion. Compare original and converted recordings, then
 use **Send to HexBoard**. Region ADSR is in Mapping with sliders, exact
 time/percent fields and selected/all-region editing. Review size and sound
-changes before copying to the board. **Send to HexBoard** saves the instrument
-inside a sampler sound (name and folder fields beside it) and plays it; **Save
-sound file** saves that sound as a `.hexsound` file. An instrument opened with
-**Edit instrument** replaces the instrument in its sound instead.
+changes before copying to the board. **Send to HexBoard** saves the
+sampler sound (name and folder fields beside it) and plays it; **Save
+sound file** saves that sound as a `.hexsound` file. Samples opened with
+**Edit samples** replace the samples in their sound instead.
 
 See [Classic sampler](compact-sampler.md) for supported sources, eight-voice and
 48 KiB limits, loop behavior, conversion and device controls.

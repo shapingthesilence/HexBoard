@@ -1,33 +1,35 @@
 # Classic Sampler
 
 The RP2040 HexBoard has a resident mono sampler alongside the wavetable engine.
-Users convert their own SF2/SF3 SoundFonts, WAV recordings or supported SFZ/HBS
-instruments in HexBoard Sync.
+Every Classic sound uses the wavetable or the sampler engine. Users make
+sampler sounds from their own SF2/SF3 SoundFonts, WAV recordings or supported
+SFZ/HBS files in HexBoard Sync.
 
 ## Playing And Importing
 
-Connect an updated Classic board, open Synth, then choose **Instruments**. The sample
+Connect an updated Classic board, open Synth, then choose **Library → New
+sampler sound**. The sample
 editor, SoundFont preset chooser, waveform/loop tools and pitch/velocity map are
 shared with Advanced. Classic hides unsupported engine and expression controls.
 Classic keeps source recordings and reports omitted source motion. Simultaneous
 source layers need a rendered adaptation and can exceed Classic capacity.
 
-Importing or editing automatically prepares the Classic instrument. Compare
+Importing or editing automatically prepares the Classic conversion. Compare
 **Original recordings** and **Converted for HexBoard** on the audition keyboard.
-An instrument lives inside its sound: there are no separate instrument files.
+Samples live inside their sound: there are no separate sample files.
 **Send to HexBoard** stores a sampler sound holding the current prepared
-instrument and plays it, using the sound name (23 characters, default the
-instrument name) and folder (default `Instruments`) fields beside it; sending
-again with the same name and folder replaces that sound's instrument.
+samples and plays it, using the sound name (23 characters, default the
+name at the top of the editor) and folder (default `Sampler`) fields beside it; sending
+again with the same name and folder replaces that sound's samples.
 **Save sound file** downloads the same sound as a `.hexsound` file. **Edit
-instrument** in a sampler sound's editor opens its instrument here; sending it
-back replaces the instrument in that sound and keeps the sound's settings
+samples** in a sampler sound's editor opens its samples here; sending
+replaces the samples in that sound and keeps the sound's settings
 (**Make a new sound instead** sends it as a new sound). Sending and export wait
 for preparation to finish.
 Envelope edits reuse the fitted samples for immediate audition. Sample edits wait
 for their new conversion. Browser interpolation and output
 protection differ from the board, so compare on the device too. `.hexsound`
-files and older `.hbc` instruments can be reopened in the shared editor.
+files and older `.hbc` files can be reopened in the shared editor.
 Advanced `.hbs` export remains unchanged.
 Waveform, loop, mapping and **Region ADSR** controls remain visible. ADSR sliders
 give finer control over short times; type exact milliseconds or sustain percent,
@@ -39,27 +41,27 @@ The shared [loop-editing guide](web-app-guide.md#sampler-loop-editing) covers
 sample-level zoom, zero-crossing tools, length locking, crossfades and tuning.
 
 On the board, the loaded sound chooses the engine: a sampler sound plays the
-instrument stored inside it, and any other sound uses the wavetable engine.
+samples stored inside it, and any other sound uses the wavetable engine.
 **Save Sound** over another sound, or **Save as new**, copies the playing
-instrument into that sound; deleting a sampler sound deletes its instrument.
+samples into that sound; deleting a sampler sound deletes its samples.
 Changes briefly mute playback and clear
 voices. Keys held through the change require a fresh press. Tuning, layout,
 pitch bend, the board arpeggiator, volume and jack/piezo routing remain available.
-Sampler envelopes come from the converted instrument, unless the sound's `Amp
+Sampler envelopes come from the converted samples, unless the sound's `Amp
 Env` sets a stage: each set stage replaces that stage in every region when a
-note starts (release stays at least 4 ms), and `Inst` keeps the region's own.
+note starts (release stays at least 4 ms), and `Smpl` keeps the region's own.
 The mod wheel always adds vibrato (`Wheel Amt` sets the depth, `Vib Speed` the
 rate, at the wavetable engine's depth); the wavetable LFO, FX envelopes and
 other wheel targets do not apply. The shared output drive still applies.
 
-Because the instrument travels inside the sound, a sampler sound can be copied
+Because the samples travel inside the sound, a sampler sound can be copied
 between HexBoards and browsers, exported and shared as one `.hexsound` file. If
-a sound's instrument cannot be read, the board shows **Upload instrument** and
+a sound's samples cannot be read, the board shows **Resend sound** and
 plays the wavetable engine with the sound's wavetable.
 
 The current engine follows the normal settings/profile save policy through the
 profile's synth preset or draft; a sampler draft names the sound whose
-instrument it plays. AutoSave is respected. Sounds are stored immediately and
+samples it plays. AutoSave is respected. Sounds are stored immediately and
 survive firmware-only updates.
 
 ## Capacity And Conversion
@@ -68,9 +70,9 @@ survive firmware-only updates.
 | --- | --- |
 | Voice slots, including releases | 8 |
 | Mono signed PCM16 sample pool | 49,152 bytes / 24,576 frames |
-| Recordings per instrument | 16 |
+| Recordings per sound | 16 |
 | Non-overlapping pitch/velocity regions | 32 |
-| Sampler sounds (each holds its instrument) | 128 of the 512 sounds |
+| Sampler sounds (each holds its samples) | 128 of the 512 sounds |
 
 Recordings are shared by voices. File size also includes bounded metadata;
 the maximum complete file is 51,264 bytes. Original low sample rates are retained

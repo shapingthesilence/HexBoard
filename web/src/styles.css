@@ -622,8 +622,6 @@ textarea {
   align-items: start;
 }
 
-.geometryStudioHeader,
-.workflowTabs,
 .protocolDebugPanel {
   grid-column: 1 / -1;
 }
@@ -634,23 +632,6 @@ textarea {
   width: 100%;
 }
 
-.geometryStudioHeader {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 16px 24px;
-  align-items: center;
-  overflow: hidden;
-  padding: 22px 24px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background:
-    linear-gradient(120deg, color-mix(in srgb, var(--brand-soft) 72%, var(--surface)) 0%, var(--surface) 52%),
-    var(--surface);
-  box-shadow: var(--shadow-sm);
-}
-
-.geometryTitleBlock h2,
-.libraryToolbar h2,
 .inspectorHeading h2,
 .boardPanelHeading h2 {
   margin: 0;
@@ -659,8 +640,6 @@ textarea {
   letter-spacing: -0.025em;
 }
 
-.geometryTitleBlock p,
-.libraryToolbar p,
 .inspectorHeading p {
   max-width: 640px;
   margin: 6px 0 0;
@@ -669,59 +648,10 @@ textarea {
   line-height: 1.5;
 }
 
-.geometryHeaderActions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
 .liveSendControl {
   min-height: 2.25rem;
   padding: 0 5px;
   white-space: nowrap;
-}
-
-.geometryStatus {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  grid-column: 1 / -1;
-  padding-top: 12px;
-  border-top: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  color: var(--text-soft);
-  font-size: 0.82rem;
-}
-
-.geometryStatus > span {
-  width: 7px;
-  height: 7px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: var(--brand);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 16%, transparent);
-}
-
-.geometryStatus > .geometryStatusText {
-  width: auto;
-  height: auto;
-  flex: 1 1 auto;
-  border-radius: 0;
-  background: none;
-  box-shadow: none;
-}
-
-.geometryStatus > .geometryTransferProgress {
-  display: flex;
-  width: min(320px, 45vw);
-  height: auto;
-  align-items: center;
-  gap: 8px;
-  border-radius: 0;
-  background: none;
-  box-shadow: none;
-  font-variant-numeric: tabular-nums;
 }
 
 .geometryTransferProgress progress {
@@ -742,80 +672,6 @@ textarea {
   font-weight: 750;
 }
 
-.workflowTabs {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 7px;
-  padding: 7px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--surface-muted) 82%, transparent);
-}
-
-.workflowTab {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 9px;
-  min-width: 0;
-  min-height: 3.5rem;
-  padding: 0.55rem 0.65rem;
-  border-color: transparent;
-  background: transparent;
-  text-align: left;
-}
-
-.workflowTab:hover {
-  background: color-mix(in srgb, var(--surface) 72%, transparent);
-}
-
-.workflowTab.active {
-  background: var(--surface);
-  border-color: var(--border);
-  color: var(--text);
-  box-shadow: var(--shadow-sm);
-}
-
-.workflowTab > span:last-child {
-  display: grid;
-  min-width: 0;
-}
-
-.workflowTab strong,
-.workflowTab small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.workflowTab small {
-  margin-top: 2px;
-  color: var(--text-soft);
-  font-size: 0.72rem;
-  font-weight: 500;
-}
-
-.workflowStepNumber {
-  display: grid;
-  place-items: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  border-radius: 50%;
-  background: var(--surface-muted);
-  color: var(--text-soft);
-  font-size: 0.74rem;
-  font-weight: 800;
-}
-
-.workflowTab.active .workflowStepNumber {
-  background: var(--brand);
-  color: #ffffff;
-}
-
-.libraryMode .layoutEditorSidebar {
-  grid-column: 1 / -1;
-}
-
 .layoutEditorSidebar .fieldGrid {
   grid-template-columns: 1fr;
 }
@@ -825,16 +681,6 @@ textarea {
 .inspectorHeading {
   padding-bottom: 14px;
   border-bottom: 1px solid var(--border);
-}
-
-.bundleIdentityFields {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(110px, 0.7fr);
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 11px;
-  background: var(--surface-raised);
 }
 
 .editorSection {
@@ -873,77 +719,6 @@ textarea {
   font-size: 0.74rem;
 }
 
-.libraryToolbar,
-.libraryUtilityBar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-
-.libraryToolbar {
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--border);
-}
-
-.libraryUtilityBar {
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 11px;
-  background: var(--surface-raised);
-}
-
-.folderControls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  min-width: min(100%, 390px);
-}
-
-.folderCreateControl,
-.folderDeleteControl {
-  flex: 1 1 250px;
-}
-
-.folderControls input,
-.folderControls select {
-  min-width: 0;
-  flex: 1 1 150px;
-}
-
-.folderDeleteControl select {
-  color: var(--text-soft);
-}
-
-.geometryLibrarySpaces {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
-}
-
-.geometryLibrarySpaces .librarySpace {
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface-raised);
-}
-
-.geometryLibrarySpaces .librarySpace:first-child {
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
-}
-
-.libraryFallbackNotice {
-  padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--brand) 30%, var(--border));
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--brand-soft) 60%, var(--surface));
-  color: var(--text-soft);
-  font-size: 0.8rem;
-  line-height: 1.4;
-}
-
 .sidebarTabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -969,12 +744,6 @@ textarea {
   gap: 20px;
   min-width: 0;
   align-content: start;
-}
-
-.activeListItem {
-  border-color: var(--brand);
-  background: var(--brand-soft);
-  box-shadow: inset 3px 0 0 var(--brand);
 }
 
 .textButton {
@@ -1208,23 +977,6 @@ textarea {
 
 .organizeLibraryItemActions {
   justify-content: flex-end;
-}
-
-.libraryBulkActions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  border-block: 1px solid var(--border);
-  padding: 8px 0;
-}
-
-.libraryBulkActions > .row {
-  margin-left: auto;
-}
-
-.libraryItemSelection {
-  align-self: center;
 }
 
 .bundleItemOrderDialog {
@@ -1963,350 +1715,6 @@ textarea {
   }
 }
 
-.librarySpaces {
-  display: grid;
-  gap: 16px;
-  align-content: start;
-}
-
-.librarySpace {
-  display: grid;
-  gap: 10px;
-  align-content: start;
-  border-top: 1px solid var(--border);
-  padding-top: 14px;
-}
-
-.librarySpace:first-child {
-  border-top: 0;
-  padding-top: 0;
-}
-
-.librarySpace.dropReady {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
-}
-
-.librarySpaceHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.librarySpaceHeader h3 {
-  margin: 0 0 2px;
-}
-
-.librarySpaceHeaderActions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.librarySpaceToggle {
-  flex: 0 0 auto;
-  font-weight: 700;
-}
-
-.librarySpaceContent {
-  display: grid;
-  gap: 10px;
-}
-
-.presetLibrarySearch input {
-  width: 100%;
-  min-height: 2.35rem;
-}
-
-.presetLibraryBrowser {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
-  align-items: start;
-}
-
-.presetLibraryResults {
-  display: grid;
-  min-width: 0;
-  gap: 8px;
-}
-
-.presetLibraryListToolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  min-height: 1.7rem;
-}
-
-.presetLibraryListToolbar .checkField,
-.presetLibraryListToolbar .muted {
-  font-size: 0.75rem;
-}
-
-.countBadge {
-  display: inline-grid;
-  place-items: center;
-  min-width: 2rem;
-  min-height: 1.6rem;
-  border-radius: 999px;
-  background: var(--brand-soft);
-  color: var(--brand-strong);
-  font-weight: 700;
-  font-size: 0.82rem;
-}
-
-.folderTargets {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  padding: 1px 1px 6px;
-  scrollbar-width: thin;
-}
-
-.presetFolderSidebar {
-  display: grid;
-  grid-template-rows: repeat(2, minmax(0, auto));
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(92px, 1fr);
-  gap: 5px;
-  overflow-x: auto;
-  padding: 0 0 5px;
-  scrollbar-width: thin;
-}
-
-.presetFolderSidebar .folderTarget {
-  width: 100%;
-  max-width: none;
-  min-height: 1.9rem;
-  padding: 0.3rem 0.45rem;
-  border-radius: 7px;
-  font-size: 0.72rem;
-}
-
-.presetFolderSidebar .folderTarget span:first-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.folderTarget {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  flex: 0 0 auto;
-  max-width: 210px;
-  min-height: 2rem;
-  padding: 0.35rem 0.65rem;
-  border-color: var(--border);
-  border-radius: 999px;
-  text-align: left;
-}
-
-.folderTarget span:first-child {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.folderTarget.systemFolderTarget {
-  border-style: dashed;
-}
-
-.folderTarget.systemFolderTarget span:first-child {
-  color: var(--text-soft);
-  font-size: 0.78rem;
-  font-style: italic;
-  letter-spacing: 0.02em;
-}
-
-.folderTarget.active {
-  border-color: var(--brand);
-  background: var(--brand-soft);
-  color: var(--brand-strong);
-  font-weight: 700;
-}
-
-.folderTarget.systemFolderTarget.active span:first-child {
-  color: var(--brand-strong);
-}
-
-.presetListItem {
-  align-items: flex-start;
-}
-
-.presetCompactList {
-  gap: 4px;
-}
-
-.compactPresetRow {
-  position: relative;
-  align-items: center;
-  gap: 7px;
-  min-height: 2.55rem;
-  padding: 5px 6px;
-  border-radius: 7px;
-}
-
-.compactPresetRow .libraryItemSelection {
-  display: grid;
-  place-items: center;
-  width: 1.25rem;
-  min-height: 1.8rem;
-}
-
-.presetNameButton {
-  display: grid;
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 0;
-  gap: 1px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  text-align: left;
-}
-
-.presetNameButton:hover {
-  border-color: transparent;
-  background: transparent;
-}
-
-.presetNameButton strong,
-.presetNameButton span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.presetNameButton strong {
-  font-size: 0.82rem;
-}
-
-.presetNameButton span {
-  font-size: 0.7rem;
-}
-
-.presetOverflowMenu {
-  position: relative;
-  flex: 0 0 auto;
-}
-
-.synthLibraryPanel .presetFavorite {
-  flex: 0 0 auto;
-  width: 1.6rem;
-  min-height: 1.6rem;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--text-soft);
-  font-size: 0.95rem;
-}
-
-.synthLibraryPanel .presetFavorite[aria-pressed="true"] {
-  background: transparent;
-  color: var(--sampler-2);
-}
-
-.presetOverflowMenu summary {
-  display: grid;
-  place-items: center;
-  width: 1.8rem;
-  min-height: 1.8rem;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  color: var(--text-soft);
-  cursor: pointer;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  list-style: none;
-}
-
-.presetOverflowMenu summary::-webkit-details-marker {
-  display: none;
-}
-
-.presetOverflowMenu summary:hover,
-.presetOverflowMenu[open] summary {
-  border-color: var(--border);
-  background: var(--surface-muted);
-  color: var(--text);
-}
-
-.presetOverflowActions {
-  position: absolute;
-  z-index: 8;
-  top: calc(100% + 3px);
-  right: 0;
-  display: grid;
-  width: max-content;
-  min-width: 145px;
-  gap: 3px;
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  padding: 5px;
-  background: var(--surface-raised);
-  box-shadow: var(--shadow-md);
-}
-
-.presetOverflowActions button {
-  min-height: 1.9rem;
-  padding: 0.3rem 0.55rem;
-  text-align: left;
-  font-size: 0.76rem;
-}
-
-.presetLibraryResults .libraryBulkActions {
-  align-items: center;
-  padding: 6px 0;
-}
-
-.presetLibraryResults .libraryBulkActions > .row {
-  width: 100%;
-  margin-left: 0;
-  gap: 5px;
-}
-
-.presetLibraryResults .libraryBulkActions button {
-  min-height: 1.9rem;
-  padding: 0.3rem 0.45rem;
-  font-size: 0.7rem;
-}
-
-.presetListItem[draggable="true"] {
-  cursor: grab;
-}
-
-.presetListItem.reorderDropTarget {
-  border-color: var(--brand);
-  box-shadow: inset 4px 0 0 var(--brand);
-}
-
-.presetMeta {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-}
-
-.presetMeta strong {
-  overflow-wrap: anywhere;
-}
-
-.presetActions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
-}
-
-.presetActions button {
-  min-height: 1.9rem;
-  padding: 0.3rem 0.5rem;
-  font-size: 0.77rem;
-}
-
 :root[data-theme="dark"] button:hover {
   border-color: var(--brand);
 }
@@ -2358,9 +1766,7 @@ textarea {
   color: var(--text-soft);
 }
 
-:root[data-theme="dark"] .activeListItem,
-:root[data-theme="dark"] .status,
-:root[data-theme="dark"] .countBadge {
+:root[data-theme="dark"] .status {
   background: var(--brand-soft);
   color: var(--brand-strong);
 }
@@ -2403,12 +1809,6 @@ textarea {
   outline-color: rgba(255, 255, 255, 0.72);
 }
 
-:root[data-theme="dark"] .folderTarget.active {
-  border-color: var(--brand);
-  background: var(--brand-soft);
-  color: var(--brand-strong);
-}
-
 :root[data-theme="dark"] .swatch {
   border-color: #64757f;
 }
@@ -2447,10 +1847,7 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  .geometryStudioHeader,
-  .workflowTabs,
-  .protocolDebugPanel,
-  .libraryMode .layoutEditorSidebar {
+  .protocolDebugPanel {
     grid-column: 1;
   }
 
@@ -2460,13 +1857,6 @@ textarea {
     overflow: visible;
   }
 
-  .geometryLibrarySpaces {
-    grid-template-columns: 1fr;
-  }
-
-  .workflowTab small {
-    display: none;
-  }
 }
 
 @media (max-width: 760px) {
@@ -2506,44 +1896,6 @@ textarea {
   }
 
   .workspace {
-    grid-template-columns: 1fr;
-  }
-
-  .geometryStudioHeader {
-    grid-template-columns: 1fr;
-    padding: 18px 16px 14px;
-  }
-
-  .geometryHeaderActions {
-    justify-content: flex-start;
-  }
-
-  .workflowTabs {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .workflowTab {
-    min-height: 3rem;
-  }
-
-  .libraryToolbar,
-  .libraryUtilityBar {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .folderControls,
-  .folderCreateControl,
-  .folderDeleteControl {
-    width: 100%;
-  }
-
-  .libraryToolbar .row,
-  .geometryHeaderActions {
-    width: 100%;
-  }
-
-  .bundleIdentityFields {
     grid-template-columns: 1fr;
   }
 
@@ -2588,52 +1940,21 @@ textarea {
   }
 }
 
-@media (max-width: 480px) {
-  .presetFolderSidebar {
-    grid-auto-columns: minmax(105px, 46%);
-  }
-}
-
 /* Editing surfaces: quiet chrome, explicit actions, and room for the instrument. */
 body { background: var(--page); }
 button { font-weight: 550; box-shadow: none; }
 input[type="range"], input[type="checkbox"] { accent-color: var(--brand); }
 button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
-.topBar, .panel, .geometryStudioHeader { box-shadow: none; background: var(--surface); border-radius: 12px; }
+.topBar, .panel { box-shadow: none; background: var(--surface); border-radius: 12px; }
 .topBar { gap: 12px; }
-.topBar .eyebrow, .geometryTitleBlock .eyebrow, .boardPanelHeading .eyebrow, .inspectorHeading .eyebrow { display: none; }
-.tabs button.active, .workflowTab.active, .folderTarget.active, .paintToolGroup button[aria-pressed="true"] { background: var(--brand-soft); color: var(--text); border-color: transparent; box-shadow: none; }
+.topBar .eyebrow, .boardPanelHeading .eyebrow, .inspectorHeading .eyebrow { display: none; }
+.tabs button.active, .paintToolGroup button[aria-pressed="true"] { background: var(--brand-soft); color: var(--text); border-color: transparent; box-shadow: none; }
 .tabs button { border-color: transparent; }
 .appShell { padding-top: 12px; }
 .layoutEditorWorkspace { gap: 12px 18px; margin-top: 14px; grid-template-columns: minmax(260px, 300px) minmax(0, 1fr); }
-.geometryStudioHeader { padding: 12px 16px; gap: 8px 12px; overflow: visible; }
-.geometryTitleBlock h2 { font-size: 1.15rem; }
-.geometryHeaderActions { gap: 6px; }
-.geometryHeaderActions button { font-size: .82rem; }
-.geometryStatus { padding: 0; border: 0; flex-wrap: wrap; }
-.geometryStatus > span:not([aria-hidden="true"]):not(.geometryTransferProgress) { width: auto; height: auto; border-radius: 0; background: none; box-shadow: none; }
-.workflowTabs { display: flex; gap: 4px; padding: 0; background: none; border: 0; flex-wrap: wrap; }
-.workflowTab { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 8px 12px; border-radius: 6px; }
-.workflowTab.active { border-bottom: 2px solid var(--brand); }
-.workflowTab.libraryTab { margin-right: 16px; border-right: 1px solid var(--border); }
-.workflowTab strong { font-weight: 550; }
-.libraryMode .geometryStudioHeader { display: none; }
-.libraryToolbar, .librarySpaceHeader { gap: 10px; }
-.libraryUtilityBar { background: none; border: 0; padding: 0; }
-.bundleIdentityFields { border: 0; background: none; padding: 0; }
-.librarySpace { border: 0; border-radius: 0; background: none; padding: 8px; }
-.geometryLibrarySpaces > .librarySpace + .librarySpace { border-left: 1px solid var(--border); padding-left: 18px; }
-.folderTarget.systemFolderTarget { font-style: normal; border-style: solid; }
-.folderTarget { background: none; font-weight: 500; }
-.folderMenu { position: relative; }
-.folderMenu > summary, .compactDisclosure > summary { cursor: pointer; padding: 8px 0; color: var(--text-soft); font-size: .85rem; }
-.folderMenu[open] { flex: 1 1 100%; }
-.folderControls { padding: 12px 0; }
-.libraryBulkActions { border: 0; padding: 6px 0; font-size: .8rem; }
-.geometryLibrarySpaces .presetListItem { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; }
-.presetNameButton { font-weight: 500; }
-.presetNameButton strong { font-weight: 600; }
-.presetNameButton .draftBadge { color: var(--warning); }
+
+.compactDisclosure > summary { cursor: pointer; padding: 8px 0; color: var(--text-soft); font-size: .85rem; }
+
 .emptyListItem { padding: 24px 12px; text-align: center; }
 .brushToolbar { border: 0; background: none; padding: 0; gap: 8px; }
 .paintToolGroup button { display: inline-flex; align-items: center; gap: 6px; width: auto; }
@@ -2663,31 +1984,18 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .tuningControlGroup { gap: 10px; margin-top: 4px; border: 0; border-top: 1px solid var(--border); border-radius: 0; padding: 12px 0 0; background: none; }
 .tuningControlGroup legend { float: left; width: 100%; padding: 0; color: var(--text); font-size: .9rem; font-weight: 650; }
 .synthEditor { grid-template-columns: minmax(260px, 310px) minmax(0, 1fr); gap: 18px; }
-.synthMainPanel, .synthLibraryPanel { min-width: 0; }
-.synthLibraryPanel { align-self: start; }
-.editorActionBar { gap: 10px; align-items: flex-start; }
-.editorActionBar h2 { font-size: 1.15rem; }
-.editorActionBar button { font-size: .82rem; }
-.editorActionBar > .row { gap: 6px; }
-.saveStatus { display: flex; align-items: baseline; gap: 6px 14px; flex-wrap: wrap; color: var(--text-soft); font-size: .8rem; }
-.saveStatus > span::before { content: "·"; margin-right: 14px; }
-.browserSaveStatus { display: flex; align-items: baseline; gap: 6px 14px; flex-wrap: wrap; min-width: 0; }
-.otherDraftsDisclosure > summary { padding: 0; font-size: inherit; }
-.otherDraftsDisclosure > .row { margin-top: 8px; }
+.synthMainPanel { min-width: 0; }
 
-.operationStatus { color: var(--text-soft); font-size: .8rem; overflow-wrap: anywhere; }
 .protocolDebugPanel { padding: 8px 14px; background: transparent; border: 0; }
-.presetOverflowActions button { text-align: left; }
+
 @media (max-width: 1180px) and (min-width: 761px) {
   .topBar { display: flex; flex-wrap: wrap; }
   .topBarActions { margin-left: auto; padding: 0; border: 0; }
 }
 @media (max-width: 960px) {
   .layoutEditorWorkspace { grid-template-columns: minmax(240px, 280px) minmax(0, 1fr); }
-  .geometryStudioHeader, .workflowTabs, .protocolDebugPanel, .libraryMode .layoutEditorSidebar { grid-column: 1 / -1; }
-  .geometryLibrarySpaces > .librarySpace + .librarySpace { border-left: 0; border-top: 1px solid var(--border); padding: 18px 8px 8px; }
-  .geometryStudioHeader { grid-template-columns: 1fr; }
-  .geometryHeaderActions { justify-content: flex-start; }
+  .protocolDebugPanel { grid-column: 1 / -1; }
+
   .synthEditor { grid-template-columns: 250px minmax(0, 1fr); }
 }
 @media (max-width: 760px) {
@@ -2700,30 +2008,27 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
   .brandBlock h1 { font-size: 1.05rem; }
   .editorMode .layoutEditorMainColumn { grid-row: 3; }
   .editorMode .layoutEditorSidebar { grid-row: 4; }
-  .workflowTab { padding: 8px 10px; }
-  .workflowTab.libraryTab { margin-right: 4px; }
+
   .synthMainPanel { grid-row: 1; }
-  .synthLibraryPanel { grid-row: 2; }
-  .editorActionBar > .row, .geometryHeaderActions { flex-wrap: wrap; }
-  .libraryToolbar { align-items: flex-start; }
+
 }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
-:root .tabs button.active, :root .workflowTab.active { background: var(--brand-soft); color: var(--text); border-color: transparent; border-bottom-color: var(--brand); }
-:root .workflowTab, :root .tabs button { background: transparent; color: var(--text-soft); border-color: transparent; }
-:root .workflowTab.active, :root .tabs button.active { color: var(--text); background: var(--brand-soft); border-bottom: 2px solid var(--brand); }
+:root .tabs button.active { background: var(--brand-soft); color: var(--text); border-color: transparent; border-bottom-color: var(--brand); }
+:root .tabs button { background: transparent; color: var(--text-soft); border-color: transparent; }
+:root .tabs button.active { color: var(--text); background: var(--brand-soft); border-bottom: 2px solid var(--brand); }
 :root .paintToolGroup button[aria-pressed="true"] { background: var(--brand-soft); color: var(--text); border-color: var(--brand); }
 .paintToolGroup button { padding: 0 10px; }
 .boardPanelHeading { padding: 0; }
 .brushToolbar, .layoutTransformToolbar { margin: 0; }
 :root .hexBoardScroll { background: var(--surface-muted); }
 .previewContext span { font-weight: 500; }
-.librarySpace .emptyListItem { border: 0; background: var(--surface-muted); border-radius: 8px; }
+
 @media (max-width: 760px) {
   .deviceMenu { flex-direction: row; align-items: center; }
   .topBarActions { flex-direction: row; align-items: center; }
   .deviceMenu button { font-size: .8rem; padding-inline: 8px; }
   .deviceStatus strong { font-size: .8rem; }
-  .geometryStudioHeader { padding: 12px; }
+
 }
 
 .learnRunStats {
@@ -2936,7 +2241,7 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .topBarActions .themeToggle, .topBarActions .deviceMenu { order: 0; }
 .appShell:has(.learnConnection) > .topBar .deviceStatus span[role=status] { display: none; }
 .sectionTabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 0; border: 0; background: none; }
-.sectionTabs button, .sectionTabs .workflowTab { min-height: 36px; padding: 6px 12px; margin: 0; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-size: .9rem; }
+.sectionTabs button { min-height: 36px; padding: 6px 12px; margin: 0; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-size: .9rem; }
 :root .sectionTabs button:is([aria-current=page], [aria-current=step]) { background: var(--brand-soft); border-color: var(--brand); color: var(--text); }
 .sectionTabs button:hover:not(:disabled) { border-color: var(--brand); background: var(--surface-accent); }
 :root[data-theme="dark"] .sectionTabs button { background: #263440; border-color: #6f808c; color: var(--text); }
@@ -2951,29 +2256,14 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .field input, .field select, .field textarea { min-width: 0; width: 100%; }
 .fieldGrid, .editorGrid { gap: 8px 12px; }
 .editorSection > h3 { padding-bottom: 6px; }
-.editorIdentity { border-block: 1px solid var(--border); }
-.editorIdentity > summary { color: var(--text); font-weight: 550; }
-.editorIdentity[open] > .fieldGrid, .editorIdentity[open] > .bundleIdentityFields { padding-bottom: 10px; }
+
 .workspace, .layoutEditorWorkspace { margin-top: 8px; gap: var(--workspace-gap); }
 .synthEditor, .layoutEditorWorkspace { grid-template-columns: var(--sidebar-width) minmax(0, 1fr); }
 .synthEditor { align-items: start; }
-.editorSummary { position: sticky; top: 8px; z-index: 4; display: grid; gap: 6px; padding: 8px 0; border-bottom: 1px solid var(--border); background: var(--surface); }
-.editorActionBar { align-items: center; }
-.editorActionBar h3 { margin: 0; font-size: 1.15rem; overflow-wrap: anywhere; }
-.synthSaveBar { align-items: end; flex-wrap: wrap; }
-.synthIdentityFields { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto; gap: 8px 12px; align-items: end; flex: 1 1 420px; min-width: 0; }
-.synthFavoriteField { min-height: 36px; }
-.synthFolderCreation { align-items: end; flex-wrap: wrap; }
-.synthFolderCreation > .field { flex: 1 1 200px; max-width: 420px; }
-@media (max-width: 440px) {
-  .synthIdentityFields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .synthFavoriteField { grid-column: 1 / -1; min-height: 28px; }
-}
+
 .editorBody { display: grid; gap: 10px; min-width: 0; align-content: start; }
 .editorBody:focus-visible, .hexBoardScroll:focus-visible { outline-offset: -3px; }
-.libraryPrimaryActions { gap: 6px; }
-.libraryPrimaryActions button { font-size: .8rem; padding-inline: 8px; }
-.synthLibraryPanel > h3 { font-size: 1rem; }
+
 .synthMainPanel .editorSection { gap: 10px; min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
 .synthMainPanel .editorSection > h3 { margin: 0; padding: 0 0 8px; font-size: .95rem; line-height: 1.3; }
 .synthMainPanel .editorGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; }
@@ -2984,24 +2274,7 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .auditionPanel { gap: 8px; padding: 10px; }
 .auditionPanel .muted { font-size: .8rem; }
 .auditionPanel > .row > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
-.tuningSectionTabs .workflowTab.active { border-bottom-width: 1px; }
-.tuningSectionTabs .libraryTab { position: relative; gap: 6px; margin-right: 13px; }
-.tuningSectionTabs .libraryTab::after { content: ""; position: absolute; top: 6px; bottom: 6px; right: -10px; border-right: 1px solid var(--border); }
-.tuningSectionTabs .libraryTab .layoutToolbarIcon { width: 16px; height: 16px; }
-.geometryStudioHeader { position: static; padding: 8px 12px; gap: 6px 12px; }
-.geometryTitleBlock { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }
-.geometryTitleBlock .geometryStatus { gap: 6px; min-width: 0; }
-.tuningLibraryDialog { width: min(1100px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); margin: auto; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); color: var(--text); background: var(--surface); overflow-y: auto; }
-.tuningLibraryDialog::backdrop { background: rgb(0 0 0 / 35%); }
-.tuningLibraryContent { min-width: 0; }
-.tuningLibraryDialog .libraryToolbar { flex-wrap: wrap; }
-.tuningLibraryDialog .libraryToolbar { align-items: center; }
-.dialogCloseButton { display: inline-grid; place-items: center; width: 36px; min-height: 36px; margin-left: 6px; padding: 0; border-color: transparent; background: transparent; color: var(--text-soft); font-size: 1.5rem; font-weight: 400; line-height: 1; }
-.dialogCloseButton:hover { color: var(--text); }
-@media (max-width: 760px) {
-  .tuningLibraryDialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); padding: 12px; }
-}
-.geometryTitleBlock h3 { margin: 0; font-size: 1.15rem; line-height: 1.3; }
+
 .boardPanelHeading h3 { margin: 0; font-size: 1rem; }
 .layoutEditorMainColumn { gap: 12px; }
 .boardPanel { display: flex; flex-direction: column; padding: 12px; gap: 8px; }
@@ -3017,11 +2290,7 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .protocolDebugPanel { padding: 0; background: none; border: 0; }
 .protocolDebugPanel > summary { padding: 8px 12px; }
 .keyInspectorSection { padding: 10px; gap: 8px; }
-.libraryToolbar { padding-bottom: 8px; }
-.geometryLibrarySpaces { gap: 12px; }
-.geometryLibrarySpaces .librarySpace { padding: 12px; }
-.geometryLibrarySpaces .librarySpace:first-child { padding-top: 12px; }
-.geometryLibrarySpaces > .librarySpace + .librarySpace { padding-left: 12px; }
+
 .emptyListItem { padding: 14px 12px; }
 .learnProgressCard > .learnField { max-width: 420px; }
 .learnProgressList { margin: 4px 0; }
@@ -3047,7 +2316,7 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
   .workspaceHeading { align-items: flex-start; }
   .learnWorkspace { grid-template-columns: minmax(0, 1fr); }
   .synthMainPanel { grid-row: 1; }
-  .synthLibraryPanel { grid-row: 2; }
+
   .editorMode .layoutEditorMainColumn { grid-row: 3; }
   .editorMode .layoutEditorSidebar { grid-row: 4; }
   .learnJourney { margin-inline: -12px; padding-inline: 12px; }
@@ -3161,3 +2430,18 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .learnResetConfirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px; border-radius: var(--radius-md); background: var(--danger-soft); color: var(--text); }
 .learnResetConfirm p { flex: 1 1 100%; margin: 0; font-size: .85rem; }
 .learnResetConfirm button.danger { background: var(--danger); border-color: var(--danger); color: var(--danger-soft); font-weight: 600; }
+
+/* Unified editor layout: one bar on top, then the editor. */
+.layoutEditorWorkspace > .editorBar, .layoutEditorWorkspace > .editorBarExtra { grid-column: 1 / -1; }
+.segmentedTabs { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-muted); }
+.segmentedTabs button { flex: 1 1 auto; min-height: 28px; padding: 2px 8px; border-color: transparent; border-radius: 6px; background: none; color: var(--text-soft); font-size: .8rem; white-space: nowrap; }
+.segmentedTabs button:hover:not(:disabled) { background: none; border-color: transparent; color: var(--text); }
+.segmentedTabs button:is([aria-current="step"], [aria-current="page"], [aria-pressed="true"]) { border-color: var(--border); background: var(--surface); color: var(--text); font-weight: 650; }
+.synthEditor { grid-template-columns: minmax(0, 1fr); }
+.synthContextNote { margin: 8px 2px 0; color: var(--text-soft); font-size: .78rem; }
+.segmentedTabs button:is([aria-current="step"], [aria-current="page"], [aria-pressed="true"]):hover:not(:disabled) { border-color: var(--border); background: var(--surface); }
+/* Editor side panels and toolbars share one control size. */
+.layoutEditorSidebar :where(button, input, select, textarea), .layoutTransformToolbar :where(button, select), .brushToolbar :where(button, select) { font-size: .86rem; }
+.layoutEditorSidebar :where(input:not([type="checkbox"], [type="color"], [type="range"]), select), .layoutTransformToolbar :where(button, select), .brushToolbar :where(select) { min-height: 32px; padding-block: 3px; }
+.layoutEditorSidebar :where(button) { min-height: 32px; padding-block: 3px; }
+.layoutEditorSidebar .muted { font-size: .8rem; }

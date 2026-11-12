@@ -1,6 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {deviceFavoriteLimit,type PhysicalSynthClient,type DevicePresetLabel,type DevicePresetFolder,type DeviceFavorite} from './client.ts';
-import {folderName,closeMenu} from './presetLibrary.ts';
+import {folderName} from './presetLibrary.ts';
+import {LibraryChip,LibraryChips,LibraryColumn,LibraryEmpty,LibraryList,LibraryRow,LibrarySearch} from '../../components/Library.tsx';
 export const deviceEngineBase=(engine:number)=>(engine===4?1:engine===5?2:engine===7?3:0)*1024;
 export const folderFull=(mask:number)=>mask===0xffffffff;
 const occupied=(mask:number)=>{let n=0;for(let m=mask>>>0;m;m&=m-1)n++;return n;};
@@ -60,36 +61,32 @@ export type DeviceLibrary=ReturnType<typeof useDeviceLibrary>;
 
 export function DevicePresetLibrary({client,library,medium,onMedium,activeSlot,busy=false,run,onLoad,onLoadFavorite,onCopy,onReplace,onDelete,onOrganize,onFavorite,onUnfavorite}:{client?:PhysicalSynthClient;library:DeviceLibrary;medium:DeviceMedium;onMedium:(m:DeviceMedium)=>void;activeSlot?:number;busy?:boolean;run:(fn:()=>Promise<void>)=>void;onLoad:(row:DeviceRow)=>Promise<void>;onLoadFavorite:(favorite:DeviceFavorite)=>Promise<void>;onCopy:(row:DeviceRow)=>Promise<void>;onReplace:(row:DeviceRow)=>Promise<void>;onDelete:(row:DeviceRow)=>Promise<void>;onOrganize:(row:DeviceRow)=>void;onFavorite:(row:DeviceRow)=>Promise<void>;onUnfavorite:(favorite:DeviceFavorite)=>Promise<void>}){
  const [folder,setFolder]=useState<number|'all'|'favorites'>('all'),[query,setQuery]=useState('');
- if(!client)return <section className="librarySpace"><div className="librarySpaceHeader"><div><h3>HexBoard Library</h3><span className="muted">Saved on your instrument</span></div></div><p className="emptyListItem">Connect to see your saved sounds</p></section>;
+ if(!client)return <LibraryColumn title="HexBoard Library" subtitle="Saved on your HexBoard"><p className="libraryEmpty">Connect to see your saved sounds</p></LibraryColumn>;
  const {catalog,favorites,reading}=library,blocked=busy||!!reading,shown=(catalog?.folders??[]).filter(f=>f.mask).sort((a,b)=>a.name.localeCompare(b.name));
  const q=query.trim().toLowerCase(),match=(text:string)=>!q||text.toLowerCase().includes(q);
  const rows=(catalog?.rows??[]).filter(r=>(folder==='all'||Math.floor(r.id/32)%32===folder)&&match(`${r.label.name} ${r.label.folder}`)).sort((a,b)=>a.label.folder.localeCompare(b.label.folder)||a.label.name.localeCompare(b.label.name,undefined,{numeric:true}));
  const starred=favorites.filter(f=>match(f.name)),count=folder==='favorites'?starred.length:rows.length;
- const chip=(key:typeof folder,label:string,n:string,system=false)=><button key={String(key)} type="button" aria-pressed={folder===key} className={`folderTarget${system?' systemFolderTarget':''}${folder===key?' active':''}`} onClick={()=>setFolder(key)}><span>{label}</span><span>{n}</span></button>;
- return <section className="librarySpace">
-  <div className="librarySpaceHeader"><div><h3>HexBoard Library</h3><span className="muted">{catalog?`${catalog.medium===2?'SD card':'Internal flash'} · ${shown.length}/${deviceFolderLimit} folders`:'Saved on your instrument'}</span></div><span className="countBadge">{count}</span></div>
-  <div className="soundLibraryControls"><input type="search" aria-label="Search HexBoard presets" placeholder="Search presets" value={query} onChange={e=>setQuery(e.target.value)}/><select aria-label="HexBoard storage" value={medium} disabled={blocked} onChange={e=>{onMedium(+e.target.value as DeviceMedium);setFolder('all');}}><option value={0}>SD preferred</option><option value={2}>SD card</option><option value={1}>Internal flash</option></select></div>
-  <div className="folderTargets" role="group" aria-label="HexBoard folders">
-   {chip('all','All',String(catalog?.rows.length??0),true)}
-   {chip('favorites','★ Favorites',`${favorites.length}/${deviceFavoriteLimit}`,true)}
+ const chip=(key:typeof folder,label:string,n:string)=><LibraryChip key={String(key)} label={label} count={n} active={folder===key} onClick={()=>setFolder(key)}/>;
+ return <LibraryColumn title="HexBoard Library" subtitle={catalog?`${catalog.medium===2?'SD card':'Internal flash'} · ${shown.length}/${deviceFolderLimit} folders`:'Saved on your HexBoard'} count={count}
+  actions={<button type="button" disabled={blocked} title="Read the library from the HexBoard again" onClick={()=>run(()=>library.refresh())}>Refresh</button>}>
+  <LibrarySearch label="Search HexBoard Library" placeholder="Search sounds" value={query} onChange={setQuery}><select aria-label="HexBoard storage" value={medium} disabled={blocked} onChange={e=>{onMedium(+e.target.value as DeviceMedium);setFolder('all');}}><option value={0}>SD preferred</option><option value={2}>SD card</option><option value={1}>Internal flash</option></select></LibrarySearch>
+  <LibraryChips label="HexBoard Library folders">
+   {chip('all','All',String(catalog?.rows.length??0))}
+   {chip('favorites','★ Favorites',`${favorites.length}/${deviceFavoriteLimit}`)}
    {shown.map(f=>chip(f.index,folderName(f.name),`${occupied(f.mask)}/${devicePresetsPerFolder}`))}
-  </div>
-  {reading&&<p className="muted soundLibraryReading" role="status">{reading}</p>}
-  <ul className="list" aria-busy={blocked}>
-   {folder==='favorites'?(starred.length===0?<li className="emptyListItem">{favorites.length?`No favorites match “${query.trim()}”`:'Star up to 32 HexBoard sounds from any engine to collect them here'}</li>:starred.map(f=><li key={`${f.medium}:${f.slot}`} className={`listItem presetListItem${f.slot===activeSlot?' activeListItem':''}`}>
-     <button className="presetNameButton" type="button" disabled={blocked} title={`Load ${f.name}`} onClick={()=>run(()=>onLoadFavorite(f))}><strong>{f.name}</strong><span>{engineLabel(f.engine)} · {f.medium===2?'SD card':'Internal flash'}</span></button>
-     <button type="button" className="iconButton soundFavorite" aria-pressed="true" aria-label={`Unfavorite ${f.name}`} disabled={blocked} onClick={()=>run(()=>onUnfavorite(f))}>★</button>
-    </li>))
-   :rows.length===0?<li className="emptyListItem">{reading?'Reading preset names…':catalog?.rows.length?`No presets match “${query.trim()}”`:'Use Save to HexBoard to create your first folder'}</li>:rows.map(r=><li key={r.id} className={`listItem presetListItem${r.id===activeSlot?' activeListItem':''}`}>
-    <button className="presetNameButton" type="button" disabled={blocked} title={`Load ${r.label.name}`} onClick={()=>run(()=>onLoad(r))}><strong>{r.label.name}</strong><span>{folderName(r.label.folder)}</span></button>
-    <button type="button" className="iconButton soundFavorite" aria-pressed={r.label.favorite} aria-label={`${r.label.favorite?'Unfavorite':'Favorite'} ${r.label.name}`} disabled={blocked} onClick={()=>run(()=>onFavorite(r))}>{r.label.favorite?'★':'☆'}</button>
-    <details className="presetOverflowMenu"><summary aria-label={`More actions for ${r.label.name}`} title="More actions">•••</summary><div className="presetOverflowActions" onClick={closeMenu}>
-     <button type="button" disabled={blocked} onClick={()=>run(()=>onLoad(r))}>Load</button>
+  </LibraryChips>
+  {reading&&<p className="libraryReading" role="status">{reading}</p>}
+  <LibraryList busy={blocked}>
+   {folder==='favorites'?(starred.length===0?<LibraryEmpty>{favorites.length?`No favorites match “${query.trim()}”`:'Star up to 32 HexBoard sounds from any engine to collect them here'}</LibraryEmpty>:starred.map(f=><LibraryRow key={`${f.medium}:${f.slot}`} name={f.name} meta={`${engineLabel(f.engine)} · ${f.medium===2?'SD card':'Internal flash'}`} active={f.slot===activeSlot} disabled={blocked} openVerb="Load" onOpen={()=>run(()=>onLoadFavorite(f))}
+     favorite={{on:true,onToggle:()=>run(()=>onUnfavorite(f))}}/>))
+   :rows.length===0?<LibraryEmpty>{reading?'Reading sound names…':catalog?.rows.length?`No sounds match “${query.trim()}”`:'Use Save to HexBoard to create your first folder'}</LibraryEmpty>:rows.map(r=><LibraryRow key={r.id} name={r.label.name} meta={folderName(r.label.folder)} active={r.id===activeSlot} disabled={blocked} openVerb="Load" onOpen={()=>run(()=>onLoad(r))}
+    favorite={{on:r.label.favorite,onToggle:()=>run(()=>onFavorite(r))}}
+    transfer={{label:'→ Browser',title:'Copy to Browser',onClick:()=>run(()=>onCopy(r))}}
+    menu={<>
      <button type="button" disabled={blocked} onClick={()=>onOrganize(r)}>Rename / Move</button>
-     <button type="button" disabled={blocked} onClick={()=>run(()=>onCopy(r))}>Copy to Browser</button>
      <button type="button" disabled={blocked} onClick={()=>run(()=>onReplace(r))}>Replace with current sound</button>
      <button type="button" className="warning" disabled={blocked} onClick={()=>run(()=>onDelete(r))}>Delete</button>
-    </div></details></li>)}
-  </ul>
- </section>;
+    </>}/>)}
+  </LibraryList>
+ </LibraryColumn>;
 }

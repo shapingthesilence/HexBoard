@@ -1197,7 +1197,7 @@ const char* synthPresetStoreResultMessage(SynthPresetStoreResult result) {
     case SynthPresetStoreResult::TooManyFolders: return "Too many synth preset folders.";
     case SynthPresetStoreResult::HandleMismatch: return "Synth preset handle does not match its object id.";
     case SynthPresetStoreResult::SamplerLimit: return "The library already holds 128 sampler sounds.";
-    case SynthPresetStoreResult::MissingInstrument: return "The sampler sound has no instrument.";
+    case SynthPresetStoreResult::MissingInstrument: return "The sampler sound has no samples.";
     case SynthPresetStoreResult::StorageError: return "Unable to save the synth preset.";
   }
   return "Unable to save the synth preset.";

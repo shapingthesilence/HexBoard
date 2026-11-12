@@ -18,7 +18,7 @@ describe("unreleased Advanced synth visibility", () => {
       const html = await markup({ transport: connected, hello });
       expect(html).not.toContain("Advanced");
       expect(html).not.toContain("Physical string editor");
-      expect(html).toContain("Synth Library");
+      expect(html).toContain("Sound actions");
     }
   });
   it("requires a real transport even when a mock has Advanced identity", async () => {

@@ -26,7 +26,7 @@ export function LibraryBulkActions({
   onExport
 }: LibraryBulkActionsProps) {
   return (
-    <div className="libraryBulkActions">
+    <div className="libraryBulk">
       {showSelectVisible ? (
         <label className="checkField">
           <input
