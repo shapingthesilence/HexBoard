@@ -94,4 +94,3 @@
 .classic-sampler-stage .checkField { font-size: 10px; }
 
 /* Engine icons in library rows, matching the board's preset list. */
-.engineIcon { flex: none; width: 14px; height: 14px; color: var(--text-soft); }

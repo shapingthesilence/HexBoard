@@ -963,9 +963,9 @@ byte normalizeSynthOutputVolumeCap(byte value) {
 }
 
 SettingKey activeSynthOutputVolumeSettingKey() {
-  return runtimeAudioDestination(synthBuzzerEnabled) == AUDIO_PIEZO
-           ? SettingKey::PiezoVolumeCap
-           : SettingKey::HeadphoneVolumeCap;
+  return runtimeAudioDestination(synthBuzzerEnabled) == AUDIO_AJACK
+           ? SettingKey::HeadphoneVolumeCap
+           : SettingKey::PiezoVolumeCap;
 }
 
 void syncActiveSynthOutputVolumeMenuValue() {
@@ -1093,11 +1093,13 @@ PersistentCallbackInfo callbackInfoPlayback = {
 GEMItem menuItemPlayback("Synth Mode", playbackMode, selectPlayback, universalSaveCallback,
                          reinterpret_cast<void*>(&callbackInfoPlayback));
 
-// Hardware V1.2-only
+uint8_t encodeBuzzerSetting(void* variablePtr) {
+  return encodeStoredBuzzerEnabled(*reinterpret_cast<bool*>(variablePtr));
+}
 PersistentCallbackInfo callbackInfoAudioDest = {
   static_cast<uint8_t>(SettingKey::AudioDestination),
   reinterpret_cast<void*>(&synthBuzzerEnabled),
-  nullptr,
+  encodeBuzzerSetting,
   nullptr
 };
 void audioDestinationChanged(GEMCallbackData callbackData) {
@@ -1107,6 +1109,10 @@ void audioDestinationChanged(GEMCallbackData callbackData) {
 }
 GEMItem menuItemAudioD("Buzzer", synthBuzzerEnabled, audioDestinationChanged,
                        reinterpret_cast<void*>(&callbackInfoAudioDest));
+// The same toggle on the main menu, below Sound, on every hardware version.
+// On V1.1, where the piezo is the only output, off silences the onboard synth.
+GEMItem menuItemMainAudioD("Buzzer", synthBuzzerEnabled, audioDestinationChanged,
+                           reinterpret_cast<void*>(&callbackInfoAudioDest));
 
 void installHardwareSpecificMenuItems() {
   if (Hardware_Version == HARDWARE_V1_2) {
@@ -2981,15 +2987,29 @@ void redrawMenuAfterVirtualListLauncherScroll() {
   }
 }
 
+static bool virtualListLauncherPageHidden() {
+  return virtualListMenuIsActive()
+         || delegatedControlState.active
+         || presetSyncTransferActive
+         || flashSaveScreenVisible
+         || commandWheelOverlayActive()
+         || noteBadgeVisible
+         || noteOverlayVisible
+         || screenSaverOn;
+}
+
+// An audition ends one loop after its list closes, so the labels drawn on the
+// way out still name the auditioned item. Redraw them for the chosen one.
+void refreshVirtualListLauncherLabels() {
+  resetVirtualListLauncherScrollTracking(false);
+  restoreVirtualListLauncherLabels();
+  if (!virtualListLauncherPageHidden()) {
+    menu.drawMenu();
+  }
+}
+
 void serviceVirtualListLauncherLabelScroll() {
-  if (virtualListMenuIsActive()
-      || delegatedControlState.active
-      || presetSyncTransferActive
-      || flashSaveScreenVisible
-      || commandWheelOverlayActive()
-      || noteBadgeVisible
-      || noteOverlayVisible
-      || screenSaverOn) {
+  if (virtualListLauncherPageHidden()) {
     resetVirtualListLauncherScrollTracking(true);
     return;
   }
@@ -3527,6 +3547,7 @@ void setupAdvancedMenuPage() {
 
 void setupMainSynthPresetLoadMenuItem() {
   menuPageMain.addMenuItem(menuGotoMainSynthPresetLoad);
+  menuPageMain.addMenuItem(menuItemMainAudioD);
 }
 
 void setupOptionsMenuPage() {

@@ -105,6 +105,9 @@ void serviceSerialDebugCommands() {
     char response[24];
     snprintf(response, sizeof(response), "HBDBG flags: %u", flags);
     Serial.println(response);
+    // The detected board revision decides the audio routing and menus.
+    snprintf(response, sizeof(response), "HBDBG hardware: %u", static_cast<unsigned int>(Hardware_Version));
+    Serial.println(response);
   }
 }
 }  // namespace

@@ -27,6 +27,7 @@ void selectFallbackSynthWavetable();
 void selectSynthWavetableForWaveform(byte waveform, bool updatePosition);
 bool synthWavetableReferenceForWaveform(byte waveform, const char*& folderPath, const char*& name, uint8_t& position);
 bool decodeStoredBuzzerEnabled(uint8_t storedValue);
+uint8_t encodeStoredBuzzerEnabled(bool buzzerEnabled);
 byte runtimeAudioDestination(bool buzzerEnabled);
 void syncAudioDestinationToRuntime();
 void RAM_FUNC(setSynthMasterVolumeControl)(byte value);

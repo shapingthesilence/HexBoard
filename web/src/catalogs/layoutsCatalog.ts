@@ -1217,27 +1217,34 @@ export function resolveTuningBundleButtonColor(input: {
 }
 
 export function createDefaultTuningBundle(): TuningBundle {
-  const objectId = deterministicObjectId("layout-bundle:19 EDO Wicki");
-  const layout = createDefaultLayout(19);
-  const scale = createAllNotesScale(19);
+  // First-run tuning: the HexBoard's own default, 12 EDO in Wicki-Hayden.
+  const objectId = deterministicObjectId("layout-bundle:12 EDO Wicki-Hayden");
+  const layout: TuningBundleLayout = {
+    ...createDefaultLayout(12),
+    name: "Wicki-Hayden",
+    centerButton: 64,
+    acrossSteps: 2,
+    upRightSteps: 7
+  };
+  const scale = createAllNotesScale(12);
   return {
     objectIdHex: objectIdToHex(objectId),
     folderPath: "/",
     tuning: {
       kind: "edo",
-      name: "19 EDO Wicki",
-      edoDivisions: 19,
+      name: "12 EDO Wicki-Hayden",
+      edoDivisions: 12,
       periodCents: 1200,
-      cycleLength: 19,
-      referenceDegree: 14,
+      cycleLength: 12,
+      referenceDegree: 9,
       defaultKeyDegree: 0,
       referenceMidiNote: 69,
       referenceHz: 440,
-      keyLabels: defaultKeyLabels(19)
+      keyLabels: defaultKeyLabels(12)
     },
     palette: {
       defaultColorMode: ColorMode.Custom,
-      degreeColors: createDefaultDegreeColors(19)
+      degreeColors: createDefaultDegreeColors(12)
     },
     layouts: [layout],
     activeLayoutIdHex: layout.objectIdHex,

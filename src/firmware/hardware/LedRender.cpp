@@ -241,6 +241,15 @@ float safeBootLedHue(float hue) {
   return hue;
 }
 
+// The splash runs on Core 1 while Core 0 applies the saved layout, which can
+// rewrite key roles. Use the fixed hardware command positions instead.
+static bool bootLedCommandKey(byte index) {
+  for (byte c = 0; c < CMDCOUNT; ++c) {
+    if (assignCmd[c] == index) return true;
+  }
+  return false;
+}
+
 LedColor getBootLedCheckColor(float hue, byte sat, byte val) {
   if (val == VALUE_BLACK) {
     return 0;
@@ -291,7 +300,7 @@ void fillBootLedCheckFrame(LedColor color) {
 
 void fillBootLedCheckNoteFrame(LedColor color) {
   for (byte i = 0; i < LED_COUNT; ++i) {
-    if (!h[i].isCmd) {
+    if (!bootLedCommandKey(i)) {
       strip.setPixelColor(i, color);
     }
   }
@@ -335,7 +344,7 @@ void showBootLedCheckSplash(uint16_t& frameIndex) {
                          ? ((frame * finalWaveRadius) / (BOOT_LED_CHECK_WAVE_FRAMES - 1))
                          : finalWaveRadius;
     for (byte i = 0; i < LED_COUNT; ++i) {
-      if (h[i].isCmd) {
+      if (bootLedCommandKey(i)) {
         continue;
       }
       byte distance = hexDistance(centerIndex, i);

@@ -1,7 +1,9 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include "../config/FeatureFlags.h"
 
+#if HEXBOARD_ENABLE_SAMPLER
 // A sampler sound's preset file ends with its HBC1 instrument
 // (SynthPresetCatalog.h); there are no separate instrument files.
 // Control/storage entry points are Core 0 only. Loading replaces the exclusive
@@ -29,3 +31,21 @@ bool useCompactSamplerWavetableEngine();
 // copies its name (32 bytes with terminator).
 bool validateCompactSamplerInstrument(const char* path, uint32_t offset, uint32_t length, char* name, size_t capacity);
 void handleCompactSamplerRequest(uint16_t transaction, const uint8_t* payload, size_t length);
+#else
+// Sampler disabled: every sound uses the wavetable engine.
+inline bool compactSamplerActive() { return false; }
+inline const char* compactSamplerName() { return ""; }
+inline const char* compactSamplerRequestedName() { return ""; }
+inline const uint8_t* compactSamplerRequestedSource() {
+  static const uint8_t none[16] = {};
+  return none;
+}
+inline void requestCompactSampler(const char*, const uint8_t*) {}
+inline void retargetCompactSamplerSource(const uint8_t*) {}
+inline void reloadCompactSamplerSource(const uint8_t*) {}
+inline uint8_t compactSamplerEnvelopeOverride() { return 0; }
+inline void setCompactSamplerEnvelopeOverride(uint8_t) {}
+inline void syncCompactSamplerSelection() {}
+inline bool useCompactSamplerWavetableEngine() { return true; }
+inline bool validateCompactSamplerInstrument(const char*, uint32_t, uint32_t, char*, size_t) { return false; }
+#endif

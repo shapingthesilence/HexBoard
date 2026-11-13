@@ -123,6 +123,7 @@ The main menu includes:
 - `Layout:<current>`
 - `Scale:<current>`
 - `Sound:<current sound>`
+- `Buzzer`
 - `Lights & Colors`
 - `Transpose`
 - `Editor`
@@ -142,13 +143,14 @@ name is shown with a leading `*`.
 Resting on an item in the `Sounds`, `Tuning`, `Layout` or `Scales` list for
 200 ms auditions it, so you can play it before choosing it. Press to choose
 the highlighted item; leaving the list without choosing returns to what was
-chosen, which keeps its diamond meanwhile. An audition is never saved, even
+chosen, which keeps its diamond meanwhile. The auditioned sound shows
+headphones; an auditioned tuning, layout or scale shows a hollow diamond. An audition is never saved, even
 with Auto-save on, and a restart starts with the chosen item. Auditioning a
 layout keeps the screen's current rotation; choosing it applies the layout's
 rotation. Changing the key in `Scales` while a scale is auditioned keeps that
 scale. Sampler sounds with a different instrument take about 0.2 s to switch.
-Library browsers use arrows for folders and actions, and a diamond marks the
-loaded item. Long names scroll when you leave the selection on them.
+Library browsers show an arrow beside folders, and a diamond at the right of a
+row marks the loaded item. Long names scroll when you leave the selection on them.
 
 ### Tuning
 
@@ -317,12 +319,17 @@ Options include:
 - `Save Sound`
 
 On hardware `V1.1`, the onboard synth plays through the piezo buzzer when the
-synth is active. There is no headphone-jack output path and no `Buzzer` menu
-toggle.
+synth is active. There is no headphone-jack output path, and the `Synth` page
+has no `Buzzer` toggle.
 
 On hardware `V1.2`, the headphone jack is active by default and an extra
 `Buzzer` toggle appears. Turning `Buzzer` on switches synth output to the piezo
 instead of the jack.
+
+The main menu also has a `Buzzer` toggle below `Sound`. On hardware `V1.2` it
+is the same jack/piezo switch. On hardware `V1.1`, where the piezo is the only
+output, turning it off silences the onboard synth. The choice is saved with
+the profile, not with the sound, so it never marks a sound as changed.
 
 `Volume` limits the active synth output from `25%` to `100%` in `5%` steps. The
 headphone jack and piezo each have their own saved value, so changing `Buzzer`
@@ -404,8 +411,7 @@ another folder). Each sampler sound holds its own samples, so copying or
 sharing the sound takes them along, and deleting the sound deletes
 them. `Save Sound` and `Save as new` on the HexBoard copy the playing samples
 into the saved sound. The HexBoard holds up to 128 sampler sounds. In the
-`Sounds` list, a small wave icon marks wavetable sounds and a sample icon marks
-sampler sounds; the diamond on the right marks the loaded sound. Sync edits
+`Sounds` list, the diamond on the right marks the loaded sound. Sync edits
 sampler sounds with the same controls as the board.
 
 With a sampler sound loaded, the `Synth` page shows `Smpl: <name>` (fixed by
@@ -537,9 +543,8 @@ The load list also includes `Blank`. Loading from the top-level `Sound` item
 returns to the main menu; loading or saving from `Editor` -> `Synth` returns to
 `Synth`. Loading a preset changes only the current synth parameters and
 wavetable reference, which can still be preserved by profile auto-save. The
-currently loaded catalog preset shows a diamond in the left
-action-icon slot when it appears in the load list (on the right edge for rows
-with an engine icon); `Blank`, `New Sound`, and
+currently loaded catalog preset shows a diamond at the right edge of its row
+in the load list; `Blank`, `New Sound`, and
 the unselected `Current` state are not marked.
 
 Short `Attack` feels immediate. Long `Attack` fades in. `Hold` keeps the initial

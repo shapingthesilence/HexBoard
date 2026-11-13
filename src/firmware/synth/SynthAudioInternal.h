@@ -219,8 +219,13 @@ extern std::atomic<bool> synthWorkspacePauseRequested;
 extern std::atomic<bool> synthWorkspacePauseAcknowledged;
 extern std::array<byte, SYNTH_PREVIEW_SLOT_COUNT> synthPreviewVelocityForSlot;
 extern uint32_t synthRenderGenerations[POLYPHONY_LIMIT];
+#if HEXBOARD_ENABLE_SAMPLER
 void prepareCompactSamplerFrequency(uint8_t channel, float nativeHz, float bentHz, bool start);
 int32_t renderCompactSamplerMix(uint32_t& envSum, uint8_t& voices, uint8_t& flags);
+#else
+inline void prepareCompactSamplerFrequency(uint8_t, float, float, bool) {}
+inline int32_t renderCompactSamplerMix(uint32_t&, uint8_t&, uint8_t&) { return 0; }
+#endif
 extern volatile uint8_t activeSynthWaveFrameCount;
 extern uint16_t synthWavetableFramePositionByAmount[128];
 extern uint8_t synthFxModScaleByDepth[128][128];

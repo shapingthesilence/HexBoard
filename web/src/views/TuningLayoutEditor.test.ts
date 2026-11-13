@@ -31,7 +31,7 @@ describe("tuning bundle batch files", () => {
       tuningBundles: [first, second]
     });
 
-    expect(bundles.map((bundle) => bundle.tuning.name)).toEqual(["19 EDO Wicki", "Second Tuning"]);
+    expect(bundles.map((bundle) => bundle.tuning.name)).toEqual(["12 EDO Wicki-Hayden", "Second Tuning"]);
   });
 });
 

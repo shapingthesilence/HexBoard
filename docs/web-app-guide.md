@@ -343,7 +343,10 @@ see [Built-in course paths](#built-in-course-paths) below. Choose a lesson from
 the always-visible **Your course path**, or use **Continue** after finishing or on a
 reading page. Course introductions appear before the first lesson and include the
 **Layout** choice; pick the layout set on your HexBoard. You can change it later
-under **Lesson settings**. Exercises are numbered in order; reading pages are not
+with the **Settings** button at the bottom of the left panel. It opens one
+pop-up with the layout, **Display & sound**, **Courses** (create, copy, edit,
+export, import, delete), on-screen testing when no HexBoard is connected, and
+**Help**. Exercises are numbered in order; reading pages are not
 numbered.
 Each practice lesson explains what to listen for and what to play.
 **Hear example** is available before starting a run. Untimed board practice
@@ -510,8 +513,8 @@ distinguishes included material from future authoring work.
 
 Use **Stop lesson** at the top of Learn to end a lesson and return HexBoard to normal playing without unplugging it. Saved progress is kept.
 
-Open **Courses → Manage courses**, below **Library & help**, for **Create course**, **Make a copy**,
-**Edit course**, **Export course**, and **Import shared course**. Authoring
+Open **Courses → Settings → Courses** for **Create course**, **Make a copy**,
+**Edit course**, **Export course**, and **Import course…**. Authoring
 controls are available while a course is active. Creating, copying, editing, or
 resuming a draft stops the lesson and releases HexBoard before opening the
 editor, so you can record phrases immediately. Courses are saved in this browser;
@@ -807,8 +810,7 @@ The sound’s more-actions menu contains export, `Load current HexBoard sound`,
 and `Discard draft`; `Other drafts` resumes unfinished sounds. Connecting does
 not replace your open sound. Previewing or saving to HexBoard requires a connection.
 
-Both engines share one library. A small wave icon marks wavetable sounds and a
-sample icon marks Classic sampler sounds, as in the HexBoard's `Sounds` list.
+Both engines share one library.
 A sampler sound holds its samples, so copying it between the HexBoard and
 Browser Library, exporting it or importing it always takes them
 along. **Export file** saves a sampler sound as one `.hexsound` file to share;

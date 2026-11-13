@@ -53,6 +53,13 @@ LittleFS image, firmware payload, complete touched sectors, flash ranges, and
 both UF2 variants. The filesystem occupies `0x107ff000` through `0x10fff000`;
 the final 4 KiB EEPROM reservation is excluded.
 
+Both UF2 variants differ from the raw `HexBoard.ino.uf2` in one word. The
+Arduino core's pre-boot OTA stage mounts LittleFS before the clocks are
+configured, which keeps the board dark for several seconds; the builder sets
+that stage's recorded filesystem end equal to its start (`0x10002ff4`) so it
+skips the mount. Firmware takes its filesystem bounds from linker symbols.
+Flash the `_Update` or `_Factory` files, not the raw UF2.
+
 Keep Node tooling inside `web/`; use `web/README.md` for app commands.
 
 ## Runtime Architecture
@@ -104,6 +111,17 @@ Use `RAM_FUNC(name)` selectively for measured hot paths. Current RAM placement
 includes audio render/refill, scan and rotary decoding, MIDI sends, voice
 allocation, compact LED work, and renderer lookup tables. OLED/GEM drawing
 remains in flash because I2C and library calls dominate it.
+
+Nothing Core 1 runs while rendering may execute from, or read constants in,
+flash: a call there can wait on a flash read while Core 0 uses the
+execute-in-place cache, and the audio block misses its deadline. That covers
+compiler runtime helpers too. `scripts/place_audio_helpers_in_ram.py` (a
+pre-link hook in the `Makefile`) links the integer-division, 64-bit multiply,
+memory-fill and single-precision float helpers into RAM; the Core 1 loop does
+not return to the Arduino loop in flash; and renderer tables use
+`__not_in_flash`. A `switch` that returns constants compiles to a flash table,
+and `digitalRead()`, `round()` and double-precision math are flash calls.
+Verify changes with `scripts/test_synth_performance.py` on hardware.
 
 ## Transfer Memory
 
@@ -205,8 +223,9 @@ Startup coordinates both cores:
 1. Core 0 initializes USB/MIDI, mounts LittleFS, detects hardware, and loads settings.
 2. Core 0 initializes LEDs and releases Core 1 to run the optional LED self-check
    and splash while Core 0 loads catalogs, synth state, OLED, rotary, and menus.
-3. Core 0 waits for the splash, synchronizes runtime settings, and publishes
-   synth readiness and the normal LED frame.
+3. Core 0 synchronizes runtime settings while the splash is still playing, then
+   publishes synth readiness and the normal LED frame. The splash reads only the
+   saved LED limits and fixed hardware key positions, never layout state.
 4. Core 1 completes the LED fade and initializes audio DMA. Core 0 restores the
    sequencer and builds the storage-status menu, then waits for LED completion
    and performs the bounded audio-readiness wait.
@@ -493,12 +512,19 @@ Silent envelopes complete pending handoffs without publishing a stale freed even
 
 Core 1 renders two 64-sample DMA buffers. A PWM timer slice paces output at about
 40.7 kHz for the 250 MHz target. Hardware V1.2 selects jack or piezo; V1.1 uses
-piezo.
+piezo. The profile setting `AudioDestination` stores the `Buzzer` toggle as
+`AUDIO_PIEZO` (on) or `AUDIO_AJACK` (off); 0 is the unset default. V1.2 plays
+through the jack unless the piezo is chosen. V1.1 has no jack, so off leaves the
+onboard synth silent and 0 still means on. It is not a synth preset value.
 
 Active wavetables use a `16 × 512` base table and fixed mip levels. Their samples
 and sampler PCM share an exclusive 48 KiB sample workspace. Engine selection is
 dispatched at the DMA buffer boundary; the sampler's preparation, rendering and
-limits are described in [Classic sampler](compact-sampler.md). Wavetable modulation
+limits are described in [Classic sampler](compact-sampler.md).
+`HEXBOARD_ENABLE_SAMPLER` (`config/FeatureFlags.h`, default 1 on development)
+compiles the sampler out when 0: the board then advertises no sampler
+capability and rejects sampler objects and presets that name a sampler
+instrument. Releases without the sampler build with 0. Wavetable modulation
 and envelopes update on a 32-sample control quantum. Per-sample rendering uses
 cached ramps and RAM-resident drive lookup tables. Wheel-only volume-envelope
 targets are computed on core 0 at most every 50 ms, only when the wheel target,
@@ -723,7 +749,8 @@ preset after each boot, and leaves the board in normal operation. It never
 loads an image or erases flash.
 
 CDC also accepts `HBDBG?` to query diagnostic flags and `HBDBG <flags>` to set
-them. The response is `HBDBG flags: <flags>`. Bits are 0 Enabled, 1 General Log,
+them. The response is `HBDBG flags: <flags>`, followed by
+`HBDBG hardware: <revision>` (1 for V1.1, 2 for V1.2). Bits are 0 Enabled, 1 General Log,
 2 Min Heap, and 3 Audio Stats; use `HBDBG 13` for heap/audio measurement without
 general logging. Commands are bounded to eight bytes before newline, processed
 at at most 64 incoming bytes per Core 0 loop, and change RAM-only controls. USB

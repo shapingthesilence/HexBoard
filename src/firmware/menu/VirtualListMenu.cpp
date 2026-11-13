@@ -24,14 +24,21 @@ static const unsigned char arrowRightBits[] U8X8_PROGMEM = {
   0xc0, 0xc4, 0xcc, 0xdc, 0xcc, 0xc4, 0xc0, 0xc0
 };
 
-static const unsigned char arrowButtonBits[] U8X8_PROGMEM = {
-  0xc0, 0xc3, 0xc5, 0xc9, 0xc5, 0xc3, 0xc0, 0xc0
-};
-
 static const unsigned char currentDiamondBits[] U8X8_PROGMEM = {
   0xc0, 0xc4, 0xce, 0xdf, 0xce, 0xc4, 0xc0, 0xc0
 };
 
+}  // namespace
+
+const unsigned char virtualListHeadphonesBits[] U8X8_PROGMEM = {
+  0xc0, 0xde, 0xe1, 0xe1, 0xf3, 0xf3, 0xf3, 0xc0
+};
+
+const unsigned char virtualListTryingDiamondBits[] U8X8_PROGMEM = {
+  0xc0, 0xc4, 0xca, 0xd1, 0xca, 0xc4, 0xc0, 0xc0
+};
+
+namespace {
 VirtualListMenuProvider activeProvider;
 bool active = false;
 bool editing = false;
@@ -125,6 +132,24 @@ bool rowIsCurrent(uint16_t itemIndex) {
          && activeProvider.isCurrent(activeProvider.context, providerIndex);
 }
 
+// The marker beside a Button row: the diamond for the chosen item, or the
+// provider's audition icon for the one being auditioned.
+const unsigned char* rowMarker(uint16_t itemIndex) {
+  if (rowIsCurrent(itemIndex)) {
+    return currentDiamondBits;
+  }
+  uint16_t itemCount = providerItemCount();
+  if (itemIndex == VIRTUAL_LIST_BACK_INDEX || itemCount == 0
+      || !activeProvider.isAuditioning || !activeProvider.auditionIcon) {
+    return nullptr;
+  }
+  uint16_t providerIndex = static_cast<uint16_t>(itemIndex - 1);
+  return providerIndex < itemCount
+         && rowType(itemIndex) == VirtualListMenuRowType::Button
+         && activeProvider.isAuditioning(activeProvider.context, providerIndex)
+    ? activeProvider.auditionIcon : nullptr;
+}
+
 uint16_t defaultSelectionIndex() {
   return virtualItemCount() > 1 ? 1 : VIRTUAL_LIST_BACK_INDEX;
 }
@@ -163,7 +188,7 @@ void drawRows() {
       u8g2.drawXBMP(5, yDraw, VIRTUAL_LIST_SPRITE_WIDTH, VIRTUAL_LIST_SPRITE_HEIGHT, arrowLeftBits);
     } else {
       rowLabel(itemIndex, label, sizeof(label));
-      bool currentRow = rowIsCurrent(itemIndex);
+      const unsigned char* marker = rowMarker(itemIndex);
       const unsigned char* icon = nullptr;
       if (providerItemCount() == 0) {
         u8g2.setCursor(5, yText);
@@ -186,25 +211,26 @@ void drawRows() {
           case VirtualListMenuRowType::Button:
           default:
             icon = activeProvider.getIcon ? activeProvider.getIcon(activeProvider.context, itemIndex - 1) : nullptr;
-            u8g2.setCursor(11, yText);
-            u8g2.drawXBMP(5,
-                          yDraw,
-                          VIRTUAL_LIST_SPRITE_WIDTH,
-                          VIRTUAL_LIST_SPRITE_HEIGHT,
-                          icon ? icon : (currentRow ? currentDiamondBits : arrowButtonBits));
-            if (icon && currentRow) {
+            // Only a provider icon sits at the left; the chosen and audition
+            // markers always sit at the right edge.
+            u8g2.setCursor(icon ? 11 : 5, yText);
+            if (icon) {
+              u8g2.drawXBMP(5, yDraw, VIRTUAL_LIST_SPRITE_WIDTH, VIRTUAL_LIST_SPRITE_HEIGHT, icon);
+            }
+            if (marker) {
               u8g2.drawXBMP(u8g2.getDisplayWidth() - 8,
                             yDraw,
                             VIRTUAL_LIST_SPRITE_WIDTH,
                             VIRTUAL_LIST_SPRITE_HEIGHT,
-                            currentDiamondBits);
+                            marker);
             }
             break;
         }
       }
       const bool checkboxRow = rowType(itemIndex) == VirtualListMenuRowType::Checkbox;
       const bool valueRow = checkboxRow || rowType(itemIndex) == VirtualListMenuRowType::Value;
-      // Leave room for a right-edge marker beside icon rows.
+      // Leave room for a right-edge marker. Rows without an icon start one
+      // character further left, so the same length already ends short of it.
       const uint8_t labelLength = valueRow ? (VIRTUAL_LIST_VALUES_LEFT_OFFSET-6)/VIRTUAL_LIST_FONT_WIDTH
                                            : static_cast<uint8_t>(menuItemFullLength() - (icon ? 1 : 0));
       printMenuString(label, labelLength);

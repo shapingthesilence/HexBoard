@@ -76,7 +76,7 @@ The current source targets:
 - `16 MB` flash with `8 MB` LittleFS
 - Pico SDK USB stack
 - USB manufacturer/product descriptor `HexBoard`
-- Generic SPI `/4` boot2
+- Single-line SPI `/6` boot2 (`boot2/`)
 
 The default `make` target builds the current `250 MHz` firmware as two files:
 

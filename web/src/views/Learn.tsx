@@ -3,7 +3,7 @@ import {useAutosave} from '../editor/useAutosave.ts';
 import {writeStoredText} from '../editor/autosave.ts';
 import { answerLabel, answerNotes, inPitchSet } from "../learn/lessonAnswers.ts";
 import { ExplorationRun, accompanimentAt } from "../learn/exploration.ts";
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import type { MidiTransport } from "../midi/types.ts";
 import { SynthPreviewController } from "../audio/synthPreview.ts";
 import { createBasicShapesSamples } from "../catalogs/factoryWavetables.ts";
@@ -43,6 +43,11 @@ import { HEXBOARD_COMMAND_INDICES, isHexBoardCommandIndex } from "../catalogs/he
 
 type Stage = "ready" | "starting" | "practice" | "demo" | "complete" | "waiting" | "free";
 const stepTempo = 19; // One slider position below the supported 20–300 BPM range.
+
+/** A titled group in the course Settings pop-up. */
+function SettingsGroup({ title, children }: { title: string; children: ReactNode }) {
+  return <section className="learnSettingsGroup"><h4>{title}</h4>{children}</section>;
+}
 
 export function Learn({ transport, connected, deviceHello,connectionControl,navigation,onNavigate,previewCourse,previewIndex=0,onExitPreview }: { connectionControl?: ReactNode; navigation?: LearnLocation; onNavigate?: (location: LearnLocation, replace?: boolean) => void; previewCourse?:UserCourse;previewIndex?:number;onExitPreview?:()=>void;transport: MidiTransport; connected: boolean; deviceHello?: HelloResponsePayload | null }) {
   const [localLocation, setLocalLocation] = useState<LearnLocation>({ view: "learn", page: "course", lessonId: previewCourse?.lessons[previewIndex]?.id });
@@ -121,6 +126,23 @@ export function Learn({ transport, connected, deviceHello,connectionControl,navi
 
   const localBundles = [...new Map(layouts.filter(layout => !layout.id.startsWith("device:")).map(layout => [layout.bundle.objectIdHex, layout.bundle])).values()];
   const [stage, setStage] = useState<Stage>("ready");
+  const [lessonSettingsOpen, setLessonSettingsOpen] = useState(false);
+  const lessonSettingsButton = useRef<HTMLButtonElement>(null);
+  const courseImportInput = useRef<HTMLInputElement>(null);
+  const closeLessonSettings = useCallback(() => {
+    setLessonSettingsOpen(false);
+    lessonSettingsButton.current?.focus();
+  }, []);
+  useEffect(() => {
+    if (!lessonSettingsOpen) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") closeLessonSettings(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lessonSettingsOpen, closeLessonSettings]);
+  // Starting a lesson or opening the course editor leaves the pop-up behind.
+  useEffect(() => {
+    if (editingCourse || stage === "starting") setLessonSettingsOpen(false);
+  }, [editingCourse, stage]);
   const [pattern, setPattern] = useState<ScalePattern>("ascending");
   const notes = useMemo(() => course ? lesson.targets.map(target => target[0] ?? -1) : scalePatternNotes(pattern, baseNotes), [course, lesson, pattern, baseNotes]);
   const targets = course ? lesson.targets : notes.map(note => [note]);
@@ -798,7 +820,6 @@ export function Learn({ transport, connected, deviceHello,connectionControl,navi
     renderPreview={(course,index,close)=><Learn transport={transport} connected={connected} deviceHello={deviceHello} connectionControl={connectionControl} previewCourse={course} previewIndex={index} onExitPreview={close}/>}
     onSave={next=>persistCourse(next,true)} onClose={() => {setEditingCourse(undefined);void refreshDrafts();}} />;
 
-  const SettingsContainer = course ? "details" : "div";
   const courseLayoutChoices = courseLayouts.map(item => item.layout).filter(layout => !requiredLayout || layout.objectIdHex === requiredLayout);
   const courseLayoutField = <label className="learnField">Layout<select value={selection.layout.objectIdHex} disabled={stage==="starting" || !!requiredLayout} onChange={event => changeLayout(event.target.value)}>{courseLayoutChoices.map(layout => <option key={layout.objectIdHex} value={layout.objectIdHex}>{layout.name}</option>)}</select></label>;
   const numbering = exerciseNumbers(lessons);
@@ -806,6 +827,74 @@ export function Learn({ transport, connected, deviceHello,connectionControl,navi
   const boardShown = !fromDevice || !!deviceLayoutChoice;
   const progressView = page === "progress" && selectedCourse ? courseProgressRows(selectedCourse, progress, selectedCourse.bundle.layouts.map(layout => ({ id: courseLayoutProgressId(selectedCourse.bundle, layout), name: layout.name }))) : undefined;
   const completionPanel = <div className="learnCompletion">{course&&<p role="status">{completionGuidance(lesson,lastRun,activeBpm,streakCount,stepPractice)}</p>}<div className="learnActions">{!exploring&&<button type="button" onClick={() => repeatFromCompletion(false)}>{goalTempoOnRepeat?"Try goal tempo without hints":"Repeat without hints"}</button>}<button type="button" onClick={() => repeatFromCompletion(true)}>{goalTempoOnRepeat?"Try goal tempo":"Repeat with hints"}</button>{course && lessonIndex < lessons.length - 1 && <button className="primary" type="button" onClick={nextLesson}>Continue</button>}</div></div>;
+  const practiceSettingsBody = <>
+        <label className="learnField">Tuning<select value={tuningChoice} disabled={engaged || libraryBusy} onChange={event => void chooseTuning(event.target.value)}>
+          <optgroup label="Starter / imported">{localBundles.map(item => <option key={item.objectIdHex} value={item.objectIdHex}>{item.tuning.name}</option>)}</optgroup>
+          <optgroup label="On HexBoard">{tuningNames.map(item => <option key={item.handle} value={`device:${item.handle}`}>{item.name}{item.folderPath !== "/" ? ` · ${item.folderPath}` : ""}</option>)}</optgroup>
+        </select></label>
+        <label className="learnField">Layout<select value={fromDevice ? deviceLayoutChoice : selection.id} disabled={engaged || libraryBusy} onChange={event => { if (fromDevice) void chooseDeviceLayout(event.target.value); else changeLayout(event.target.value); }}>
+          {fromDevice ? <><option value="">Choose a layout</option>{layoutNames.map(item => <option key={item.handle} value={item.handle}>{item.name}</option>)}</>
+            : layouts.filter(item => item.bundle.objectIdHex === tuningChoice).map(item => <option key={item.id} value={item.id}>{item.layout.name}</option>)}
+        </select></label>
+        <label className="learnField">Scale<select value={scaleChoice} disabled={engaged || libraryBusy} onChange={event => { if (fromDevice) void chooseDeviceScale(event.target.value); else setScaleChoice(event.target.value); }}>
+          {fromDevice ? <><option value="">Choose a scale</option>{scaleNames.map(item => <option key={item.handle} value={item.handle}>{item.name}</option>)}</>
+            : bundle.scales.map(item => <option key={item.objectIdHex} value={item.objectIdHex}>{item.name}</option>)}
+        </select></label>
+        <div className="learnFieldPair">
+          <label className="learnField">Root<select value={root} disabled={engaged || libraryBusy} onChange={event => setRoot(Number(event.target.value))}>{bundle.tuning.keyLabels.map((label, degree) => <option key={degree} value={degree}>{label}</option>)}</select></label>
+          <label className="learnField">Register<input aria-label="Register" type="number" min="-8" max="8" value={register} disabled={engaged || libraryBusy} onChange={event => setRegister(Math.max(-8, Math.min(8, Math.round(Number(event.target.value)))))} /></label>
+        </div>
+        <label className="learnField">Pattern<select value={pattern} disabled={engaged} onChange={event => setPattern(event.target.value as ScalePattern)}>{Object.entries(scalePatterns).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
+        <label className="learnField">Practice mode<select value={beatMode ? "beat" : "free"} disabled={engaged} onChange={event => setBeatMode(event.target.value === "beat")}><option value="free">Free timing</option><option value="beat">Metronome</option></select></label>
+        {beatMode && <label className="learnField">Tempo · {bpm} BPM<input aria-label="Tempo" type="range" min="40" max="180" step="5" value={bpm} disabled={engaged} onChange={event => setBpm(Number(event.target.value))} /></label>}
+        <label className="checkField"><input type="checkbox" checked={continuous} disabled={engaged} onChange={event => setContinuous(event.target.checked)} />Repeat runs</label>
+        <details className="learnSettings"><summary>Display &amp; sound</summary><label className="checkField"><input type="checkbox" checked={rewardSound} onChange={event=>{setRewardSound(event.target.checked);if(event.target.checked){achievementSound.current??=new AchievementSound();void achievementSound.current.unlock();}}}/>Achievement sounds</label>
+          <label className="learnField">Color mode<select value={colorMode} onChange={event => setColorMode(Number(event.target.value) as ColorModeValue)}>{Object.entries(ColorMode).map(([name, value]) => <option key={value} value={value}>{name === "AltPiano" ? "Alt Piano" : name}</option>)}</select></label>
+          <label className="learnField">Contrast · {contrast}%<input aria-label="Contrast" type="range" min="25" max="85" value={contrast} onChange={event => setContrast(Number(event.target.value))} /></label>
+        </details>
+        <details className="learnSettings"><summary>Library &amp; help</summary>
+          <button type="button" disabled={!connected || engaged || libraryBusy} onClick={() => void refreshDeviceNames(true)}>Refresh tuning names</button>
+          <label className="learnField">Import tuning bundle<input aria-label="Import lesson tuning bundle" type="file" accept=".json" disabled={engaged || libraryBusy} onChange={event => void importLayout(event)} /></label>
+          <p className="learnMuted">Sound plays in your browser. {boardForHello(deviceHello).id === "advanced" && "Use on-screen lesson controls; joystick navigation is planned. "}{boardForHello(deviceHello).recovery} Leaving this tab pauses practice.</p>
+          <p className="learnMuted">Register shifts by tuning periods. Absolute brightness uses the board’s saved hardware setting. Contrast dims background keys.</p>
+          <p className="learnMuted">Fingering cues: L = left, R = right. Finger 1 is the thumb; 5 is the little finger. Hand and finger choices are guidance.</p>
+          <p className="learnMuted">Metronome: four count-in clicks, then follow the written rhythm. Grades include timing, missed notes, and extra attempts. Use wired audio for accurate timing.</p>
+        </details>
+        {!connected && <details className="learnSettings"><summary>Test without a HexBoard</summary><p className="learnMuted">Preview lesson behavior with clickable keys. Courses are written for playing the physical instrument.</p><button type="button" disabled={!readyToPlay || engaged || !!session.current} onClick={()=>void begin(false)}>Try on screen</button></details>}
+  </>;
+  const courseSettingsBody = <>
+    {customCourse && <span className="learnMuted">Tuning · {customCourse.bundle.tuning.name}</span>}
+    {customCourse ? courseLayoutField : <label className="learnField">Layout<select value={selection.id} disabled={stage==="starting" || libraryBusy} onChange={event => changeLayout(event.target.value)}>
+      {layouts.filter(item => isLessonTuning(item.bundle)).map(item => <option key={item.id} value={item.id}>{item.layout.name}</option>)}
+    </select></label>}
+    <SettingsGroup title="Display & sound">
+      <div className="learnFieldPair">
+        <label className="learnField">Color mode<select value={colorMode} onChange={event => setColorMode(Number(event.target.value) as ColorModeValue)}>{Object.entries(ColorMode).map(([name, value]) => <option key={value} value={value}>{name === "AltPiano" ? "Alt Piano" : name}</option>)}</select></label>
+        <label className="learnField">Contrast · {contrast}%<input aria-label="Contrast" type="range" min="25" max="85" value={contrast} onChange={event => setContrast(Number(event.target.value))} /></label>
+      </div>
+      <label className="checkField"><input type="checkbox" checked={rewardSound} onChange={event=>{setRewardSound(event.target.checked);if(event.target.checked){achievementSound.current??=new AchievementSound();void achievementSound.current.unlock();}}}/>Achievement sounds</label>
+    </SettingsGroup>
+    {!previewCourse && <SettingsGroup title="Courses"><div className="learnActions">
+          <button type="button" disabled={libraryBusy || !storageReady} onClick={() => openCourseEditor(false)}>Create course</button>
+          <button type="button" disabled={libraryBusy || !storageReady} onClick={() => openCourseEditor(true)}>Make a copy</button>
+          {editableCourse && <button type="button" disabled={libraryBusy || !storageReady} onClick={() => void editSavedCourse(selectedCourse)}>Edit course</button>}
+          <button type="button" disabled={engaged} onClick={exportCourse}>Export course</button>
+          <button type="button" disabled={engaged || libraryBusy || !storageReady} onClick={()=>courseImportInput.current?.click()}>Import course…</button>
+          {editableCourse&&<button type="button" className="warning" disabled={engaged} onClick={()=>setDeletePending(true)}>Delete course</button>}</div>
+          <input ref={courseImportInput} hidden aria-label="Import shared course" type="file" accept=".json" onChange={event => void importCourse(event)} />
+          <p className="learnMuted">Creating or editing a course stops the current lesson. Saved progress is kept.</p>
+          {deletePending&&selectedCourse&&<div role="alert"><p>Delete “{selectedCourse.title}”? Export it first if you need a copy. Recovery drafts remain available.</p><button onClick={()=>void courseStorage.remove(selectedCourse.id).then(()=>{setUserCourses(items=>items.filter(item=>item.id!==selectedCourse.id));chooseCourse(`builtin:${defaultCourse.id}`);setDeletePending(false);},()=>setCourseMessage("Could not delete course."))}>Confirm delete</button><button onClick={()=>setDeletePending(false)}>Cancel</button></div>}
+          {drafts.some(item=>!userCourses.some(saved=>saved.id===item.id))&&<div className="learnDraftList" aria-label="Unsaved courses">{drafts.filter(item=>!userCourses.some(saved=>saved.id===item.id)).map(item=><button key={item.id} disabled={libraryBusy || !storageReady} onClick={()=>enterCourseEditor(item.course)}>Resume unsaved course: {item.course.title}</button>)}</div>}
+          {pendingImport&&<div role="alert"><p>“{pendingImport.title}” revision {pendingImport.revision} matches local revision {userCourses.find(item=>item.id===pendingImport.id)?.revision}. Compatible lesson progress will be preserved.</p><button onClick={()=>void persistCourse(pendingImport).then(()=>{setPendingImport(undefined);setCourseMessage("Course updated.");},error=>setCourseMessage(String(error)))}>Update existing</button><button onClick={()=>void persistCourse({...pendingImport,id:crypto.randomUUID()}).then(()=>{setPendingImport(undefined);setCourseMessage("Separate copy imported.");},error=>setCourseMessage(String(error)))}>Keep both</button><button onClick={()=>setPendingImport(undefined)}>Cancel import</button></div>}
+    </SettingsGroup>}
+    {!connected && <SettingsGroup title="Without a HexBoard"><p className="learnMuted">Preview lesson behavior with clickable keys. Courses are written for playing the physical instrument.</p><button type="button" disabled={!readyToPlay || engaged || !!session.current} onClick={()=>void begin(false)}>Try on screen</button></SettingsGroup>}
+    <SettingsGroup title="Help">
+      <p className="learnMuted">Sound plays in your browser; use wired audio for accurate timing. {boardForHello(deviceHello).recovery} Leaving this tab pauses practice.</p>
+      <p className="learnMuted">Fingering cues: L is left, R is right. Finger 1 is the thumb and 5 is the little finger. They are guidance, not requirements.</p>
+      <p className="learnMuted">With a metronome you get four count-in clicks, then follow the written rhythm. Grades count timing, missed notes and extra attempts.</p>
+      <p className="learnMuted">Contrast dims the background keys. Overall brightness follows the HexBoard’s own setting.</p>
+    </SettingsGroup>
+  </>;
   return <section className="learnPage">
     {pendingEdit && <div className="modalOverlay"><section className="modalPanel" role="dialog" aria-modal="true" aria-labelledby="course-draft-title" onKeyDown={event=>{if(event.key==="Escape")setPendingEdit(undefined);}}>
       <h3 id="course-draft-title">Resume your draft?</h3>
@@ -838,62 +927,20 @@ export function Learn({ transport, connected, deviceHello,connectionControl,navi
           <CourseJourney journey={journey} currentIndex={lessonIndex} layoutName={selection.layout.name} disabled={stage==="starting"} onSelect={changeLesson}/>
 
         </>}
-        <SettingsContainer className={course ? "learnSettings learnCourseSettings" : "learnPracticeSettings"}>
-          {course && <summary>Lesson settings · {selection.layout.name}</summary>}
-          {course && !exploring && lesson.timing && <span className="learnMuted">Time signature · {lesson.timeSignature?.numerator??4}/{lesson.timeSignature?.denominator??4}</span>}
-        {customCourse ? <><span className="learnMuted">Tuning · {customCourse.bundle.tuning.name}</span>
-          {courseLayoutField}</> : <>
-        {!course && <label className="learnField">Tuning<select value={tuningChoice} disabled={engaged || libraryBusy} onChange={event => void chooseTuning(event.target.value)}>
-          <optgroup label="Starter / imported">{localBundles.map(item => <option key={item.objectIdHex} value={item.objectIdHex}>{item.tuning.name}</option>)}</optgroup>
-          <optgroup label="On HexBoard">{tuningNames.map(item => <option key={item.handle} value={`device:${item.handle}`}>{item.name}{item.folderPath !== "/" ? ` · ${item.folderPath}` : ""}</option>)}</optgroup>
-        </select></label>}
-        <label className="learnField">Layout<select value={fromDevice ? deviceLayoutChoice : selection.id} disabled={(engaged&&!course) || stage==="starting" || libraryBusy} onChange={event => { if (fromDevice) void chooseDeviceLayout(event.target.value); else changeLayout(event.target.value); }}>
-          {fromDevice ? <><option value="">Choose a layout</option>{layoutNames.map(item => <option key={item.handle} value={item.handle}>{item.name}</option>)}</>
-            : layouts.filter(item => course ? isLessonTuning(item.bundle) : item.bundle.objectIdHex === tuningChoice).map(item => <option key={item.id} value={item.id}>{item.layout.name}</option>)}
-        </select></label>
-        </>}
-        {!course && <><label className="learnField">Scale<select value={scaleChoice} disabled={engaged || libraryBusy} onChange={event => { if (fromDevice) void chooseDeviceScale(event.target.value); else setScaleChoice(event.target.value); }}>
-          {fromDevice ? <><option value="">Choose a scale</option>{scaleNames.map(item => <option key={item.handle} value={item.handle}>{item.name}</option>)}</>
-            : bundle.scales.map(item => <option key={item.objectIdHex} value={item.objectIdHex}>{item.name}</option>)}
-        </select></label>
-        <div className="learnFieldPair">
-          <label className="learnField">Root<select value={root} disabled={engaged || libraryBusy} onChange={event => setRoot(Number(event.target.value))}>{bundle.tuning.keyLabels.map((label, degree) => <option key={degree} value={degree}>{label}</option>)}</select></label>
-          <label className="learnField">Register<input aria-label="Register" type="number" min="-8" max="8" value={register} disabled={engaged || libraryBusy} onChange={event => setRegister(Math.max(-8, Math.min(8, Math.round(Number(event.target.value)))))} /></label>
-        </div>
-        <label className="learnField">Pattern<select value={pattern} disabled={engaged} onChange={event => setPattern(event.target.value as ScalePattern)}>{Object.entries(scalePatterns).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
-        <label className="learnField">Practice mode<select value={beatMode ? "beat" : "free"} disabled={engaged} onChange={event => setBeatMode(event.target.value === "beat")}><option value="free">Free timing</option><option value="beat">Metronome</option></select></label>
-        {beatMode && <label className="learnField">Tempo · {bpm} BPM<input aria-label="Tempo" type="range" min="40" max="180" step="5" value={bpm} disabled={engaged} onChange={event => setBpm(Number(event.target.value))} /></label>}
-        <label className="checkField"><input type="checkbox" checked={continuous} disabled={engaged} onChange={event => setContinuous(event.target.checked)} />Repeat runs</label></>}
-        <details className="learnSettings"><summary>Display &amp; sound</summary><label className="checkField"><input type="checkbox" checked={rewardSound} onChange={event=>{setRewardSound(event.target.checked);if(event.target.checked){achievementSound.current??=new AchievementSound();void achievementSound.current.unlock();}}}/>Achievement sounds</label>
-          <label className="learnField">Color mode<select value={colorMode} onChange={event => setColorMode(Number(event.target.value) as ColorModeValue)}>{Object.entries(ColorMode).map(([name, value]) => <option key={value} value={value}>{name === "AltPiano" ? "Alt Piano" : name}</option>)}</select></label>
-          <label className="learnField">Contrast · {contrast}%<input aria-label="Contrast" type="range" min="25" max="85" value={contrast} onChange={event => setContrast(Number(event.target.value))} /></label>
-        </details>
-        <details className="learnSettings"><summary>Library &amp; help</summary>
-          <button type="button" disabled={!connected || engaged || libraryBusy} onClick={() => void refreshDeviceNames(true)}>Refresh tuning names</button>
-          <label className="learnField">Import tuning bundle<input aria-label="Import lesson tuning bundle" type="file" accept=".json" disabled={engaged || libraryBusy} onChange={event => void importLayout(event)} /></label>
-          <p className="learnMuted">Sound plays in your browser. {boardForHello(deviceHello).id === "advanced" && "Use on-screen lesson controls; joystick navigation is planned. "}{boardForHello(deviceHello).recovery} Leaving this tab pauses practice.</p>
-          <p className="learnMuted">Register shifts by tuning periods. Absolute brightness uses the board’s saved hardware setting. Contrast dims background keys.</p>
-          <p className="learnMuted">Fingering cues: L = left, R = right. Finger 1 is the thumb; 5 is the little finger. Hand and finger choices are guidance.</p>
-          <p className="learnMuted">Metronome: four count-in clicks, then follow the written rhythm. Grades include timing, missed notes, and extra attempts. Use wired audio for accurate timing.</p>
-        </details>
-        {course && !previewCourse && <details className="learnSettings"><summary>Manage courses</summary><p className="learnMuted">Opening the course editor stops the current lesson and releases HexBoard for recording. Saved progress is kept.</p><div className="learnActions">
-          <button type="button" disabled={libraryBusy || !storageReady} onClick={() => openCourseEditor(false)}>Create course</button>
-          <button type="button" disabled={libraryBusy || !storageReady} onClick={() => openCourseEditor(true)}>Make a copy</button>
-          {editableCourse && <button type="button" disabled={libraryBusy || !storageReady} onClick={() => void editSavedCourse(selectedCourse)}>Edit course</button>}
-          <button type="button" disabled={engaged} onClick={exportCourse}>Export course</button></div>
-          <label className="learnField">Import shared course<input aria-label="Import shared course" type="file" accept=".json" disabled={engaged || libraryBusy || !storageReady} onChange={event => void importCourse(event)} /></label>
-          {editableCourse&&<button type="button" disabled={engaged} onClick={()=>setDeletePending(true)}>Delete course</button>}
-          {deletePending&&selectedCourse&&<div role="alert"><p>Delete “{selectedCourse.title}”? Export it first if you need a copy. Recovery drafts remain available.</p><button onClick={()=>void courseStorage.remove(selectedCourse.id).then(()=>{setUserCourses(items=>items.filter(item=>item.id!==selectedCourse.id));chooseCourse(`builtin:${defaultCourse.id}`);setDeletePending(false);},()=>setCourseMessage("Could not delete course."))}>Confirm delete</button><button onClick={()=>setDeletePending(false)}>Cancel</button></div>}
-          {drafts.some(item=>!userCourses.some(saved=>saved.id===item.id))&&<div className="learnDraftList" aria-label="Unsaved courses">{drafts.filter(item=>!userCourses.some(saved=>saved.id===item.id)).map(item=><button key={item.id} disabled={libraryBusy || !storageReady} onClick={()=>enterCourseEditor(item.course)}>Resume unsaved course: {item.course.title}</button>)}</div>}
-          {pendingImport&&<div role="alert"><p>“{pendingImport.title}” revision {pendingImport.revision} matches local revision {userCourses.find(item=>item.id===pendingImport.id)?.revision}. Compatible lesson progress will be preserved.</p><button onClick={()=>void persistCourse(pendingImport).then(()=>{setPendingImport(undefined);setCourseMessage("Course updated.");},error=>setCourseMessage(String(error)))}>Update existing</button><button onClick={()=>void persistCourse({...pendingImport,id:crypto.randomUUID()}).then(()=>{setPendingImport(undefined);setCourseMessage("Separate copy imported.");},error=>setCourseMessage(String(error)))}>Keep both</button><button onClick={()=>setPendingImport(undefined)}>Cancel import</button></div>}
-        </details>}
-        {!connected && <details className="learnSettings"><summary>Test without a HexBoard</summary><p className="learnMuted">Preview lesson behavior with clickable keys. Courses are written for playing the physical instrument.</p><button type="button" disabled={!readyToPlay || engaged || !!session.current} onClick={()=>void begin(false)}>Try on screen</button></details>}
+        {course ? <>
+          <button ref={lessonSettingsButton} type="button" className="learnSettingsButton" aria-haspopup="dialog" onClick={()=>setLessonSettingsOpen(true)}>Settings</button>
+          {lessonSettingsOpen && <div className="modalOverlay" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)closeLessonSettings();}}>
+            <section className="modalPanel learnSettingsDialog" role="dialog" aria-modal="true" aria-labelledby="learn-lesson-settings-title">
+              <header className="learnPracticeHeader"><h3 id="learn-lesson-settings-title">Settings</h3><button type="button" autoFocus onClick={closeLessonSettings}>Close</button></header>
+              {courseSettingsBody}
+            </section>
+          </div>}
+        </> : <div className="learnPracticeSettings">{practiceSettingsBody}</div>}
         {libraryMessage && <p role="status" className="learnMuted">{libraryMessage}</p>}
         {(!fromDevice || deviceLayoutChoice) && missing.length > 0 && <p className="learnWarning" role="alert">Missing {missing.join(", ")}. Try another layout or register.</p>}
-        </SettingsContainer>
         {courseMessage && <p role="status" className="learnMuted">{courseMessage}</p>}
       </aside>
-      {showIntroduction?<article className="learnCard"><h2>{selectedCourse!.title}</h2><CourseMarkdown source={selectedCourse!.description!}/>{courseLayoutChoices.length>1&&<div className="courseIntroLayout">{courseLayoutField}<p className="learnMuted">Use the layout set on your HexBoard. Progress is saved separately for each layout, and you can change it later in Lesson settings.</p></div>}{journey.completed>0&&journey.next!==undefined&&<p><button className="primary" type="button" onClick={()=>startCourseAt(journey.next!)}>Continue: {lessons[journey.next].title}</button></p>}<button type="button" className="courseStartButton" onClick={()=>startCourseAt(0)}>Start Course{connected?" on HexBoard":""}</button></article>:course&&lesson.kind==="content"?<article className="learnCard">{!connected && connectionControl}<h2>{lesson.title}</h2><CourseMarkdown source={lesson.markdown??""}/><div className="learnActions">{connected&&!session.current&&<button type="button" onClick={()=>void begin(true)}>Start on HexBoard</button>}{lessonIndex<lessons.length-1&&<button type="button" onClick={nextLesson}>Continue</button>}</div></article>:<div className="learnCard learnPractice">
+      {showIntroduction?<article className="learnCard"><h2>{selectedCourse!.title}</h2><CourseMarkdown source={selectedCourse!.description!}/>{courseLayoutChoices.length>1&&<div className="courseIntroLayout">{courseLayoutField}<p className="learnMuted">Use the layout set on your HexBoard. Progress is saved separately for each layout, and you can change it later in Settings.</p></div>}{journey.completed>0&&journey.next!==undefined&&<p><button className="primary" type="button" onClick={()=>startCourseAt(journey.next!)}>Continue: {lessons[journey.next].title}</button></p>}<button type="button" className="courseStartButton" onClick={()=>startCourseAt(0)}>Start Course{connected?" on HexBoard":""}</button></article>:course&&lesson.kind==="content"?<article className="learnCard">{!connected && connectionControl}<h2>{lesson.title}</h2><CourseMarkdown source={lesson.markdown??""}/><div className="learnActions">{connected&&!session.current&&<button type="button" onClick={()=>void begin(true)}>Start on HexBoard</button>}{lessonIndex<lessons.length-1&&<button type="button" onClick={nextLesson}>Continue</button>}</div></article>:<div className="learnCard learnPractice">
         <div className={`learnPracticeWorkspace ${course ? "" : "learnScalePractice"}`}>
         {course && <LessonPanel key={selectedCourse.id} course={selectedCourse}>
           <div key={lesson.id} className="learnLessonReading" tabIndex={0} aria-label="Lesson text">

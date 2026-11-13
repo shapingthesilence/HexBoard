@@ -15,7 +15,8 @@ byte headphoneVolumeCap = HEADPHONE_VOLUME_CAP_FULL;
 byte piezoVolumeCap = HEADPHONE_VOLUME_CAP_FULL;
 volatile byte headphoneVolumeGain = HEADPHONE_VOLUME_CAP_FULL;
 volatile byte piezoVolumeGain = HEADPHONE_VOLUME_CAP_FULL;
-extern const uint32_t AUDIO_DMA_BUFFER_MICROS =
+// Read by the renderer on every block, so it lives in RAM.
+extern const uint32_t __not_in_flash("audio_dma_buffer_micros") AUDIO_DMA_BUFFER_MICROS =
   (static_cast<uint64_t>(AUDIO_DMA_BUFFER_SAMPLE_COUNT) * 1000000ull) / AUDIO_SAMPLE_RATE_HZ;
 volatile uint16_t audioOutputMuteGainQ8 = AUDIO_OUTPUT_MUTE_GAIN_FULL_Q8;
 volatile uint16_t audioOutputMuteTargetQ8 = AUDIO_OUTPUT_MUTE_GAIN_FULL_Q8;
@@ -37,16 +38,24 @@ bool audioJackAvailable() {
   return Hardware_Version == HARDWARE_V1_2;
 }
 
+// The AudioDestination setting holds AUDIO_PIEZO (Buzzer on) or AUDIO_AJACK
+// (Buzzer off); 0 is the unset default. Hardware V1.2 plays through the jack
+// unless the piezo is chosen. V1.1 has no jack, so it plays through the piezo
+// unless the jack is chosen, which leaves the onboard synth silent.
 bool decodeStoredBuzzerEnabled(uint8_t storedValue) {
   if (!audioJackAvailable()) {
-    return true;
+    return (storedValue & AUDIO_PIEZO) != 0 || (storedValue & AUDIO_AJACK) == 0;
   }
   return (storedValue & AUDIO_PIEZO) != 0;
 }
 
+uint8_t encodeStoredBuzzerEnabled(bool buzzerEnabled) {
+  return buzzerEnabled ? AUDIO_PIEZO : AUDIO_AJACK;
+}
+
 byte runtimeAudioDestination(bool buzzerEnabled) {
   if (!audioJackAvailable()) {
-    return AUDIO_PIEZO;
+    return buzzerEnabled ? AUDIO_PIEZO : AUDIO_NONE;
   }
   return buzzerEnabled ? AUDIO_PIEZO : AUDIO_AJACK;
 }
@@ -434,7 +443,7 @@ void startAudioDmaForDestination(byte destination) {
   audioDmaReconfiguring = false;
 }
 
-void serviceAudioDmaBuffers() {
+void RAM_FUNC(serviceAudioDmaBuffers)() {
   if (synthWorkspacePauseRequested.load(std::memory_order_acquire)) {
     synthWorkspacePauseAcknowledged.store(true, std::memory_order_release);
     return;

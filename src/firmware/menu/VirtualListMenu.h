@@ -24,11 +24,20 @@ struct VirtualListMenuProvider {
   void (*close)(void* context) = nullptr;
   const char* emptyLabel = "";
   bool (*getValue)(void*, uint16_t, char*, size_t) = nullptr;
-  // Button rows with an icon draw it at the left; the current-row diamond
-  // then moves to the right edge. Icons are 6x8 XBM sprites.
+  // Optional 6x8 XBM sprite drawn at the left of a Button row. No list uses
+  // one at present; the chosen and audition markers sit at the right edge.
   const unsigned char* (*getIcon)(void* context, uint16_t index) = nullptr;
+  // The row being auditioned (playing, not chosen) shows auditionIcon where
+  // the current-row diamond would go.
+  bool (*isAuditioning)(void* context, uint16_t index) = nullptr;
+  const unsigned char* auditionIcon = nullptr;
   void (*adjust)(void*, uint16_t, int) = nullptr;
 };
+
+// 6x8 audition markers: headphones for a sound being heard, a hollow diamond
+// for a tuning, layout or scale being tried.
+extern const unsigned char virtualListHeadphonesBits[];
+extern const unsigned char virtualListTryingDiamondBits[];
 
 void openVirtualListMenu(const VirtualListMenuProvider& provider);
 bool virtualListMenuIsActive();

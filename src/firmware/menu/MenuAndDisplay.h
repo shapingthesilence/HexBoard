@@ -52,6 +52,8 @@ void menuHome();
 void menuSynthOptionsHome();
 bool handleVirtualListLauncherKey(byte keyCode);
 void serviceVirtualListLauncherLabelScroll();
+// Rewrites and redraws the Tuning/Layout/Scale/Sound launcher labels.
+void refreshVirtualListLauncherLabels();
 void refreshMenuChoicesForCurrentTuning();
 void showOnlyValidKeyChoices();
 void applyDeviceDisplayRotation();
