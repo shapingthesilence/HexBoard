@@ -1,3 +1,5 @@
+import {bodyLines,defaultTuning,type TuningGrid} from './wavetableIntervals.ts';
+import type {WavetablePatch} from './wavetableSchema.ts';
 import {useLayoutEffect, useMemo, useRef, type KeyboardEvent, type PointerEvent, type ReactNode} from 'react';
 import {animationEase} from '../../animation.ts';
 import {filterResponse} from './FilterResponse.tsx';
@@ -130,7 +132,7 @@ export function WarpScope({mode, amount, frame, brightness,table}: {table?:Uint8
 }
 
 /** Copies placed by stereo position and detune; faster shimmer means faster beating. */
-export function UnisonField({copies, detune, width, spread,blend=1}: {blend?:number;copies: number; detune: number; width: number; spread: number}) {
+export function UnisonField({copies, detune, width, spread,blend=1,pitches}: {pitches?:{base:number;frequencies:number[]};blend?:number;copies: number; detune: number; width: number; spread: number}) {
   const root = useRef<SVGSVGElement>(null);
   const dots = useRef<SVGCircleElement[]>([]);
   useLayoutEffect(() => { dots.current = Array.from(root.current!.querySelectorAll('.wt-unison-dot')); }, [copies]);
@@ -144,13 +146,14 @@ export function UnisonField({copies, detune, width, spread,blend=1}: {blend?:num
       if (dot.style.transform !== transform) dot.style.transform = transform;
     }
   });
-  const cents = detune * 50;
+  const offsets=pitches?.frequencies.map(hz=>1200*Math.log2(hz/pitches.base));
+  const cents = offsets?Math.max(...offsets.map(Math.abs)):detune*50,range=Math.max(50,cents);
   return <svg ref={root} className="wt-unison" viewBox="0 0 260 110" role="img" aria-label={`${copies} unison voices`}>
     <path className="wt-scope-grid" d="M20 55H240M130 10V100"/>
     <text className="wt-axis" x="20" y="104">L</text><text className="wt-axis" x="236" y="104">R</text><text className="wt-axis" x="134" y="18">+{cents.toFixed(0)}¢</text>
     {Array.from({length: copies}, (_, c) => {
-      const pos = copies === 1 ? 0 : 2 * c / (copies - 1) - 1, x = 130 + 105 * pos * width, y = 55 - 38 * pos * detune;
-      const beat = Math.abs(220 * (2 ** (pos * cents / 1200) - 1));
+      const pos = copies === 1 ? 0 : 2 * c / (copies - 1) - 1, x = 130 + 105 * pos * width, y = 55 - 38 * (offsets?offsets[c]/range:pos*detune);
+      const beat = pitches?Math.abs(pitches.frequencies[c]-pitches.base):Math.abs(220*(2**(pos*cents/1200)-1));
       return <g key={c}>
         <line className="wt-unison-stem" x1={130} y1={55} x2={x} y2={y}/>
         <circle className="wt-unison-dot" cx={x} cy={y} r={5 + 3 * (1 - Math.abs(pos)) + 2 * spread} data-weight={copies===2?1:1-(1-blend)*Math.abs(pos)} data-period={beat > .05 ? Number(Math.min(4, 1 / beat).toFixed(2)) * 1000 : 0}/>
@@ -159,12 +162,12 @@ export function UnisonField({copies, detune, width, spread,blend=1}: {blend?:num
   </svg>;
 }
 
-const modalRatios: Record<number, number[]> = {2: [1, 2.756, 5.404, 8.933], 3: [1, 3.984, 10.67, 20]};
-const modalDecays: Record<number, number[]> = {2: [1, .65, .4, .25], 3: [1, .3, .1, .05]};
+const modalRatios: Record<number, number[]> = {1: [1, 2.756, 5.404, 8.933], 2: [1, 3.984, 10.67, 20]};
+const modalDecays: Record<number, number[]> = {1: [1, .65, .4, .25], 2: [1, .3, .1, .05]};
 /** Resonant partials over a log frequency axis: tune moves them, decay lengthens them. */
-export function ResonatorPartials({mode, tune, decay, mix}: {mode: number; tune: number; decay: number; mix: number}) {
+export function ResonatorPartials({mode, tune, decay, mix,patch,grid=defaultTuning}: {mode: number; tune: number; decay: number; mix: number;patch?:WavetablePatch;grid?:TuningGrid}) {
   const ratio = 2 ** (3 * tune), x = (r: number) => Math.round((14 + Math.log2(r) / Math.log2(64) * 232) * 10) / 10;
-  const partials = mode === 1 ? Array.from({length: 12}, (_, i) => [(i + 1) * ratio, (.9 + .0985 * decay) ** (i * 1.5)]) : (modalRatios[mode] ?? []).map((r, i) => [r * ratio, modalDecays[mode][i]]);
+  const partials = patch?bodyLines({...patch,parameters:patch.parameters.map((v,i)=>i===26?Math.round(tune*65535):v)},grid).map(p=>[p.ratio,p.level]):(modalRatios[mode]??[]).map((r,i)=>[r*ratio,modalDecays[mode][i]]);
   return <svg className="wt-partials" viewBox="0 0 260 90" role="img" aria-label="Resonator partials">
     <path className="wt-scope-grid" d="M14 78H246"/>
     {mode === 0 ? <text className="wt-axis" x="130" y="48" textAnchor="middle">Off · the oscillator passes straight through</text> :

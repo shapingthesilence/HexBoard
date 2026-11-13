@@ -109,3 +109,14 @@
 }
 /* Shared curved envelopes take the wavetable trace color. */
 .wavetable-editor .curved-envelope { --envelope-color: var(--wt-trace); --envelope-background: var(--wt-scope); --envelope-live: var(--wt-trace-2); }
+.wt-interval {display:flex;flex-wrap:wrap;gap:12px;align-items:start;margin:10px 0;padding:12px;border:1px solid var(--border,#555);border-radius:10px}
+.wt-interval>label {display:grid;gap:6px;min-width:130px;font-size:.8rem}
+.wt-interval input,.wt-interval select {max-width:190px;padding:7px;background:var(--panel,#242330);color:inherit;border:1px solid var(--border,#666);border-radius:6px}
+.wt-interval>small {flex-basis:100%;opacity:.75}
+.wt-partials-dialog {width:min(1060px,94vw);max-height:90vh;overflow:auto;border:1px solid #706082;border-radius:16px;background:#211e2b;color:#eee;padding:22px}
+.wt-partials-dialog::backdrop {background:#080611b8}
+.wt-partials-dialog>header {display:flex;justify-content:space-between;align-items:center;gap:20px}
+.wt-partial-controls {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.wt-partial-controls>fieldset {min-width:0;border:1px solid #635475;border-radius:10px;padding:12px}
+.wt-partial-presets {display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}
+@media(max-width:720px){.wt-partial-controls{grid-template-columns:1fr}}

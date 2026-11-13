@@ -2,15 +2,12 @@ import {effectDspCost} from './dspBudget.ts';
 import {fxRoutingUsage} from './fxRouting.ts';
 import type {FxRack} from './schema.ts';
 import {P, S, option, routeCount, sourceCount, type WavetablePatch} from './wavetableSchema.ts';
-// DSP estimate for eight held voices plus two tails, fitted to the
-// measured hardware workloads (Advanced docs/dsp-budget-qualification.md):
-// default patch 912 µs with the shared-rack adapter; earlier combined bell
-// patch 2,477 µs. Rack effects and global routes use the shared cost model. Costs are cycles per
-// voice-sample from the kernel benchmarks; five voices render per core.
-// Advanced src/synth/wavetable_budget.h enforces the same estimate on the
-// board; both test suites pin the same fixture values.
+// DSP estimate for eight held voices plus two tails. Advanced enforces the
+// same model in src/synth/wavetable_budget.h; both suites pin common fixtures.
+// Stereo bodies measured 212.5 / 359 added cycles per voice-sample (four modes /
+// dual-bank crossfade); reserve 240 / 400. Rack costs use the shared model.
 export const wavetableCapacityUs = 2873;
-const fixedUs = 430, usPerCycle = 2.56 * 1.036;
+const fixedUs = 460, usPerCycle = 2.56 * 1.036;
 export type WavetableStage = 'oscillator' | 'osc2' | 'warp' | 'unison' | 'layers' | 'resonator' | 'filter' | 'amp' | 'output';
 export interface WavetableCost {us: number; stages: Record<WavetableStage, number>; fits: boolean}
 const routed = (p: WavetablePatch, id: number) => p.routes.some(r => r.source < sourceCount && r.destination === id && r.depth !== 0);
@@ -27,15 +24,16 @@ export function wavetableCost(p: WavetablePatch & {effects?: FxRack}): Wavetable
   const cycles = {
     oscillator: 20 + (blend ? 82 : 52),  // Copy cost includes the per-sample pitch ramp.
     unison: (copies - 1) * (blend ? 82 : 52),
+    intervals: option(P.UnisonMode,p.parameters[P.UnisonMode]) ? copies*(option(P.UnisonMode,p.parameters[P.UnisonMode])===2?8:4) : 0,
     warp: warp === 0 ? 0 : copies * (warp === 4 ? 17 : 12),
     layers: (active(p, P.Noise) ? 8 : 0) + (active(p, P.Transient) ? 24 : 0) + (active(p, P.Sub) ? 10 : 0),
-    resonator: resonator === 0 ? 0 : resonator === 1 ? 66 : 56,
+    resonator: resonator === 0 ? 0 : option(P.BodyMotion,p.parameters[P.BodyMotion])===2 ? 400 : 240,
     filter: filterOpen(p) ? 0 : 32,
     // Second oscillator: once per voice when heard or phase-modulating.
     osc2: active(p, P.Osc2Level) || active(p, P.PhaseMod) ? ([2, 3].includes(option(P.Osc2Shape, p.parameters[P.Osc2Shape])) ? 34 : 30) + (active(p, P.PhaseMod) ? 36 : 0) : 0
   };
   const stages: Record<WavetableStage, number> = {
-    oscillator: Math.round(cycles.oscillator * usPerCycle + fixedUs), osc2: Math.round(cycles.osc2 * usPerCycle), warp: Math.round(cycles.warp * usPerCycle), unison: Math.round(cycles.unison * usPerCycle),
+    oscillator: Math.round(cycles.oscillator * usPerCycle + fixedUs), osc2: Math.round(cycles.osc2 * usPerCycle), warp: Math.round(cycles.warp * usPerCycle), unison: Math.round(cycles.unison * usPerCycle)+Math.round(cycles.intervals*usPerCycle),
     layers: Math.round(cycles.layers * usPerCycle), resonator: Math.round(cycles.resonator * usPerCycle), filter: Math.round(cycles.filter * usPerCycle),
     amp: 0, output: (p.effects ? p.effects.order.reduce((sum,id)=>sum+effectDspCost(id),fxRoutingUsage(p.effects).cost) : 0)
   };

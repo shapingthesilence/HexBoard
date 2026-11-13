@@ -1,3 +1,4 @@
+import {type TuningGrid} from './wavetableIntervals.ts';
 import {SerialAudioUpload} from "./serialAudioUpload.ts";
 import {isPhysicalPreset,isWavetablePreset,presetEngine,storedPreset,type SoundPreset} from './presetLibrary.ts';
 import {presetTable,tableReference} from './wavetable/library.ts';
@@ -273,6 +274,20 @@ export class PhysicalSynthClient {
     for(let offset=0;offset<advancedWordCount;offset+=64){const reply=await this.request<{engine:AdvancedEngine;state:number;busy:boolean;words:number[]}>(33,[...encodeU21(offset),Math.min(64,advancedWordCount-offset)]);engine=reply.engine;state=reply.state;busy=reply.busy;words.push(...reply.words);}
     const patch=advancedFromWords(engine,words),effects=await this.request<FxRack>(10),budget=await this.voiceBudget();return {patch,effects,state,busy,budget};
   }
+  private currentTuning?:TuningGrid;
+  async readTuning():Promise<TuningGrid>{
+    type Page={revision:number;count:number;root:number;period:number;offset:number;pitches:number[]};
+    for(let attempt=0;attempt<3;++attempt){
+      const first=await this.request<Page>(86,[...encodeU14(0),32]);
+      if(this.currentTuning?.revision===first.revision)return this.currentTuning;
+      const pitches=[...first.pitches];let consistent=true;
+      while(pitches.length<first.count){const page=await this.request<Page>(86,[...encodeU14(pitches.length),32]);if(page.revision!==first.revision||page.count!==first.count||page.root!==first.root||page.period!==first.period){consistent=false;break;}pitches.push(...page.pitches);}
+      if(!consistent)continue;
+      if(pitches[0]!==0||pitches.some((p,i)=>p<0||p>=first.period||(i>0&&p<=pitches[i-1])))throw Error('Invalid board tuning grid.');
+      return this.currentTuning={revision:first.revision,count:first.count,root:first.root,period:first.period,pitches};
+    }
+    throw Error('The tuning changed while reading it. Retry after the tuning settles.');
+  }
   /** Main's held wavetable patch (kept in RAM across engine switches). */
   async readWavetable(){
     const words:number[]=[];let state=0,busy=false;
@@ -432,6 +447,12 @@ export class PhysicalSynthClient {
           if (frame.transactionId !== transaction) return;
           if (frame.message === 7) {
             finish(Error(operation===41?"Update Advanced main firmware to use the global arpeggiator.":frame.payload[1] === 3 ? operation>=16?"Update Advanced firmware for envelope and LFO modulation.":"Update Advanced main firmware for preset velocity engines." : frame.payload[1] === 9 ? "DSP budget full. Reduce another effect, feature or modulation first." : frame.payload[1] === 8 ? "Stop Learn or Calibration and release keys before changing the velocity engine or loading a sound." : operation===21?"Release the keys and stop the synth before importing a sample.":operation===25?"Release the keys before sample preview.":operation===42?"Release the keys before switching Arp on/off or changing its output. If playback is being tested, wait for it to finish.":operation===44?"Stop the synth, clear held arp notes, and release the keys before saving performance settings.":"The board rejected this synth operation."));
+          } else if(operation===86&&frame.message===0x55){
+            const p=frame.payload,u32=(at:number)=>p.slice(at,at+5).reduce((a,b)=>a*128+b,0),float=(at:number)=>{const n=u32(at);if(n>0xffffffff)throw Error('Invalid tuning word.');const b=new ArrayBuffer(4),v=new DataView(b);v.setUint32(0,n,true);return v.getFloat32(0,true);};
+            if(p.length<22||p[0]!==17||p[1]!==6||p[21]<1||p[21]>32||p.length!==22+5*p[21])throw Error('Update Advanced firmware for tuning-aware synthesis.');
+            const count=decodeU14(p.slice(7,9)),offset=decodeU14(p.slice(19,21)),root=float(9),period=float(14),revision=u32(2),pitches=Array.from({length:p[21]},(_,i)=>float(22+5*i));
+            if(!revision||count<1||count>1024||offset!==decodeU14(data.slice(0,2))||offset+pitches.length>count||pitches.length!==Math.min(data[2],count-offset)||!Number.isFinite(root)||Math.abs(root)>256||!Number.isFinite(period)||period<=0||pitches.some(v=>!Number.isFinite(v)))throw Error('Invalid board tuning grid.');
+            finish(undefined,{revision,count,offset,root,period,pitches} as T);return;
           } else if(operation===80&&frame.message===0x4f){
             const p=frame.payload;if(frame.message!==0x4f||p.length!==11||p[0]!==17)throw Error("Invalid storage status.");const value=(at:number)=>p.slice(at,at+5).reduce((a,b)=>a*128+b,0);finish(undefined,{freeBytes:value(1),totalBytes:value(6)} as T);return;
           } else if((operation===57||operation===58)&&frame.message===0x43){

@@ -41,17 +41,15 @@ describe('18-word envelope banks', () => {
     expect(() => validateModulation(old)).toThrow();
     expect(validateModulation(m).settings.slice(18)).toEqual([0,32768,23200,0,...Array(18).fill(32768)]);
   });
-  it('round-trips wavetable curves and upgrades v3 sounds', () => {
+  it('round-trips current wavetable curves and rejects superseded development sounds', () => {
     const patch = initialWavetable(); patch.parameters[P.AmpDecayCurve] = 9000; patch.mod[1][17] = 60000;
     const words = wavetableWords(patch);
     expect(words).toHaveLength(wordCount);
-    expect(editCount).toBe(46 + 36);
+    expect(editCount).toBe(92 + 36);
     expect(wavetableFromWords(words)).toEqual(patch);
     const v3 = {format: 'hexboard.wavetable.v3', name: 'Old', parameters: initialWavetable().parameters.slice(0, 34), mod: initialWavetable().mod.map(m => m.slice(0, 16)), routes: initialWavetable().routes};
-    const upgraded = wavetableFromUnknown(v3);
-    expect(upgraded.parameters.slice(34, 37)).toEqual([32768, 32768, 32768]);
-    expect(upgraded.parameters.slice(37)).toEqual([32768, 32768, 32768, 32768, 0, 0, 32768, 32768, 0]);  // v5: centered pitch, silent Osc 2.
-    expect(upgraded.mod[0]).toHaveLength(18);
+    expect(() => wavetableFromUnknown(v3)).toThrow();
+    for (const version of [4, 5]) expect(() => wavetableFromUnknown({...patch, name: 'Old', format: `hexboard.wavetable.v${version}`})).toThrow();
   });
 });
 

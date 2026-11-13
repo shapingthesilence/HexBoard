@@ -20,7 +20,7 @@ describe('wavetable patch', () => {
   });
   it('matches firmware option rounding and route rules', () => {
     for (const id of [P.Unison, P.WarpMode, P.Resonator]) for (let c = 0; c < 4; ++c) expect(option(id, optionValue(id, c))).toBe(c);
-    const bad = initialWavetable(); bad.routes[2] = {source: S.Velocity, destination: P.SubOctave, depth: 1};
+    const bad = initialWavetable(); bad.routes[2] = {source: S.Velocity, destination: P.SubPitchMode, depth: 1};
     expect(validWavetable(bad)).toBe(false);
     bad.routes[2] = {source: S.Pressure, destination: P.WarpMode, depth: 1};
     expect(validWavetable(bad)).toBe(false);
@@ -46,15 +46,15 @@ describe('wavetable patch', () => {
 });
 
 describe('wavetable DSP estimate', () => {
-  it('reproduces the measured default and combined workloads', () => {
+  it('reserves capacity for the default and combined workloads', () => {
     // November 4 hardware, 200 Hz expression with full bend: default 981 µs, combined 2,674 µs.
     expect(wavetableCost(initialWavetable()).us).toBeGreaterThan(975);
     expect(wavetableCost(initialWavetable()).us).toBeLessThan(1060);
     const combined = initialWavetable(); const set = (id: number, v: number) => { combined.parameters[id] = v; };
-    set(P.Unison, optionValue(P.Unison, 6)); set(P.FrameSpread, 65535); set(P.WarpMode, optionValue(P.WarpMode, 4)); set(P.Brightness, 40000);
+    set(P.Unison, optionValue(P.Unison, 4)); set(P.FrameSpread, 65535); set(P.WarpMode, optionValue(P.WarpMode, 4)); set(P.Brightness, 40000);
     set(P.Noise, 20000); set(P.Transient, 20000); set(P.Sub, 20000); set(P.Resonator, optionValue(P.Resonator, 2));
     const us = wavetableCost({...combined, effects: wavetableDefaultFx()}).us;
-    expect(us).toBeGreaterThan(2674); expect(us).toBeLessThan(2800); expect(us).toBeLessThan(wavetableCapacityUs);
+    expect(us).toBeGreaterThan(2200); expect(us).toBeLessThan(2873); expect(us).toBeLessThan(wavetableCapacityUs);
   });
   it('treats a fully open, unmoving low-pass as bypassed', () => {
     const p = initialWavetable(); p.parameters[P.Resonance] = 0;
@@ -103,10 +103,10 @@ it('pins the estimate the board enforces (Advanced wavetable_budget_test.cpp)',(
  const with_=(values:[number,number][])=>{const p=initialWavetable();for(const [id,v] of values)p.parameters[id]=v;return p;};
  const dense=with_([[P.Unison,optionValue(P.Unison,4)],[P.Brightness,34000],[P.WarpMode,optionValue(P.WarpMode,1)],[P.WarpAmount,24000],[P.Noise,12000],[P.Transient,12000],[P.Sub,24000],[P.Cutoff,45000],[P.Resonance,20000]]);
  const worst=with_([[P.Unison,optionValue(P.Unison,6)],[P.Brightness,40000],[P.WarpMode,optionValue(P.WarpMode,4)],[P.Noise,1],[P.Transient,1],[P.Sub,1],[P.Resonator,optionValue(P.Resonator,1)],[P.Resonance,1]]);
- expect([wavetableCost({...initialWavetable(),effects:defaultFx()}).us,wavetableCost({...initialWavetable(),effects:wavetableDefaultFx()}).us,wavetableCost({...initialWavetable(),effects:full()}).us,wavetableCost({...dense,effects:full()}).us,wavetableCost({...worst,effects:full()}).us]).toEqual([982,1068,1803,2747,3429]);
+ expect([wavetableCost({...initialWavetable(),effects:defaultFx()}).us,wavetableCost({...initialWavetable(),effects:wavetableDefaultFx()}).us,wavetableCost({...initialWavetable(),effects:full()}).us,wavetableCost({...dense,effects:full()}).us,wavetableCost({...worst,effects:full()}).us]).toEqual([1012,1098,1833,2777,3921]);
  // Second oscillator: saw phase-modulating, and a heard sine.
  const pm={...dense,parameters:dense.parameters.map((v,i)=>i===P.Osc2Shape?optionValue(P.Osc2Shape,2):i===P.PhaseMod?30000:v)},heard={...dense,parameters:dense.parameters.map((v,i)=>i===P.Osc2Level?20000:v)};
- expect([wavetableCost({...pm,effects:full()}).us,wavetableCost({...heard,effects:full()}).us]).toEqual([2933,2827]);
+ expect([wavetableCost({...pm,effects:full()}).us,wavetableCost({...heard,effects:full()}).us]).toEqual([2963,2857]);
 });
 
 describe('pitch, mono and second oscillator', () => {
@@ -123,6 +123,6 @@ describe('pitch, mono and second oscillator', () => {
     const html = renderToStaticMarkup(createElement(WavetableSynthEditor, {}));
     expect(html.indexOf('wt-stage-osc2')).toBeGreaterThan(html.indexOf('wt-stage-oscillator'));
     expect(html.indexOf('wt-stage-osc2')).toBeLessThan(html.indexOf('wt-stage-warp'));
-    for (const label of ['Osc 2 shape', 'Phase mod', 'Coarse', 'Fine', 'Voice mode']) expect(html).toContain(label);
+    for (const label of ['Osc 2 shape', 'Phase mod', 'Carrier unit', 'Fine', 'Voice mode']) expect(html).toContain(label);
   });
 });

@@ -1,14 +1,15 @@
 import {validateMono, type MonoConfig} from './mono.ts';
 import {curveBend, curveWord} from './envelopeCurve.ts';
 import {defaultFx,validateFx,type FxRack,modulationSeconds} from './schema.ts';
+import tableManifest from './wavetable/factory.json';
 import {fxRoutePatch} from './fxRouting.ts';
 // Wavetable patch: mirrors Advanced src/synth/wavetable_patch.h. Normalized U16
 // parameters, two envelope/LFO banks in the Physical Strings layout and sparse
 // source -> parameter routes, carried on the generic engine transport.
-export const wavetableEngine = 7, wavetableSchema = 5;  // 5: pitch controls, second oscillator and phase modulation
+export const wavetableEngine = 7, wavetableSchema = 6;  // 5: pitch controls, second oscillator and phase modulation
 export const P = {
   Frame: 0, FrameSpread: 1, Unison: 2, Detune: 3, Width: 4, WarpMode: 5, WarpAmount: 6, WarpBias: 7, Brightness: 8,
-  Noise: 9, Transient: 10, TransientShape: 11, Sub: 12, SubOctave: 13, SubShape: 14,
+  Noise: 9, Transient: 10, TransientShape: 11, Sub: 12, SubPitchMode: 13, SubShape: 14,
   Cutoff: 15, Resonance: 16, FilterMode: 17, KeyTrack: 18, FilterEnvelope: 19,
   AmpAttack: 20, AmpDecay: 21, AmpSustain: 22, AmpRelease: 23,
   Resonator: 24, ResonatorMix: 25, ResonatorTune: 26, ResonatorDecay: 27,
@@ -18,9 +19,17 @@ export const P = {
   // Pitch: coarse +-24 semitones, fine +-100 cents (32768 unchanged).
   Coarse: 37, Fine: 38, SubCoarse: 39, SubFine: 40,
   // Second oscillator and its phase modulation of the wavetable (0..1 cycle).
-  Osc2Shape: 41, Osc2Level: 42, Osc2Coarse: 43, Osc2Fine: 44, PhaseMod: 45
+  Osc2Shape: 41, Osc2Level: 42, Osc2Coarse: 43, Osc2Fine: 44, PhaseMod: 45,
+  CarrierPitchMode:46, CarrierRatioNum:47, CarrierRatioDen:48, SubRatioNum:49, SubRatioDen:50,
+  Osc2PitchMode:51, Osc2RatioNum:52, Osc2RatioDen:53, UnisonMode:54, BeatRate:55,
+  StackPitchMode:56, StackInterval:57, StackRatioNum:58, StackRatioDen:59,
+  BodyLevel:60, NaturalTuned:61, BodyMotion:62, BodyAir:63,
+  Partial1Mode:64, Partial1Interval:65, Partial1Num:66, Partial1Den:67, Partial1Level:68, Partial1Decay:69, Partial1Pan:70,
+  Partial2Mode:71, Partial2Interval:72, Partial2Num:73, Partial2Den:74, Partial2Level:75, Partial2Decay:76, Partial2Pan:77,
+  Partial3Mode:78, Partial3Interval:79, Partial3Num:80, Partial3Den:81, Partial3Level:82, Partial3Decay:83, Partial3Pan:84,
+  Partial4Mode:85, Partial4Interval:86, Partial4Num:87, Partial4Den:88, Partial4Level:89, Partial4Decay:90, Partial4Pan:91
 } as const;
-export const parameterCount = 46, modSettingCount = 18, routeCount = 16;
+export const parameterCount = 92, modSettingCount = 18, routeCount = 16;
 export const editCount = parameterCount + 2 * modSettingCount, wordCount = editCount + 2 * routeCount;
 export const S = {Velocity: 0, Pressure: 1, Release: 2, TiltX: 3, TiltY: 4, Env1: 5, Lfo1: 6, Env2: 7, Lfo2: 8, Joystick: 9, Pedal: 10} as const;
 export const sourceCount = 11;
@@ -29,16 +38,24 @@ export const wavetableSourceShort = ['Strike', 'Pressure', 'Release', 'X tilt', 
 // Shared sources keep Physical Strings colors; the second envelope/LFO get their own.
 export const wavetableSourceColors = ['#efb86b', '#5cdac6', '#b29aff', '#70b8ff', '#ef8eb8', '#f3cf6e', '#91aaff', '#ff9f73', '#62d6ec', '#f39cce', '#a7dc82'];
 export const warpNames = ['Off', 'Fold', 'Poly', 'Duty', 'Sync'] as const;
-export const resonatorNames = ['Off', 'Comb', 'Bell', 'Marimba'] as const;
+export const resonatorNames = ['Off', 'Bell', 'Wood', 'Custom'] as const;
 export const filterNames = ['Low-pass', 'Band-pass', 'High-pass'] as const;
 export const transientNames = ['Pick', 'Mallet', 'Breath'] as const;
 export const shapeNames = ['Sine', 'Triangle', 'Saw', 'Square'] as const;
-const optionCounts: Record<number, number> = {[P.Unison]: 7, [P.WarpMode]: 5, [P.TransientShape]: 3, [P.SubOctave]: 2, [P.SubShape]: 2, [P.FilterMode]: 3, [P.Resonator]: 4, [P.Classic]: 2,[P.PhaseMode]:3,[P.Osc2Shape]:5};
-export const options = (id: number) => optionCounts[id] ?? 0;
+const optionCounts: Record<number, number> = {[P.Unison]: 7, [P.WarpMode]: 5, [P.TransientShape]: 3, [P.SubShape]: 2, [P.FilterMode]: 3, [P.Resonator]: 4, [P.Classic]: 2,[P.PhaseMode]:3,[P.Osc2Shape]:5};
+export const pitchNames = ['Cents', 'Ratio', 'Tuning steps', 'Tuning periods'] as const;
+export const unisonNames = ['Cents', 'Beats / second', 'Interval stack'] as const;
+export const bodyMotionNames = ['Continuous sweep', 'Snapped pitches', 'Crossfaded pitches', 'Partial levels'] as const;
+export const partialField = (id:number) => id >= P.Partial1Mode && id < parameterCount ? (id-P.Partial1Mode)%7 : -1;
+const pitchModeIds=new Set<number>([P.CarrierPitchMode,P.SubPitchMode,P.Osc2PitchMode,P.StackPitchMode]);
+export const isPitchMode = (id:number) => pitchModeIds.has(id) || partialField(id)===0;
+const ratioIds=new Set<number>([P.CarrierRatioNum,P.CarrierRatioDen,P.SubRatioNum,P.SubRatioDen,P.Osc2RatioNum,P.Osc2RatioDen,P.StackRatioNum,P.StackRatioDen]);
+export const isRatioWord = (id:number) => ratioIds.has(id) || partialField(id)===2 || partialField(id)===3;
+export const options = (id: number) => isPitchMode(id)||id===P.BodyMotion?4:id===P.UnisonMode?3:optionCounts[id] ?? 0;
 export const discrete = (id: number) => options(id) !== 0;
 export function option(id: number, value: number) { const n = options(id); return n < 2 ? 0 : Math.floor((value * (n - 1) + 32767) / 65535); }
 export function optionValue(id: number, choice: number) { const n = options(id); return n < 2 ? 0 : Math.floor(choice * 65535 / (n - 1)); }
-export const modulatable = (id: number, _source?: number) => id >= 0 && (id < P.TableLow || (id >= P.Coarse && id < parameterCount)) && !discrete(id) && id !== P.Classic;
+export const modulatable = (id: number, _source?: number) => id >= 0 && (id < P.TableLow || (id >= P.Coarse && id < parameterCount)) && !discrete(id) && !isRatioWord(id) && id !== P.Classic;
 export const osc2Names = ['Sine', 'Triangle', 'Saw', 'Square', 'Noise'] as const;
 /** Coarse +-24 semitones (32768 centered); whole-semitone base values. */
 export const coarseSemitones = (v: number) => (v - 32768) / 32767 * 24;
@@ -49,7 +66,7 @@ export const bipolarSource = (source: number, p?: WavetablePatch) => source === 
 
 export interface WavetableRoute {source: number; destination: number; depth: number}
 export interface WavetablePatch {parameters: number[]; mod: [number[], number[]]; routes: WavetableRoute[]}
-export const wavetableFormat = 'hexboard.wavetable.v5';
+export const wavetableFormat = 'hexboard.wavetable.v6';
 /** mono: Physical Strings' shared voice mode, priority and glide. */
 export interface WavetablePreset extends WavetablePatch {format: typeof wavetableFormat; name: string; effects: FxRack; table?: {id:string;name:string}; mono?: MonoConfig}
 /** New wavetable sounds start with the two-voice Ensemble in the shared FX rack. */
@@ -57,7 +74,7 @@ export const wavetableDefaultFx = (): FxRack => ({...defaultFx(), order: [6]});
 const unused = (): WavetableRoute => ({source: sourceCount, destination: 0, depth: 0});
 
 export function validWavetable(p: WavetablePatch): boolean {
-  if (!Array.isArray(p.parameters) || p.parameters.length !== parameterCount || p.parameters.some(v => !Number.isInteger(v) || v < 0 || v > 65535)) return false;
+  if (!Array.isArray(p.parameters) || p.parameters.length !== parameterCount || p.parameters.some((v,i) => !Number.isInteger(v) || v < 0 || v > 65535 || (isRatioWord(i)&&v===0))) return false;
   if (!Array.isArray(p.mod) || p.mod.length !== 2 || p.mod.some(m => !Array.isArray(m) || m.length !== modSettingCount || m.some((v, i) => !validModSetting(i, v)))) return false;
   if (!Array.isArray(p.routes) || p.routes.length !== routeCount) return false;
   return p.routes.every(r => Number.isInteger(r.source) && Number.isInteger(r.destination) && Number.isInteger(r.depth) && (r.source === sourceCount ? r.depth === 0 : r.source >= 0 && r.source < sourceCount && modulatable(r.destination, r.source) && r.depth >= -65536 && r.depth <= 65536));
@@ -68,31 +85,27 @@ export function initialWavetable(): WavetablePatch {
   const routes = Array.from({length: routeCount}, unused);
   routes[0] = {source: S.Pressure, destination: P.Frame, depth: 26000};
   routes[1] = {source: S.Velocity, destination: P.Cutoff, depth: 0};
-  return {
-    parameters: [22000, 8000, optionValue(P.Unison, 2), 23600, 65535, 0, 0, 65535, 65535,
-      0, 0, 0, 0, 0, 0,
+  const parameters = [22000, 8000, optionValue(P.Unison, 2), 23600, 65535, 0, 0, 65535, 65535,
+      0, 0, 0, 0, optionValue(P.SubPitchMode,1), 0,
       65535, 6000, 0, 0, 32768,
       10650, 37740, 52428, 37740,
       0, 26000, 0, 40000,
       46000, 0, 65535, 0, 0, 0,
       32768, 32768, 32768,
-      32768, 32768, 32768, 32768, 0, 0, 32768, 32768, 0],
-    mod: [[...defaultMod], [...defaultMod]], routes
-  };
+      32768, 32768, 32768, 32768, 0, 0, 32768, 32768, 0];
+  parameters.push(...Array(parameterCount-parameters.length).fill(0));
+  for(const id of [P.CarrierPitchMode,P.Osc2PitchMode,P.StackPitchMode])parameters[id]=optionValue(id,1);
+  for(const id of [P.CarrierRatioNum,P.CarrierRatioDen,P.SubRatioNum,P.Osc2RatioNum,P.Osc2RatioDen,P.StackRatioDen])parameters[id]=1;
+  parameters[P.SubRatioDen]=2;parameters[P.StackRatioNum]=3;parameters[P.StackRatioDen]=2;
+  parameters[P.BeatRate]=16384;parameters[P.StackInterval]=32768;parameters[P.BodyLevel]=21845;parameters[P.NaturalTuned]=65535;parameters[P.BodyAir]=26000;
+  const nums=[1,689,1351,8933],dens=[1,250,250,1000],weights=[19661,22937,14418,8519],decays=[65535,45875,29491,18350],pans=[27852,42925,17367,53411];
+  for(let j=0;j<4;++j){const at=P.Partial1Mode+7*j;parameters.splice(at,7,optionValue(at,1),32768,nums[j],dens[j],weights[j],decays[j],pans[j]);}
+  return {parameters,mod:[[...defaultMod],[...defaultMod]],routes};
 }
 function validTableRef(value:unknown):{id:string;name:string}|undefined {if(value===undefined)return undefined;const v=value as {id?:unknown;name?:unknown};if(!v||typeof v.id!=='string'||!v.id||v.id.length>100||typeof v.name!=='string'||!v.name||v.name.length>80)throw Error('Invalid table reference.');return {id:v.id,name:v.name};}
 export const tableCrc=(p:WavetablePatch)=>(p.parameters[P.TableLow]|p.parameters[P.TableHigh]<<16)>>>0;
-// v3 sounds predate envelope curves: add straight amp curves and bank curve words.
-// v4 adds straight curves; v5 adds centered pitch, a silent second oscillator and no phase modulation.
-function upgradeV3(p: Partial<WavetablePreset> | undefined): Partial<WavetablePreset> | undefined {
-  if (p && (p.format as string) === 'hexboard.wavetable.v3' && p.parameters?.length === 34 && p.mod && p.mod.every(m => m.length === 16))
-    p = {...p, format: 'hexboard.wavetable.v4' as typeof wavetableFormat, parameters: [...p.parameters, 32768, 32768, 32768], mod: p.mod.map(m => [...m, m[6], m[6]]) as [number[], number[]]};
-  if (p && (p.format as string) === 'hexboard.wavetable.v4' && p.parameters?.length === 37)
-    p = {...p, format: wavetableFormat, parameters: [...p.parameters, 32768, 32768, 32768, 32768, 0, 0, 32768, 32768, 0]};
-  return p;
-}
 export function wavetableFromUnknown(value: unknown): WavetablePreset {
-  const p = upgradeV3(value as Partial<WavetablePreset> | undefined);
+  const p = value as Partial<WavetablePreset> | undefined;
   if (!p || typeof p !== 'object' || p.format !== wavetableFormat) throw Error(`This file is not a current wavetable preset. Use ${wavetableFormat}.`);
   if (typeof p.name !== 'string' || !p.name.trim() || p.name.length > 80) throw Error('Give the preset a name.');
   const patch = {parameters: [...(p.parameters ?? [])], mod: [[...(p.mod?.[0] ?? [])], [...(p.mod?.[1] ?? [])]] as [number[], number[]], routes: (p.routes ?? []).map(r => ({...r}))};
@@ -160,7 +173,7 @@ export const wavetableParameters: ParameterInfo[] = [
   {name: 'Transient', describe: pct},
   {name: 'Transient shape', describe: v => transientNames[option(P.TransientShape, v)]},
   {name: 'Sub level', describe: pct},
-  {name: 'Sub octave', describe: v => option(P.SubOctave, v) ? '−2 oct' : '−1 oct'},
+  {name: 'Sub interval unit', describe: v => pitchNames[option(P.SubPitchMode,v)]},
   {name: 'Sub shape', describe: v => option(P.SubShape, v) ? 'Triangle' : 'Sine'},
   {name: 'Cutoff', describe: v => hz(cutoffHz(v / 65535))},
   {name: 'Resonance', describe: pct},
@@ -174,7 +187,7 @@ export const wavetableParameters: ParameterInfo[] = [
   {name: 'Resonator', describe: v => resonatorNames[option(P.Resonator, v)]},
   {name: 'Resonator mix', describe: pct},
   {name: 'Tune', describe: v => `×${(2 ** (3 * v / 65535)).toFixed(2)}`},
-  {name: 'Ring', describe: v => `${(.2 * 2 ** (4 * v / 65535)).toFixed(2)} s`},
+  {name: 'Ring', describe: v => `${(.12 * 2 ** (5 * v / 65535)).toFixed(2)} s`},
   {name: 'Level', describe: v => { const g = (v / 65535) ** 2; return g <= 0 ? '−∞ dB' : `${(20 * Math.log10(g)).toFixed(1)} dB`; }},
   {name: 'Classic stepping', describe: v => v ? 'On' : 'Off'},
   {name: 'Edge blend', describe: pct},
@@ -184,7 +197,28 @@ export const wavetableParameters: ParameterInfo[] = [
   ...(['Attack', 'Decay', 'Release'] as const).map(name => ({name: `${name} curve`, describe: (v: number) => { const b = curveBend(v); return b === 0 ? 'Straight' : `${b < 0 ? 'Fast' : 'Slow'} ${Math.round(Math.abs(b) * 100)}%`; }})),
   {name: 'Coarse', describe: semis}, {name: 'Fine', describe: cents}, {name: 'Sub coarse', describe: semis}, {name: 'Sub fine', describe: cents},
   {name: 'Osc 2 shape', describe: v => osc2Names[option(P.Osc2Shape, v)]}, {name: 'Osc 2 level', describe: pct}, {name: 'Osc 2 coarse', describe: semis}, {name: 'Osc 2 fine', describe: cents},
-  {name: 'Phase mod', describe: v => `${(v / 65535 * 360).toFixed(0)}° peak`}
+  {name: 'Phase mod', describe: v => `${(v / 65535 * 360).toFixed(0)}° peak`},
+  {name:'Carrier interval unit',describe:v=>pitchNames[option(P.CarrierPitchMode,v)]},
+  ...['Carrier numerator','Carrier denominator','Sub numerator','Sub denominator'].map(name=>({name,describe:(v:number)=>String(v)})),
+  {name:'Osc 2 interval unit',describe:v=>pitchNames[option(P.Osc2PitchMode,v)]},
+  ...['Osc 2 numerator','Osc 2 denominator'].map(name=>({name,describe:(v:number)=>String(v)})),
+  {name:'Unison mode',describe:v=>unisonNames[option(P.UnisonMode,v)]},
+  {name:'Beat rate',describe:v=>`${((v/65535)**2*8).toFixed(2)} Hz between copies`},
+  {name:'Stack interval unit',describe:v=>pitchNames[option(P.StackPitchMode,v)]},
+  {name:'Stack interval',describe:semis},
+  ...['Stack numerator','Stack denominator'].map(name=>({name,describe:(v:number)=>String(v)})),
+  {name:'Body level',describe:v=>`+${(v/65535*18).toFixed(1)} dB`},
+  {name:'Natural → Tuned',describe:pct},
+  {name:'Body movement',describe:v=>bodyMotionNames[option(P.BodyMotion,v)]},
+  {name:'Excitation air',describe:pct},
+  ...Array.from({length:4},(_,j)=>[
+    {name:`Partial ${j+1} unit`,describe:(v:number)=>pitchNames[option(P.Partial1Mode+j*7,v)]},
+    {name:`Partial ${j+1} interval`,describe:semis},
+    {name:`Partial ${j+1} numerator`,describe:(v:number)=>String(v)},
+    {name:`Partial ${j+1} denominator`,describe:(v:number)=>String(v)},
+    {name:`Partial ${j+1} level`,describe:pct},{name:`Partial ${j+1} decay`,describe:pct},
+    {name:`Partial ${j+1} pan`,describe:(v:number)=>`${Math.round((v/65535*2-1)*100)}%`}
+  ]).flat()
 ];
 export function warpAmountDescription(mode: number, v: number) { return mode === 4 ? `×${(1 + 7 * v / 65535).toFixed(2)} sync` : pct(v); }
 
@@ -199,8 +233,21 @@ const preset = (name: string, values: Record<number, number>, routes: WavetableR
 const o = optionValue;
 // Ensemble rack: voices 0 Duo / 1 Quad, at the default mix and rate.
 const ensembleRack = (voices: number, width = 52000): FxRack => { const f = wavetableDefaultFx(); f.values[6] = [32768, width, voices, 32768]; return f; };
+const tableSound=(sound:WavetablePreset,file:string)=>{const table=tableManifest.find(t=>t.file===file)!;const parameters=[...sound.parameters];parameters[P.TableLow]=table.crc&65535;parameters[P.TableHigh]=table.crc>>>16;return {...sound,parameters,table:{id:table.id,name:table.name}};};
+const centsValue=(cents:number)=>Math.round(32768+Math.max(-1,Math.min(1,cents/2400))*32767);
+const partialRatios=(ratios:[number,number][])=>Object.fromEntries(ratios.flatMap(([n,d],j)=>[[P.Partial1Num+j*7,n],[P.Partial1Den+j*7,d]]));
 export const factoryWavetablePresets: WavetablePreset[] = [
   wavetablePreset('Pressure Scan', initialWavetable()),
+  tableSound(preset('Pressure Prism',{[P.Level]:37000,[P.Unison]:o(P.Unison,1),[P.UnisonMode]:o(P.UnisonMode,1),[P.BeatRate]:14000,[P.Frame]:16000,[P.Brightness]:49000,[P.Osc2RatioNum]:2,[P.PhaseMod]:2500,[P.Resonator]:o(P.Resonator,1),[P.BodyMotion]:o(P.BodyMotion,3),[P.ResonatorTune]:20000,[P.ResonatorMix]:30000,[P.BodyLevel]:18000,[P.BodyAir]:36000,[P.NaturalTuned]:56000,[P.AmpAttack]:6500,[P.AmpDecay]:39000,[P.AmpSustain]:14000,[P.AmpRelease]:39000},
+    [{source:S.Pressure,destination:P.Frame,depth:16000},{source:S.Pressure,destination:P.ResonatorTune,depth:19000},{source:S.Pressure,destination:P.ResonatorDecay,depth:10000}]),'harshdigitalbois'),
+  tableSound(preset('Wood Circuit',{[P.Level]:38000,[P.Unison]:0,[P.Frame]:7000,[P.Brightness]:38000,[P.Resonator]:o(P.Resonator,2),[P.ResonatorMix]:36000,[P.BodyLevel]:11000,[P.BodyAir]:24000,[P.NaturalTuned]:56000,[P.ResonatorDecay]:38000,[P.AmpAttack]:0,[P.AmpDecay]:33000,[P.AmpSustain]:4000,[P.AmpRelease]:30000},
+    [{source:S.Pressure,destination:P.Frame,depth:14000},{source:S.Pressure,destination:P.ResonatorDecay,depth:12000},{source:S.Velocity,destination:P.ResonatorMix,depth:5000}],undefined,defaultFx()),'rustyblade'),
+  tableSound(preset('Liquid Intervals',{[P.Level]:34000,[P.Unison]:o(P.Unison,2),[P.UnisonMode]:o(P.UnisonMode,1),[P.BeatRate]:18000,[P.Frame]:7000,[P.Brightness]:53000,[P.Resonator]:o(P.Resonator,3),[P.BodyMotion]:o(P.BodyMotion,2),[P.ResonatorMix]:36000,[P.BodyLevel]:35000,[P.BodyAir]:29000,[P.NaturalTuned]:65535,[P.ResonatorTune]:6000,[P.ResonatorDecay]:51000,[P.AmpAttack]:36500,[P.AmpSustain]:53000,[P.AmpRelease]:46500,...partialRatios([[1,1],[159,100],[273,100],[463,100]])},
+    [{source:S.Pressure,destination:P.Frame,depth:30000},{source:S.Pressure,destination:P.ResonatorDecay,depth:7000},{source:S.Lfo1,destination:P.ResonatorTune,depth:3500}],[{8:18000}]),'vowels'),
+  preset('Ratio Cloud',{[P.Level]:36000,[P.Frame]:25000,[P.Unison]:o(P.Unison,2),[P.UnisonMode]:o(P.UnisonMode,2),[P.StackRatioNum]:3,[P.StackRatioDen]:2,[P.Resonator]:o(P.Resonator,3),[P.BodyMotion]:o(P.BodyMotion,3),[P.ResonatorMix]:25000,[P.BodyLevel]:18000,[P.ResonatorTune]:16000,[P.NaturalTuned]:65535,...partialRatios([[1,1],[3,2],[3,1],[6,1]])},
+    [{source:S.Pressure,destination:P.Frame,depth:22000},{source:S.Lfo1,destination:P.ResonatorTune,depth:9000}],[{8:15000}]),
+  preset('Ratio FM Keys',{[P.Level]:37000,[P.Unison]:0,[P.Frame]:5000,[P.Osc2RatioNum]:3,[P.Osc2RatioDen]:2,[P.PhaseMod]:7000,[P.AmpAttack]:0,[P.AmpDecay]:40000,[P.AmpSustain]:10000,[P.AmpRelease]:34000},
+    [{source:S.Pressure,destination:P.PhaseMod,depth:13000},{source:S.Pressure,destination:P.Frame,depth:12000}],undefined,defaultFx()),
   preset('Glass Pad', {[P.Frame]: 9000, [P.FrameSpread]: 26000, [P.Unison]: o(P.Unison, 4), [P.Detune]: 30000, [P.Brightness]: 52000, [P.Cutoff]: 52000, [P.Resonance]: 9000, [P.AmpAttack]: 40000, [P.AmpRelease]: 48000},
     [{source: S.Pressure, destination: P.Frame, depth: 30000}, {source: S.Lfo1, destination: P.FrameSpread, depth: 12000}], [{8: 15000}],
     fxRoutePatch(ensembleRack(1, 62000), 25, 3, 20000)),
@@ -208,10 +255,8 @@ export const factoryWavetablePresets: WavetablePreset[] = [
     [{source: S.Pressure, destination: P.WarpAmount, depth: 38000}, {source: S.Lfo1, destination: P.WarpAmount, depth: 6000}, {source: S.Velocity, destination: P.Cutoff, depth: 9000}], [{0: 0, 1: 30000, 2: 0, 3: 26000, 8: 33000}]),
   preset('Sync Bass', {[P.Frame]: 44000, [P.Unison]: 0, [P.WarpMode]: o(P.WarpMode, 4), [P.WarpAmount]: 9000, [P.Sub]: 42000, [P.Cutoff]: 38000, [P.Resonance]: 16000, [P.FilterEnvelope]: 52000, [P.KeyTrack]: 30000, [P.AmpAttack]: 0, [P.AmpDecay]: 34000, [P.AmpSustain]: 46000, [P.AmpRelease]: 26000},
     [{source: S.Pressure, destination: P.WarpAmount, depth: 36000}, {source: S.Env1, destination: P.WarpAmount, depth: 14000}], [{0: 0, 1: 31000, 2: 0, 3: 28000}], defaultFx()),
-  preset('Bell Keys', {[P.AmpDecayCurve]: curveWord(-.5), [P.AmpReleaseCurve]: curveWord(-.4), [P.Frame]: 6000, [P.Unison]: o(P.Unison, 1), [P.Detune]: 9000, [P.Transient]: 30000, [P.TransientShape]: o(P.TransientShape, 1), [P.Resonator]: o(P.Resonator, 2), [P.ResonatorMix]: 34000, [P.ResonatorDecay]: 42000, [P.AmpAttack]: 0, [P.AmpDecay]: 46000, [P.AmpSustain]: 12000, [P.AmpRelease]: 44000},
+  preset('Bell Keys', {[P.AmpDecayCurve]: curveWord(-.5), [P.AmpReleaseCurve]: curveWord(-.4), [P.Frame]: 6000, [P.Unison]: o(P.Unison, 1), [P.Detune]: 9000, [P.Transient]: 30000, [P.TransientShape]: o(P.TransientShape, 1), [P.Resonator]: o(P.Resonator, 1), [P.ResonatorMix]: 34000, [P.ResonatorDecay]: 42000, [P.AmpAttack]: 0, [P.AmpDecay]: 46000, [P.AmpSustain]: 12000, [P.AmpRelease]: 44000},
     [{source: S.Velocity, destination: P.Transient, depth: 24000}, {source: S.Pressure, destination: P.ResonatorDecay, depth: 18000}, {source: S.Pressure, destination: P.Frame, depth: 16000}]),
   preset('Breath Choir', {[P.Frame]: 3000, [P.FrameSpread]: 14000, [P.Unison]: o(P.Unison, 4), [P.Detune]: 20000, [P.Noise]: 15000, [P.Transient]: 20000, [P.TransientShape]: o(P.TransientShape, 2), [P.FilterMode]: o(P.FilterMode, 1), [P.Cutoff]: 41000, [P.Resonance]: 26000, [P.AmpAttack]: 43000, [P.AmpRelease]: 46000},
     [{source: S.Pressure, destination: P.Cutoff, depth: 14000}, {source: S.Lfo1, destination: P.Cutoff, depth: 3500}, {source: S.Pressure, destination: P.Noise, depth: 12000}], [{8: 31000}], ensembleRack(1)),
-  preset('Comb Pluck', {[P.AmpDecayCurve]: curveWord(-.5), [P.AmpReleaseCurve]: curveWord(-.4), [P.Frame]: 50000, [P.Unison]: 0, [P.Transient]: 38000, [P.Resonator]: o(P.Resonator, 1), [P.ResonatorMix]: 44000, [P.ResonatorDecay]: 34000, [P.Cutoff]: 50000, [P.AmpAttack]: 0, [P.AmpDecay]: 42000, [P.AmpSustain]: 0, [P.AmpRelease]: 36000},
-    [{source: S.Velocity, destination: P.Transient, depth: 20000}, {source: S.Pressure, destination: P.ResonatorDecay, depth: 22000}])
 ];
