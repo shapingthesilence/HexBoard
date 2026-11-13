@@ -2445,3 +2445,11 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .layoutEditorSidebar :where(input:not([type="checkbox"], [type="color"], [type="range"]), select), .layoutTransformToolbar :where(button, select), .brushToolbar :where(select) { min-height: 32px; padding-block: 3px; }
 .layoutEditorSidebar :where(button) { min-height: 32px; padding-block: 3px; }
 .layoutEditorSidebar .muted { font-size: .8rem; }
+
+/* Learn: the Lesson settings button and its pop-up panel. */
+.learnSettingsButton { width: 100%; margin-top: 8px; text-align: left; }
+.learnSettingsDialog { width: min(560px, 100%); display: grid; gap: 10px; font-size: .9rem; }
+.learnSettingsDialog .learnField, .learnSettingsDialog .checkField { margin: 0; }
+.learnSettingsGroup { display: grid; gap: 10px; border-top: 1px solid var(--border); padding-top: 12px; }
+.learnSettingsGroup h4 { margin: 0; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-soft); }
+.learnSettingsGroup p { margin: 0; }

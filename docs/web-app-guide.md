@@ -131,7 +131,9 @@ see [Built-in course paths](#built-in-course-paths) below. Choose a lesson from
 the always-visible **Your course path**, or use **Continue** after finishing or on a
 reading page. Course introductions appear before the first lesson and include the
 **Layout** choice; pick the layout set on your HexBoard. You can change it later
-under **Lesson settings**. Exercises are numbered in order; reading pages are not
+with the **Lesson settings** button at the bottom of the left panel, which opens
+one pop-up holding the layout, **Display & sound**, **Library & help** and
+**Manage courses**. Exercises are numbered in order; reading pages are not
 numbered.
 Each practice lesson explains what to listen for and what to play.
 **Hear example** is available before starting a run. Untimed board practice
@@ -298,7 +300,7 @@ distinguishes included material from future authoring work.
 
 Use **Stop lesson** at the top of Learn to end a lesson and return HexBoard to normal playing without unplugging it. Saved progress is kept.
 
-Open **Courses → Manage courses**, below **Library & help**, for **Create course**, **Make a copy**,
+Open **Courses → Lesson settings → Manage courses** for **Create course**, **Make a copy**,
 **Edit course**, **Export course**, and **Import shared course**. Authoring
 controls are available while a course is active. Creating, copying, editing, or
 resuming a draft stops the lesson and releases HexBoard before opening the
