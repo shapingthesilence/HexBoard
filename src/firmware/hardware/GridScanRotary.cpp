@@ -270,7 +270,8 @@ void setupRotary() {
   pinMode(ROT_PIN_C, INPUT_PULLUP);
 }
 void RAM_FUNC(readKnob)() {
-  byte encoderPhase = (digitalRead(ROT_PIN_B) << 1) | digitalRead(ROT_PIN_A);
+  // Direct pin reads: digitalRead() lives in flash and this runs on the audio core.
+  byte encoderPhase = (gpio_get(ROT_PIN_B) << 1) | gpio_get(ROT_PIN_A);
   rotaryState = rotaryStateTable[rotaryState & 7][encoderPhase];
   if (rotaryState & 24) {
     storeRotaryTurn = rotaryState;

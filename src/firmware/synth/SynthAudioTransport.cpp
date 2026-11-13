@@ -15,7 +15,8 @@ byte headphoneVolumeCap = HEADPHONE_VOLUME_CAP_FULL;
 byte piezoVolumeCap = HEADPHONE_VOLUME_CAP_FULL;
 volatile byte headphoneVolumeGain = HEADPHONE_VOLUME_CAP_FULL;
 volatile byte piezoVolumeGain = HEADPHONE_VOLUME_CAP_FULL;
-extern const uint32_t AUDIO_DMA_BUFFER_MICROS =
+// Read by the renderer on every block, so it lives in RAM.
+extern const uint32_t __not_in_flash("audio_dma_buffer_micros") AUDIO_DMA_BUFFER_MICROS =
   (static_cast<uint64_t>(AUDIO_DMA_BUFFER_SAMPLE_COUNT) * 1000000ull) / AUDIO_SAMPLE_RATE_HZ;
 volatile uint16_t audioOutputMuteGainQ8 = AUDIO_OUTPUT_MUTE_GAIN_FULL_Q8;
 volatile uint16_t audioOutputMuteTargetQ8 = AUDIO_OUTPUT_MUTE_GAIN_FULL_Q8;
@@ -434,7 +435,7 @@ void startAudioDmaForDestination(byte destination) {
   audioDmaReconfiguring = false;
 }
 
-void serviceAudioDmaBuffers() {
+void RAM_FUNC(serviceAudioDmaBuffers)() {
   if (synthWorkspacePauseRequested.load(std::memory_order_acquire)) {
     synthWorkspacePauseAcknowledged.store(true, std::memory_order_release);
     return;

@@ -196,10 +196,13 @@ void hexboardSetup1() {  // set up on second core
   }
   setupAudioDma();
 }
-void hexboardLoop1() {  // run on second core
-  serviceAudioDmaBuffers();
-  if (!normalRuntimeReady.load(std::memory_order_acquire)) {
-    return;
+// Runs on the second core and never returns: the Arduino loop that would call
+// it again lives in flash, and the audio renderer must not wait on flash reads.
+void RAM_FUNC(hexboardLoop1)() {
+  while (true) {
+    serviceAudioDmaBuffers();
+    if (normalRuntimeReady.load(std::memory_order_acquire)) {
+      readKnob();
+    }
   }
-  readKnob();
 }

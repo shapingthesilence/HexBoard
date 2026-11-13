@@ -16,6 +16,9 @@ FACTORY_FILESYSTEM_DIR = $(BUILD_DIR)/factory-filesystem
 FACTORY_FILESYSTEM_IMAGE = $(BUILD_DIR)/factory.littlefs.bin
 FACTORY_LIBRARY_BUILDER = scripts/build_factory_library.py
 FACTORY_UF2_BUILDER = scripts/build_factory_uf2.py
+# Keeps the division, 64-bit multiply and memory helpers used by the audio
+# renderer in RAM; flash reads there cause audible dropouts.
+RAM_HELPERS_SCRIPT = scripts/place_audio_helpers_in_ram.py
 PYTHON ?= python3
 ifeq ($(HEXBOARD_ENABLE_SEQUENCER),1)
 FACTORY_UF2 = $(BUILD_DIR)/HexBoard_Sequencer_Factory.uf2
@@ -27,11 +30,12 @@ endif
 BUILD_PROPERTIES = --build-property compiler.cpp.extra_flags="-DPWM_BITS=$(PWM_BITS) -DHEXBOARD_ENABLE_SEQUENCER=$(HEXBOARD_ENABLE_SEQUENCER) -DHEXBOARD_ENABLE_SAMPLER=$(HEXBOARD_ENABLE_SAMPLER)" \
 	--build-property build.usb_manufacturer="$(USB_MANUFACTURER)" \
 	--build-property build.usb_product="$(USB_PRODUCT)" \
-	--build-property 'recipe.hooks.linking.prelink.2.pattern="{compiler.path}{compiler.S.cmd}" {compiler.c.elf.flags} {compiler.c.elf.extra_flags} -c "{build.source.path}/$(BOOT2_SOURCE)" -o "{build.path}/boot2.o"'
+	--build-property 'recipe.hooks.linking.prelink.2.pattern="{compiler.path}{compiler.S.cmd}" {compiler.c.elf.flags} {compiler.c.elf.extra_flags} -c "{build.source.path}/$(BOOT2_SOURCE)" -o "{build.path}/boot2.o"' \
+	--build-property 'recipe.hooks.linking.prelink.3.pattern="$(PYTHON)" "{build.source.path}/$(RAM_HELPERS_SCRIPT)" "{build.path}/memmap_default.ld"'
 
 FACTORY_LIBRARY_SOURCES_RAW := $(shell find $(FACTORY_LIBRARY_DIR) -type f | sed 's/ /__HEXBOARD_SPACE__/g')
 FACTORY_LIBRARY_SOURCES := $(subst __HEXBOARD_SPACE__,\ ,$(FACTORY_LIBRARY_SOURCES_RAW))
-FIRMWARE_SOURCES := HexBoard.ino $(BOOT2_SOURCE) $(shell find src/firmware -type f) $(FACTORY_LIBRARY_BUILDER) $(FACTORY_UF2_BUILDER) $(FACTORY_LIBRARY_SOURCES)
+FIRMWARE_SOURCES := HexBoard.ino $(BOOT2_SOURCE) $(shell find src/firmware -type f) $(FACTORY_LIBRARY_BUILDER) $(FACTORY_UF2_BUILDER) $(RAM_HELPERS_SCRIPT) $(FACTORY_LIBRARY_SOURCES)
 
 .PHONY: all firmware sequencer-disabled sequencer-enabled sequencer-builds install
 

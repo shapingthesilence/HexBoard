@@ -378,7 +378,9 @@ uint16_t RAM_FUNC(readLoadedWaveFrameSample)(uint16_t phase) {
 }
 
 
-byte isoTwoTwentySix(float f) {
+// Called from the renderer when a stolen voice restarts, so it runs from RAM
+// and compares in single precision (the constants are exact either way).
+byte RAM_FUNC(isoTwoTwentySix)(float f) {
   /*
       a very crude implementation of ISO 226
       equal loudness curves
@@ -389,14 +391,14 @@ byte isoTwoTwentySix(float f) {
       3250 -6  4
       5000  0  8
     */
-  if ((f < 8.0) || (f > 12500.0)) {  // really crude low- and high-pass
+  if ((f < 8.0f) || (f > 12500.0f)) {  // really crude low- and high-pass
     return 0;
   } else {
     if (EQUAL_LOUDNESS_ADJUST) {
-      if ((f <= 200.0) || (f >= 5000.0)) {
+      if ((f <= 200.0f) || (f >= 5000.0f)) {
         return 8;
       } else {
-        if (f < 1500.0) {
+        if (f < 1500.0f) {
           return 6 + 2 * (float)(abs(f - 800) / 700);
         } else {
           return 4 + 4 * (float)(abs(f - 3250) / 1750);

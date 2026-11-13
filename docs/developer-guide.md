@@ -112,6 +112,17 @@ includes audio render/refill, scan and rotary decoding, MIDI sends, voice
 allocation, compact LED work, and renderer lookup tables. OLED/GEM drawing
 remains in flash because I2C and library calls dominate it.
 
+Nothing Core 1 runs while rendering may execute from, or read constants in,
+flash: a call there can wait on a flash read while Core 0 uses the
+execute-in-place cache, and the audio block misses its deadline. That covers
+compiler runtime helpers too. `scripts/place_audio_helpers_in_ram.py` (a
+pre-link hook in the `Makefile`) links the integer-division, 64-bit multiply,
+memory-fill and single-precision float helpers into RAM; the Core 1 loop does
+not return to the Arduino loop in flash; and renderer tables use
+`__not_in_flash`. A `switch` that returns constants compiles to a flash table,
+and `digitalRead()`, `round()` and double-precision math are flash calls.
+Verify changes with `scripts/test_synth_performance.py` on hardware.
+
 ## Transfer Memory
 
 The audio renderer and its hot tables stay in RAM. Large wavetable and HGB

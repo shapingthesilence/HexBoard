@@ -60,7 +60,9 @@ uint32_t RAM_FUNC(oscillatorIncrementFromFrequency)(float frequency) {
   if (increment >= maxIncrement) {
     return std::numeric_limits<uint32_t>::max();
   }
-  return static_cast<uint32_t>(round(increment));
+  // increment is positive here, so this matches round() without calling the
+  // flash-resident math library from the renderer.
+  return static_cast<uint32_t>(increment + 0.5f);
 }
 
 void RAM_FUNC(smoothUint32Toward)(uint32_t& current, uint32_t target, uint8_t shift) {

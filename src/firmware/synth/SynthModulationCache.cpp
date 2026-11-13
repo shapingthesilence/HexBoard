@@ -537,15 +537,16 @@ void RAM_FUNC(retargetSynthAmpEnvelopeRenderCache)(SynthVoiceRenderCache& cache,
   cache.ampEnvelopeRampSamples = elapsedTicks;
 }
 
+// A switch here compiles to a lookup table in flash; the renderer must not
+// wait on flash reads, so the table is placed in RAM explicitly.
+static const uint16_t __not_in_flash("synth_mip_limits") synthWavetableMipHarmonicLimits[] = {
+  SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_0, SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_1,
+  SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_2, SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_3,
+  SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_4, SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_5
+};
+
 uint16_t RAM_FUNC(synthWavetableMipHarmonicLimit)(uint8_t level) {
-  switch (level) {
-    case 0: return SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_0;
-    case 1: return SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_1;
-    case 2: return SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_2;
-    case 3: return SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_3;
-    case 4: return SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_4;
-    default: return SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_5;
-  }
+  return synthWavetableMipHarmonicLimits[level < 5 ? level : 5];
 }
 
 uint32_t RAM_FUNC(synthAdjustedSafeHarmonicQ8ForPhaseIncrement)(uint32_t phaseIncrement) {
