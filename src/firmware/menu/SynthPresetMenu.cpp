@@ -24,18 +24,9 @@ constexpr uint8_t SYNTH_PRESET_MENU_MAX_SUBFOLDERS = 24;
 
 struct SynthPresetMenuPreset {
   uint16_t handle = 0;
-  bool sampler = false;
   char name[SYNTH_PRESET_MENU_NAME_LENGTH] = {};
 };
 
-// 6x8 engine icons: a sine cycle for wavetable presets, an audio clip for
-// sampler presets.
-static const unsigned char wavetableEngineBits[] U8X8_PROGMEM = {
-  0xc0, 0xc2, 0xc5, 0xe8, 0xd0, 0xc0, 0xc0, 0xc0
-};
-static const unsigned char samplerEngineBits[] U8X8_PROGMEM = {
-  0xc0, 0xc4, 0xd6, 0xff, 0xd6, 0xc4, 0xc0, 0xc0
-};
 
 SynthPresetMenuMode activeSynthPresetMenuMode = SynthPresetMenuMode::Load;
 SynthPresetMenuReturn activeSynthPresetMenuReturn = SynthPresetMenuReturn::SynthEditor;
@@ -132,7 +123,6 @@ void rebuildSynthPresetVirtualList() {
     if (synthPresetMenuPresetCount < SYNTH_PRESET_FOLDER_MAX_PRESETS) {
       SynthPresetMenuPreset& row = synthPresetMenuPresets[synthPresetMenuPresetCount++];
       row.handle = entry.handle;
-      row.sampler = synthPresetCatalogEntryIsSampler(entry);
       snprintf(row.name, sizeof(row.name), "%s", entry.name);
     } else if (synthPresetMenuHiddenCount < 0xFFFFu) {
       ++synthPresetMenuHiddenCount;
@@ -211,14 +201,6 @@ VirtualListMenuRowType synthPresetVirtualRowType(void*, uint16_t index) {
     default:
       return VirtualListMenuRowType::Button;
   }
-}
-
-const unsigned char* synthPresetVirtualIcon(void*, uint16_t index) {
-  uint16_t itemIndex = 0;
-  if (synthPresetRowKind(index, itemIndex) != SynthPresetMenuRowKind::Preset) {
-    return nullptr;
-  }
-  return synthPresetMenuPresets[itemIndex].sampler ? samplerEngineBits : wavetableEngineBits;
 }
 
 // Set while a sound auditioned from the list is playing.
@@ -339,7 +321,6 @@ void openSynthPresetMenu(SynthPresetMenuMode mode, SynthPresetMenuReturn destina
   provider.getLabel = synthPresetVirtualLabel;
   provider.getRowType = synthPresetVirtualRowType;
   provider.isCurrent = synthPresetVirtualIsCurrent;
-  provider.getIcon = synthPresetVirtualIcon;
   provider.isAuditioning = synthPresetVirtualIsAuditioning;
   provider.auditionIcon = virtualListHeadphonesBits;
   provider.getInitialSelection = synthPresetVirtualInitialSelection;

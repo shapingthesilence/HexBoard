@@ -110,7 +110,6 @@
 .libraryRow.dropTarget { box-shadow: inset 0 2px var(--brand); }
 .libraryRow[draggable="true"] { cursor: grab; }
 .libraryRowSelect { display: grid; place-items: center; }
-.libraryRow .engineIcon { width: 14px; height: 14px; flex: 0 0 auto; color: var(--text-soft); }
 .libraryDialog .libraryRowName { display: grid; flex: 1; gap: 0; min-width: 0; min-height: 36px; padding: 3px 0; border: 0; background: none; text-align: left; }
 .libraryDialog .libraryRowName:hover:not(:disabled) { background: none; }
 .libraryDialog .libraryRowName:disabled { opacity: 1; cursor: progress; }

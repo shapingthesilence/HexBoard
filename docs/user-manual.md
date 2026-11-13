@@ -513,9 +513,8 @@ The load list also includes `Blank`. Loading from the top-level `Sound` item
 returns to the main menu; loading or saving from `Editor` -> `Synth` returns to
 `Synth`. Loading a preset changes only the current synth parameters and
 wavetable reference, which can still be preserved by profile auto-save. The
-currently loaded catalog preset shows a diamond in the left
-action-icon slot when it appears in the load list (on the right edge for rows
-with an engine icon); `Blank`, `New Sound`, and
+currently loaded catalog preset shows a diamond at the right edge of its row
+in the load list; `Blank`, `New Sound`, and
 the unselected `Current` state are not marked.
 
 Short `Attack` feels immediate. Long `Attack` fades in. `Hold` keeps the initial

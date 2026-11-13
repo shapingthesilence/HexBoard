@@ -3370,17 +3370,6 @@ ${formatHex(draftPreset.body)}`}
   );
 }
 
-/** The board's preset-row icons: a sine cycle for wavetable sounds, an audio clip for sampler sounds. */
-function EngineIcon({ sampler }: { sampler: boolean }) {
-  const label = sampler ? "Sampler sound" : "Wavetable sound";
-  return <svg className="engineIcon" viewBox="0 0 14 14" role="img" aria-label={label}>
-    <title>{label}</title>
-    {sampler
-      ? <path d="M1 7h12M3.5 5v4M5.5 3v8M8 1.5v11M10.5 4v6" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-      : <path d="M1 7C2.5 2 5.5 2 7 7S11.5 12 13 7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>}
-  </svg>;
-}
-
 interface LibrarySpacePanelProps {
   connected: boolean;
   draftIds: string[];
@@ -3534,7 +3523,6 @@ function LibrarySpacePanel({
               onDragEnd={onDragEnd}
               onOpen={() => onOpen(space, item)}
               selection={{ checked: selectedIdSet.has(item.objectIdHex), onChange: (checked) => onSelectionChange(space, item.objectIdHex, checked) }}
-              icon={<EngineIcon sampler={item.sampler !== undefined} />}
               favorite={{ on: item.favorite, onToggle: () => onFavorite(space, item) }}
               transfer={space === "computer"
                 ? { label: "→ HexBoard", title: connected ? "Copy to HexBoard" : "Connect a HexBoard to copy", disabled: !connected, onClick: () => onUpload(item) }
