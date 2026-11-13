@@ -147,8 +147,8 @@ with Auto-save on, and a restart starts with the chosen item. Auditioning a
 layout keeps the screen's current rotation; choosing it applies the layout's
 rotation. Changing the key in `Scales` while a scale is auditioned keeps that
 scale.
-Library browsers use arrows for folders and actions, and a diamond marks the
-loaded item. Long names scroll when you leave the selection on them.
+Library browsers show an arrow beside folders, and a diamond at the right of a
+row marks the loaded item. Long names scroll when you leave the selection on them.
 
 ### Tuning
 

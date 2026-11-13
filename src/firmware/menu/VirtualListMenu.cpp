@@ -24,10 +24,6 @@ static const unsigned char arrowRightBits[] U8X8_PROGMEM = {
   0xc0, 0xc4, 0xcc, 0xdc, 0xcc, 0xc4, 0xc0, 0xc0
 };
 
-static const unsigned char arrowButtonBits[] U8X8_PROGMEM = {
-  0xc0, 0xc3, 0xc5, 0xc9, 0xc5, 0xc3, 0xc0, 0xc0
-};
-
 static const unsigned char currentDiamondBits[] U8X8_PROGMEM = {
   0xc0, 0xc4, 0xce, 0xdf, 0xce, 0xc4, 0xc0, 0xc0
 };
@@ -215,13 +211,13 @@ void drawRows() {
           case VirtualListMenuRowType::Button:
           default:
             icon = activeProvider.getIcon ? activeProvider.getIcon(activeProvider.context, itemIndex - 1) : nullptr;
-            u8g2.setCursor(11, yText);
-            u8g2.drawXBMP(5,
-                          yDraw,
-                          VIRTUAL_LIST_SPRITE_WIDTH,
-                          VIRTUAL_LIST_SPRITE_HEIGHT,
-                          icon ? icon : (marker ? marker : arrowButtonBits));
-            if (icon && marker) {
+            // Only a provider icon sits at the left; the chosen and audition
+            // markers always sit at the right edge.
+            u8g2.setCursor(icon ? 11 : 5, yText);
+            if (icon) {
+              u8g2.drawXBMP(5, yDraw, VIRTUAL_LIST_SPRITE_WIDTH, VIRTUAL_LIST_SPRITE_HEIGHT, icon);
+            }
+            if (marker) {
               u8g2.drawXBMP(u8g2.getDisplayWidth() - 8,
                             yDraw,
                             VIRTUAL_LIST_SPRITE_WIDTH,
@@ -233,7 +229,8 @@ void drawRows() {
       }
       const bool checkboxRow = rowType(itemIndex) == VirtualListMenuRowType::Checkbox;
       const bool valueRow = checkboxRow || rowType(itemIndex) == VirtualListMenuRowType::Value;
-      // Leave room for a right-edge marker beside icon rows.
+      // Leave room for a right-edge marker. Rows without an icon start one
+      // character further left, so the same length already ends short of it.
       const uint8_t labelLength = valueRow ? (VIRTUAL_LIST_VALUES_LEFT_OFFSET-6)/VIRTUAL_LIST_FONT_WIDTH
                                            : static_cast<uint8_t>(menuItemFullLength() - (icon ? 1 : 0));
       printMenuString(label, labelLength);
