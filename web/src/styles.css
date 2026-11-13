@@ -2447,9 +2447,18 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .layoutEditorSidebar .muted { font-size: .8rem; }
 
 /* Learn: the Lesson settings button and its pop-up panel. */
-.learnSettingsButton { width: 100%; margin-top: 8px; text-align: left; }
+.learnSettingsButton { flex: none; width: 100%; height: auto; min-height: 34px; margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .learnSettingsDialog { width: min(560px, 100%); display: grid; gap: 10px; font-size: .9rem; }
 .learnSettingsDialog .learnField, .learnSettingsDialog .checkField { margin: 0; }
 .learnSettingsGroup { display: grid; gap: 10px; border-top: 1px solid var(--border); padding-top: 12px; }
 .learnSettingsGroup h4 { margin: 0; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-soft); }
 .learnSettingsGroup p { margin: 0; }
+.learnSettingsDialog .learnActions { display: flex; flex-wrap: wrap; gap: 8px; }
+.learnSettingsDialog .learnActions button { margin: 0; }
+/* Keep the Settings button in view: the course path takes the spare height and scrolls. */
+@media (min-width: 1000px) and (min-height: 600px) {
+  .learnCourseWorkspace > .learnGuide { min-height: 0; }
+  .learnCourseWorkspace > .learnGuide > :not(.learnJourney) { flex-shrink: 0; }
+  .learnCourseWorkspace > .learnGuide > .learnJourney { flex: 1 1 auto; min-height: 100px; display: flex; flex-direction: column; }
+  .learnCourseWorkspace > .learnGuide > .learnJourney nav { flex: 1; min-height: 0; max-height: none; }
+}
