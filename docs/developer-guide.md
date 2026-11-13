@@ -510,7 +510,10 @@ Silent envelopes complete pending handoffs without publishing a stale freed even
 
 Core 1 renders two 64-sample DMA buffers. A PWM timer slice paces output at about
 40.7 kHz for the 250 MHz target. Hardware V1.2 selects jack or piezo; V1.1 uses
-piezo.
+piezo. The profile setting `AudioDestination` stores the `Buzzer` toggle as
+`AUDIO_PIEZO` (on) or `AUDIO_AJACK` (off); 0 is the unset default. V1.2 plays
+through the jack unless the piezo is chosen. V1.1 has no jack, so off leaves the
+onboard synth silent and 0 still means on. It is not a synth preset value.
 
 Active wavetables use a `16 × 512` base table and fixed mip levels. Their samples
 use an exclusive 48 KiB sample workspace. `HEXBOARD_ENABLE_SAMPLER` (default 0,
@@ -741,7 +744,8 @@ preset after each boot, and leaves the board in normal operation. It never
 loads an image or erases flash.
 
 CDC also accepts `HBDBG?` to query diagnostic flags and `HBDBG <flags>` to set
-them. The response is `HBDBG flags: <flags>`. Bits are 0 Enabled, 1 General Log,
+them. The response is `HBDBG flags: <flags>`, followed by
+`HBDBG hardware: <revision>` (1 for V1.1, 2 for V1.2). Bits are 0 Enabled, 1 General Log,
 2 Min Heap, and 3 Audio Stats; use `HBDBG 13` for heap/audio measurement without
 general logging. Commands are bounded to eight bytes before newline, processed
 at at most 64 incoming bytes per Core 0 loop, and change RAM-only controls. USB

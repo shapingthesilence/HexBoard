@@ -123,6 +123,7 @@ The main menu includes:
 - `Layout:<current>`
 - `Scale:<current>`
 - `Sound:<current sound>`
+- `Buzzer`
 - `Lights & Colors`
 - `Transpose`
 - `Editor`
@@ -317,12 +318,17 @@ Options include:
 - `Save Sound`
 
 On hardware `V1.1`, the onboard synth plays through the piezo buzzer when the
-synth is active. There is no headphone-jack output path and no `Buzzer` menu
-toggle.
+synth is active. There is no headphone-jack output path, and the `Synth` page
+has no `Buzzer` toggle.
 
 On hardware `V1.2`, the headphone jack is active by default and an extra
 `Buzzer` toggle appears. Turning `Buzzer` on switches synth output to the piezo
 instead of the jack.
+
+The main menu also has a `Buzzer` toggle below `Sound`. On hardware `V1.2` it
+is the same jack/piezo switch. On hardware `V1.1`, where the piezo is the only
+output, turning it off silences the onboard synth. The choice is saved with
+the profile, not with the sound, so it never marks a sound as changed.
 
 `Volume` limits the active synth output from `25%` to `100%` in `5%` steps. The
 headphone jack and piezo each have their own saved value, so changing `Buzzer`

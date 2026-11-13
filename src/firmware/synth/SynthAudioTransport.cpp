@@ -38,16 +38,24 @@ bool audioJackAvailable() {
   return Hardware_Version == HARDWARE_V1_2;
 }
 
+// The AudioDestination setting holds AUDIO_PIEZO (Buzzer on) or AUDIO_AJACK
+// (Buzzer off); 0 is the unset default. Hardware V1.2 plays through the jack
+// unless the piezo is chosen. V1.1 has no jack, so it plays through the piezo
+// unless the jack is chosen, which leaves the onboard synth silent.
 bool decodeStoredBuzzerEnabled(uint8_t storedValue) {
   if (!audioJackAvailable()) {
-    return true;
+    return (storedValue & AUDIO_PIEZO) != 0 || (storedValue & AUDIO_AJACK) == 0;
   }
   return (storedValue & AUDIO_PIEZO) != 0;
 }
 
+uint8_t encodeStoredBuzzerEnabled(bool buzzerEnabled) {
+  return buzzerEnabled ? AUDIO_PIEZO : AUDIO_AJACK;
+}
+
 byte runtimeAudioDestination(bool buzzerEnabled) {
   if (!audioJackAvailable()) {
-    return AUDIO_PIEZO;
+    return buzzerEnabled ? AUDIO_PIEZO : AUDIO_NONE;
   }
   return buzzerEnabled ? AUDIO_PIEZO : AUDIO_AJACK;
 }
