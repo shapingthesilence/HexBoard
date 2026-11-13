@@ -34,6 +34,21 @@ def pack(raw):
     return result
 
 
+SAMPLER_CAPABILITY = 1 << 24
+SAMPLER_NAME_TLV = 0x28
+
+
+def names_sampler(body):
+    """True when a synth preset object body names a sampler instrument."""
+    offset = 8  # "HBS1", schema major/minor, reserved
+    while offset + 3 <= len(body):
+        tag, size = body[offset], body[offset + 1] | (body[offset + 2] << 8)
+        if tag == SAMPLER_NAME_TLV and size:
+            return True
+        offset += 3 + size
+    return False
+
+
 def unpack(packed, length):
     if len(packed) != length + (length + 6) // 7:
         raise AssertionError("invalid packed response length")
@@ -129,8 +144,9 @@ class Device:
                    *encode(index, 3), 0])
 
     def hello(self):
-        self.request(1, [*encode(128, 2), 0, 0, 0, 0], 2)
+        payload = self.request(1, [*encode(128, 2), 0, 0, 0, 0], 2)
         self.counts["health_checks"] += 1
+        return decode(payload[4:8])  # capability flags
 
     def catalog(self):
         records = []
@@ -252,7 +268,8 @@ def main():
     report = {"passed": False}
     try:
         device = Device(args.midi, args.serial)
-        device.hello()
+        sampler_supported = bool(device.hello() & SAMPLER_CAPABILITY)
+        skipped_sampler_sounds = 0
         records = device.catalog()
         print(f"Catalog: {len(records)} objects", flush=True)
         bodies = {}
@@ -264,8 +281,16 @@ def main():
             if number % 20 == 0 or record["type"] == 11:
                 print(f"Read {number}/{len(inventory)} objects; {record['name']}", flush=True)
                 time.sleep(0.35)  # Let the transfer window close and restore the menu.
+            if record["type"] == 7 and not sampler_supported and names_sampler(body):
+                # Left by a sampler-enabled build; this firmware refuses to store it.
+                skipped_sampler_sounds += 1
+                continue
             if record["type"] in (3, 4, 5, 6, 7, 10):
                 bodies[(record["type"], record["handle"])] = body
+        if skipped_sampler_sounds:
+            print(f"Skipping {skipped_sampler_sounds} sampler sounds in write checks; "
+                  "this firmware has no sampler", flush=True)
+        report["skipped_sampler_sounds"] = skipped_sampler_sounds
         geometry = next(r for r in records if r["type"] == 3)
         maximum = bytearray(bodies[(3, geometry["handle"])])
         padding = 16384 - len(maximum) - 3
