@@ -80,7 +80,9 @@ export function decodeModulation(payload:number[]):ModulationSources {
   const n=modulationSettingCount;if(payload.length!==1+3*(n+66)||payload[0]!==17)throw Error("Update Advanced firmware for Pitch Spring.");
   return validateModulation({settings:Array.from({length:n},(_,i)=>decodeU21(payload.slice(1+i*3,4+i*3))),routes:Array.from({length:66},(_,i)=>decodeU21(payload.slice(1+3*n+i*3,4+3*n+i*3))-65536)});
 }
-export function sampleChecksum(frames:number[]){let crc=0xffffffff;for(const v of frames)for(const byte of [v&255,(v>>8)&255]){crc^=byte;for(let i=0;i<8;i++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}return (crc^0xffffffff)>>>0;}
+export {sampleChecksum} from './sampleEditing.ts';
+import {sampleChecksum} from './sampleEditing.ts';
+import {validateAttack,type AttackSample} from './wavetableAttack.ts';
 interface SampleMeta{loop:SampleLoop;enabled:boolean;gain:number;direct:number;length:number;busy:boolean;crc:number}
 function decodeSample(p:number[]):SampleMeta {if(p.length!==27||p[0]!==17||p[1]>1||p[8]>1)throw Error("Invalid sample response.");const gain=decodeU21(p.slice(2,5)),length=decodeU21(p.slice(5,8)),crc=p.slice(9,14).reduce((a,b)=>a*128+b,0);if(gain>65535||length>64000||crc>0xffffffff)throw Error("Invalid sample response.");const direct=decodeU21(p.slice(14,17));if(direct>65535)throw Error("Invalid sample attack mix.");const loop={mode:p[17] as 0|1|2,start:decodeU21(p.slice(18,21)),end:decodeU21(p.slice(21,24)),crossfade:decodeU21(p.slice(24,27))};if(loop.mode>2||loop.end>length||loop.crossfade>3200||loop.crossfade===1||(loop.mode===0?(loop.start!==0||loop.end!==0||loop.crossfade!==0):(loop.end-loop.start<160||loop.crossfade*2>loop.end-loop.start)))throw Error("Invalid sample loop response.");return {loop,enabled:!!p[1],gain,direct,length,busy:!!p[8],crc};}
 const u32=(v:number)=>Array.from({length:5},(_,i)=>Math.floor(v/2**(7*(4-i)))%128);
@@ -106,9 +108,9 @@ export class PhysicalSynthClient {
   constructor(private transport: MidiTransport,private onProgress?:(progress?:SynthProgress)=>void,private advanced=false) {}
   close() { this.closed = true; this.serialUpload?.cancel();for(const abort of this.aborts)abort(); }
   async readSound(name:string){const state=await this.status();if(state.instrument===wavetableEngine){
-    const {patch}=await this.readWavetable(),effects=await this.readEffects(),mono=await this.monoSettings();
+    const {patch}=await this.readWavetable(),attack=await this.readWavetableAttack(patch),effects=await this.readEffects(),mono=await this.monoSettings();
     const table=await tableReference(tableCrc(patch)).catch(()=>undefined);
-    return wavetablePreset(name,{...patch,effects,mono,table} as Parameters<typeof wavetablePreset>[1]);
+    return wavetablePreset(name,{...patch,attack,effects,mono,table} as Parameters<typeof wavetablePreset>[1]);
   }if(state.instrument===4||state.instrument===5){const r=await this.readAdvanced(),p={...initialClassic(state.instrument),name,patch:r.patch,effects:r.effects,velocityEngine:state.preset.velocityEngine};return r.budget.qualified?attachVoiceBudget(p,r.budget):p;}return {...(await this.read()).preset,name};}
   async presetLabel(slot:number):Promise<DevicePresetLabel>{return this.request(59,encodeU14(slot));}
   async presetFolders():Promise<DevicePresetFolder[]>{const rows:DevicePresetFolder[]=[];for(let at=0;at<32;at+=4)rows.push(...await this.request<DevicePresetFolder[]>(60,[at,4]));return rows;}
@@ -168,6 +170,7 @@ export class PhysicalSynthClient {
         await this.ensurePresetTable(tableCrc(p),p.table?.id);
         await this.effects({...p.effects,order:[],routes:p.effects.routes?.map(()=>0)});
         await this.monoSettings(p.mono);
+        await this.setWavetableAttack(p.attack);
         await this.applyWavetable(p);
         await this.effects(p.effects);
       }else if(p.format==='hexboard.advanced.v2'){await this.applyAdvanced(p.patch);await this.effects(p.effects);await this.presetVelocity(p.velocityEngine);await this.restoreVoiceBudget(p);}
@@ -294,6 +297,24 @@ export class PhysicalSynthClient {
     for(let offset=0;offset<wavetableWordCount;offset+=64){const reply=await this.request<{engine:number;state:number;busy:boolean;words:number[]}>(33,[...encodeU21(offset),Math.min(64,wavetableWordCount-offset),wavetableEngine]);if(reply.engine!==wavetableEngine)throw Error('Update Advanced firmware for the wavetable editor.');state=reply.state;busy=reply.busy;words.push(...reply.words);}
     return {patch:wavetableFromWords(words),state,busy};
   }
+  async setWavetableAttack(value?:AttackSample){
+    const sample=validateAttack(value);if(!sample)return;
+    const crc=sampleChecksum(sample.frames);
+    await this.stopAndWait();
+    try{
+      if(await this.request<number>(87,[...encodeU14(sample.frames.length),...u32(crc),+(this.assetMedium==='flash')])===1)return;
+      const bytes=new Uint8Array(sample.frames.length*2),view=new DataView(bytes.buffer);sample.frames.forEach((v,i)=>view.setInt16(i*2,v,true));
+      await this.transferBlocks(88,bytes,(completed,total)=>this.onProgress?.({label:'Sending attack sample…',completed,total}));
+      await this.request(89);
+    }catch(error){try{await this.request(91);}catch{}throw error;}finally{this.onProgress?.();}
+  }
+  async readWavetableAttack(patch:WavetablePatch):Promise<AttackSample|undefined>{
+    const length=patch.parameters[92];if(!length)return undefined;
+    const frames:number[]=[];for(let at=0;at<length;at+=64)frames.push(...await this.request<number[]>(90,[...encodeU14(at),Math.min(64,length-at)]));
+    const crc=(patch.parameters[93]|patch.parameters[94]<<16)>>>0;if(sampleChecksum(frames)!==crc)throw Error('Attack sample checksum mismatch.');
+    return {name:'Custom attack',frames};
+  }
+  async previewWavetableAttack(){await this.request(92);return this.status();}
   /** Staged whole-patch load; the board keeps its previous patch if any word is refused. */
   async applyWavetable(patch:WavetablePatch){
     if(!validWavetable(patch))throw Error('Invalid wavetable patch.');const words=wavetableWords(patch);
@@ -410,7 +431,7 @@ export class PhysicalSynthClient {
   }
   private transferBlocks(operation:number,bytes:Uint8Array,progress?:(done:number,total:number)=>void){
     const task=this.tail.catch(()=>undefined).then(async()=>{
-      if(this.serialUpload)return this.serialUpload.transfer(operation===22?2:operation===74?1:0,bytes,progress);
+      if(this.serialUpload)return this.serialUpload.transfer((operation===22||operation===88)?2:operation===74?1:0,bytes,progress);
       for(let offset=0;offset<bytes.length;offset+=1024){
         const batch=[];
         for(let index=0;index<4&&offset+index*256<bytes.length;++index){
@@ -447,6 +468,10 @@ export class PhysicalSynthClient {
           if (frame.transactionId !== transaction) return;
           if (frame.message === 7) {
             finish(Error(operation===41?"Update Advanced main firmware to use the global arpeggiator.":frame.payload[1] === 3 ? operation>=16?"Update Advanced firmware for envelope and LFO modulation.":"Update Advanced main firmware for preset velocity engines." : frame.payload[1] === 9 ? "DSP budget full. Reduce another effect, feature or modulation first." : frame.payload[1] === 8 ? "Stop Learn or Calibration and release keys before changing the velocity engine or loading a sound." : operation===21?"Release the keys and stop the synth before importing a sample.":operation===25?"Release the keys before sample preview.":operation===42?"Release the keys before switching Arp on/off or changing its output. If playback is being tested, wait for it to finish.":operation===44?"Stop the synth, clear held arp notes, and release the keys before saving performance settings.":"The board rejected this synth operation."));
+          } else if(operation>=87&&operation<=92&&frame.message===0x56){
+            const p=frame.payload;if(p.length!==7||p[0]!==17||p[1]!==7)throw Error('Invalid attack response.');finish(undefined,p.slice(2).reduce((a,b)=>a*128+b,0) as T);return;
+          } else if(operation===90&&frame.message===0x57){
+            const p=frame.payload;if(p[0]!==17||p[1]!==data[2]||p.length!==2+3*p[1])throw Error('Invalid attack sample data.');const values=Array.from({length:p[1]},(_,i)=>decodeU21(p.slice(2+3*i,5+3*i))-32768);if(values.some(v=>v<-32768||v>32767))throw Error('Invalid attack PCM.');finish(undefined,values as T);return;
           } else if(operation===86&&frame.message===0x55){
             const p=frame.payload,u32=(at:number)=>p.slice(at,at+5).reduce((a,b)=>a*128+b,0),float=(at:number)=>{const n=u32(at);if(n>0xffffffff)throw Error('Invalid tuning word.');const b=new ArrayBuffer(4),v=new DataView(b);v.setUint32(0,n,true);return v.getFloat32(0,true);};
             if(p.length<22||p[0]!==17||p[1]!==6||p[21]<1||p[21]>32||p.length!==22+5*p[21])throw Error('Update Advanced firmware for tuning-aware synthesis.');

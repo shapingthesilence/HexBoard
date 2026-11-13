@@ -1,3 +1,4 @@
+import {validateAttack,sampleChecksum,factoryAttackSamples,type AttackSample} from './wavetableAttack.ts';
 import {validateMono, type MonoConfig} from './mono.ts';
 import {curveBend, curveWord} from './envelopeCurve.ts';
 import {defaultFx,validateFx,type FxRack,modulationSeconds} from './schema.ts';
@@ -6,7 +7,7 @@ import {fxRoutePatch} from './fxRouting.ts';
 // Wavetable patch: mirrors Advanced src/synth/wavetable_patch.h. Normalized U16
 // parameters, two envelope/LFO banks in the Physical Strings layout and sparse
 // source -> parameter routes, carried on the generic engine transport.
-export const wavetableEngine = 7, wavetableSchema = 6;  // 5: pitch controls, second oscillator and phase modulation
+export const wavetableEngine = 7, wavetableSchema = 7;  // Short sample attacks; current development format only.
 export const P = {
   Frame: 0, FrameSpread: 1, Unison: 2, Detune: 3, Width: 4, WarpMode: 5, WarpAmount: 6, WarpBias: 7, Brightness: 8,
   Noise: 9, Transient: 10, TransientShape: 11, Sub: 12, SubPitchMode: 13, SubShape: 14,
@@ -27,9 +28,10 @@ export const P = {
   Partial1Mode:64, Partial1Interval:65, Partial1Num:66, Partial1Den:67, Partial1Level:68, Partial1Decay:69, Partial1Pan:70,
   Partial2Mode:71, Partial2Interval:72, Partial2Num:73, Partial2Den:74, Partial2Level:75, Partial2Decay:76, Partial2Pan:77,
   Partial3Mode:78, Partial3Interval:79, Partial3Num:80, Partial3Den:81, Partial3Level:82, Partial3Decay:83, Partial3Pan:84,
-  Partial4Mode:85, Partial4Interval:86, Partial4Num:87, Partial4Den:88, Partial4Level:89, Partial4Decay:90, Partial4Pan:91
+  Partial4Mode:85, Partial4Interval:86, Partial4Num:87, Partial4Den:88, Partial4Level:89, Partial4Decay:90, Partial4Pan:91,
+  AttackFrames:92,AttackCrcLow:93,AttackCrcHigh:94,AttackRoot:95,AttackPlayback:96
 } as const;
-export const parameterCount = 92, modSettingCount = 18, routeCount = 16;
+export const parameterCount = 97, modSettingCount = 18, routeCount = 16;
 export const editCount = parameterCount + 2 * modSettingCount, wordCount = editCount + 2 * routeCount;
 export const S = {Velocity: 0, Pressure: 1, Release: 2, TiltX: 3, TiltY: 4, Env1: 5, Lfo1: 6, Env2: 7, Lfo2: 8, Joystick: 9, Pedal: 10} as const;
 export const sourceCount = 11;
@@ -40,13 +42,13 @@ export const wavetableSourceColors = ['#efb86b', '#5cdac6', '#b29aff', '#70b8ff'
 export const warpNames = ['Off', 'Fold', 'Poly', 'Duty', 'Sync'] as const;
 export const resonatorNames = ['Off', 'Bell', 'Wood', 'Custom'] as const;
 export const filterNames = ['Low-pass', 'Band-pass', 'High-pass'] as const;
-export const transientNames = ['Pick', 'Mallet', 'Breath'] as const;
+export const transientNames = ['Click', 'Tonal pop', 'Air puff', 'Custom sample'] as const;
 export const shapeNames = ['Sine', 'Triangle', 'Saw', 'Square'] as const;
-const optionCounts: Record<number, number> = {[P.Unison]: 7, [P.WarpMode]: 5, [P.TransientShape]: 3, [P.SubShape]: 2, [P.FilterMode]: 3, [P.Resonator]: 4, [P.Classic]: 2,[P.PhaseMode]:3,[P.Osc2Shape]:5};
+const optionCounts: Record<number, number> = {[P.Unison]: 7, [P.WarpMode]: 5, [P.TransientShape]: 4,[P.AttackPlayback]:2, [P.SubShape]: 2, [P.FilterMode]: 3, [P.Resonator]: 4, [P.Classic]: 2,[P.PhaseMode]:3,[P.Osc2Shape]:5};
 export const pitchNames = ['Cents', 'Ratio', 'Tuning steps', 'Tuning periods'] as const;
 export const unisonNames = ['Cents', 'Beats / second', 'Interval stack'] as const;
 export const bodyMotionNames = ['Continuous sweep', 'Snapped pitches', 'Crossfaded pitches', 'Partial levels'] as const;
-export const partialField = (id:number) => id >= P.Partial1Mode && id < parameterCount ? (id-P.Partial1Mode)%7 : -1;
+export const partialField = (id:number) => id >= P.Partial1Mode && id < P.AttackFrames ? (id-P.Partial1Mode)%7 : -1;
 const pitchModeIds=new Set<number>([P.CarrierPitchMode,P.SubPitchMode,P.Osc2PitchMode,P.StackPitchMode]);
 export const isPitchMode = (id:number) => pitchModeIds.has(id) || partialField(id)===0;
 const ratioIds=new Set<number>([P.CarrierRatioNum,P.CarrierRatioDen,P.SubRatioNum,P.SubRatioDen,P.Osc2RatioNum,P.Osc2RatioDen,P.StackRatioNum,P.StackRatioDen]);
@@ -55,7 +57,7 @@ export const options = (id: number) => isPitchMode(id)||id===P.BodyMotion?4:id==
 export const discrete = (id: number) => options(id) !== 0;
 export function option(id: number, value: number) { const n = options(id); return n < 2 ? 0 : Math.floor((value * (n - 1) + 32767) / 65535); }
 export function optionValue(id: number, choice: number) { const n = options(id); return n < 2 ? 0 : Math.floor(choice * 65535 / (n - 1)); }
-export const modulatable = (id: number, _source?: number) => id >= 0 && (id < P.TableLow || (id >= P.Coarse && id < parameterCount)) && !discrete(id) && !isRatioWord(id) && id !== P.Classic;
+export const modulatable = (id: number, _source?: number) => id >= 0 && (id < P.TableLow || (id >= P.Coarse && id < parameterCount)) && !discrete(id) && !isRatioWord(id) && id !== P.Classic && !(id>=P.AttackFrames&&id<=P.AttackRoot);
 export const osc2Names = ['Sine', 'Triangle', 'Saw', 'Square', 'Noise'] as const;
 /** Coarse +-24 semitones (32768 centered); whole-semitone base values. */
 export const coarseSemitones = (v: number) => (v - 32768) / 32767 * 24;
@@ -66,15 +68,17 @@ export const bipolarSource = (source: number, p?: WavetablePatch) => source === 
 
 export interface WavetableRoute {source: number; destination: number; depth: number}
 export interface WavetablePatch {parameters: number[]; mod: [number[], number[]]; routes: WavetableRoute[]}
-export const wavetableFormat = 'hexboard.wavetable.v6';
+export const wavetableFormat = 'hexboard.wavetable.v7';
 /** mono: Physical Strings' shared voice mode, priority and glide. */
-export interface WavetablePreset extends WavetablePatch {format: typeof wavetableFormat; name: string; effects: FxRack; table?: {id:string;name:string}; mono?: MonoConfig}
+export interface WavetablePreset extends WavetablePatch {format: typeof wavetableFormat; name: string; effects: FxRack; table?: {id:string;name:string}; mono?: MonoConfig; attack?:AttackSample}
 /** New wavetable sounds start with the two-voice Ensemble in the shared FX rack. */
 export const wavetableDefaultFx = (): FxRack => ({...defaultFx(), order: [6]});
 const unused = (): WavetableRoute => ({source: sourceCount, destination: 0, depth: 0});
 
+export const attackCrc=(p:WavetablePatch)=>(p.parameters[P.AttackCrcLow]|p.parameters[P.AttackCrcHigh]<<16)>>>0;
 export function validWavetable(p: WavetablePatch): boolean {
   if (!Array.isArray(p.parameters) || p.parameters.length !== parameterCount || p.parameters.some((v,i) => !Number.isInteger(v) || v < 0 || v > 65535 || (isRatioWord(i)&&v===0))) return false;
+  if(p.parameters[P.AttackFrames]>4096||p.parameters[P.AttackFrames]===1||(!p.parameters[P.AttackFrames]&&attackCrc(p))||(option(P.TransientShape,p.parameters[P.TransientShape])===3&&p.parameters[P.AttackFrames]<2))return false;
   if (!Array.isArray(p.mod) || p.mod.length !== 2 || p.mod.some(m => !Array.isArray(m) || m.length !== modSettingCount || m.some((v, i) => !validModSetting(i, v)))) return false;
   if (!Array.isArray(p.routes) || p.routes.length !== routeCount) return false;
   return p.routes.every(r => Number.isInteger(r.source) && Number.isInteger(r.destination) && Number.isInteger(r.depth) && (r.source === sourceCount ? r.depth === 0 : r.source >= 0 && r.source < sourceCount && modulatable(r.destination, r.source) && r.depth >= -65536 && r.depth <= 65536));
@@ -97,6 +101,7 @@ export function initialWavetable(): WavetablePatch {
   for(const id of [P.CarrierPitchMode,P.Osc2PitchMode,P.StackPitchMode])parameters[id]=optionValue(id,1);
   for(const id of [P.CarrierRatioNum,P.CarrierRatioDen,P.SubRatioNum,P.Osc2RatioNum,P.Osc2RatioDen,P.StackRatioDen])parameters[id]=1;
   parameters[P.SubRatioDen]=2;parameters[P.StackRatioNum]=3;parameters[P.StackRatioDen]=2;
+  parameters[P.AttackRoot]=34125;
   parameters[P.BeatRate]=16384;parameters[P.StackInterval]=32768;parameters[P.BodyLevel]=21845;parameters[P.NaturalTuned]=65535;parameters[P.BodyAir]=26000;
   const nums=[1,689,1351,8933],dens=[1,250,250,1000],weights=[19661,22937,14418,8519],decays=[65535,45875,29491,18350],pans=[27852,42925,17367,53411];
   for(let j=0;j<4;++j){const at=P.Partial1Mode+7*j;parameters.splice(at,7,optionValue(at,1),32768,nums[j],dens[j],weights[j],decays[j],pans[j]);}
@@ -110,10 +115,12 @@ export function wavetableFromUnknown(value: unknown): WavetablePreset {
   if (typeof p.name !== 'string' || !p.name.trim() || p.name.length > 80) throw Error('Give the preset a name.');
   const patch = {parameters: [...(p.parameters ?? [])], mod: [[...(p.mod?.[0] ?? [])], [...(p.mod?.[1] ?? [])]] as [number[], number[]], routes: (p.routes ?? []).map(r => ({...r}))};
   if (!validWavetable(patch)) throw Error('This wavetable preset has invalid settings or routes.');
-  return {format: wavetableFormat, name: p.name.trim(), table:validTableRef(p.table), effects:validateFx(p.effects ?? wavetableDefaultFx()), mono: validateMono(p.mono), ...patch};
+  const attack=validateAttack(p.attack);
+  if((attack?.frames.length??0)!==patch.parameters[P.AttackFrames]||(attack?sampleChecksum(attack.frames):0)!==attackCrc(patch))throw Error('The attack sample does not match this sound.');
+  return {format: wavetableFormat, attack, name: p.name.trim(), table:validTableRef(p.table), effects:validateFx(p.effects ?? wavetableDefaultFx()), mono: validateMono(p.mono), ...patch};
 }
-export const wavetablePreset = (name: string, patch: WavetablePatch): WavetablePreset => ({format: wavetableFormat, name, table:validTableRef('table' in patch ? patch.table : undefined), effects:validateFx('effects' in patch ? patch.effects : wavetableDefaultFx()), mono: validateMono('mono' in patch ? patch.mono : undefined), parameters: [...patch.parameters], mod: [[...patch.mod[0]], [...patch.mod[1]]], routes: patch.routes.map(r => ({...r}))});
-export const sameWavetable = (a: WavetablePreset, b: WavetablePreset) => a.name === b.name && JSON.stringify([a.parameters, a.mod, a.routes,a.effects,a.table,a.mono]) === JSON.stringify([b.parameters, b.mod, b.routes,b.effects,b.table,b.mono]);
+export const wavetablePreset = (name: string, patch: WavetablePatch & Partial<Pick<WavetablePreset,'attack'|'table'|'effects'|'mono'>>): WavetablePreset => ({format: wavetableFormat, attack:validateAttack('attack' in patch?patch.attack:undefined), name, table:validTableRef('table' in patch ? patch.table : undefined), effects:validateFx('effects' in patch ? patch.effects : wavetableDefaultFx()), mono: validateMono('mono' in patch ? patch.mono : undefined), parameters: [...patch.parameters], mod: [[...patch.mod[0]], [...patch.mod[1]]], routes: patch.routes.map(r => ({...r}))});
+export const sameWavetable = (a: WavetablePreset, b: WavetablePreset) => a.name === b.name && JSON.stringify([a.parameters, a.mod, a.routes,a.effects,a.table,a.mono,a.attack]) === JSON.stringify([b.parameters, b.mod, b.routes,b.effects,b.table,b.mono,b.attack]);
 
 // Word layout: parameters, Mod 1, Mod 2, then per route source << 8 | destination
 // and depth + 65536.
@@ -218,7 +225,10 @@ export const wavetableParameters: ParameterInfo[] = [
     {name:`Partial ${j+1} denominator`,describe:(v:number)=>String(v)},
     {name:`Partial ${j+1} level`,describe:pct},{name:`Partial ${j+1} decay`,describe:pct},
     {name:`Partial ${j+1} pan`,describe:(v:number)=>`${Math.round((v/65535*2-1)*100)}%`}
-  ]).flat()
+  ]).flat(),
+  {name:'Attack frames',describe:v=>String(v)},{name:'Attack CRC low',describe:v=>String(v)},{name:'Attack CRC high',describe:v=>String(v)},
+  {name:'Sample root',describe:v=>`${(20*100**(v/65535)).toFixed(1)} Hz`},
+  {name:'Attack playback',describe:v=>option(P.AttackPlayback,v)?'Follow note':'Fixed texture'}
 ];
 export function warpAmountDescription(mode: number, v: number) { return mode === 4 ? `×${(1 + 7 * v / 65535).toFixed(2)} sync` : pct(v); }
 
@@ -236,8 +246,14 @@ const ensembleRack = (voices: number, width = 52000): FxRack => { const f = wave
 const tableSound=(sound:WavetablePreset,file:string)=>{const table=tableManifest.find(t=>t.file===file)!;const parameters=[...sound.parameters];parameters[P.TableLow]=table.crc&65535;parameters[P.TableHigh]=table.crc>>>16;return {...sound,parameters,table:{id:table.id,name:table.name}};};
 const centsValue=(cents:number)=>Math.round(32768+Math.max(-1,Math.min(1,cents/2400))*32767);
 const partialRatios=(ratios:[number,number][])=>Object.fromEntries(ratios.flatMap(([n,d],j)=>[[P.Partial1Num+j*7,n],[P.Partial1Den+j*7,d]]));
+function attackSound(sound:WavetablePreset,attack:AttackSample):WavetablePreset{
+ const parameters=[...sound.parameters],crc=sampleChecksum(attack.frames);parameters[P.AttackFrames]=attack.frames.length;parameters[P.AttackCrcLow]=crc&65535;parameters[P.AttackCrcHigh]=crc>>>16;parameters[P.TransientShape]=optionValue(P.TransientShape,3);return {...sound,parameters,attack};
+}
 export const factoryWavetablePresets: WavetablePreset[] = [
   wavetablePreset('Pressure Scan', initialWavetable()),
+  attackSound(preset('Grain Keys',{[P.Unison]:0,[P.Level]:38000,[P.Frame]:7000,[P.Transient]:27000,[P.AmpAttack]:0,[P.AmpDecay]:39000,[P.AmpSustain]:24000},[{source:S.Pressure,destination:P.Frame,depth:26000},{source:S.Velocity,destination:P.Transient,depth:14000}]),factoryAttackSamples[0]),
+  attackSound(preset('Digital Edge',{[P.Unison]:o(P.Unison,1),[P.Level]:37000,[P.Frame]:28000,[P.Transient]:32000,[P.Osc2RatioNum]:3,[P.Osc2RatioDen]:2,[P.PhaseMod]:3500,[P.AmpAttack]:0},[{source:S.Pressure,destination:P.Frame,depth:16000},{source:S.Pressure,destination:P.PhaseMod,depth:9000}]),factoryAttackSamples[1]),
+  attackSound(preset('Shimmer Bloom',{[P.Unison]:o(P.Unison,1),[P.Level]:36000,[P.Frame]:21000,[P.Transient]:34000,[P.Resonator]:o(P.Resonator,1),[P.BodyMotion]:o(P.BodyMotion,3),[P.ResonatorMix]:22000,[P.ResonatorTune]:20000,[P.AmpAttack]:27000},[{source:S.Pressure,destination:P.Frame,depth:24000},{source:S.Lfo1,destination:P.ResonatorTune,depth:10000}]),factoryAttackSamples[2]),
   tableSound(preset('Pressure Prism',{[P.Level]:37000,[P.Unison]:o(P.Unison,1),[P.UnisonMode]:o(P.UnisonMode,1),[P.BeatRate]:14000,[P.Frame]:16000,[P.Brightness]:49000,[P.Osc2RatioNum]:2,[P.PhaseMod]:2500,[P.Resonator]:o(P.Resonator,1),[P.BodyMotion]:o(P.BodyMotion,3),[P.ResonatorTune]:20000,[P.ResonatorMix]:30000,[P.BodyLevel]:18000,[P.BodyAir]:36000,[P.NaturalTuned]:56000,[P.AmpAttack]:6500,[P.AmpDecay]:39000,[P.AmpSustain]:14000,[P.AmpRelease]:39000},
     [{source:S.Pressure,destination:P.Frame,depth:16000},{source:S.Pressure,destination:P.ResonatorTune,depth:19000},{source:S.Pressure,destination:P.ResonatorDecay,depth:10000}]),'harshdigitalbois'),
   tableSound(preset('Wood Circuit',{[P.Level]:38000,[P.Unison]:0,[P.Frame]:7000,[P.Brightness]:38000,[P.Resonator]:o(P.Resonator,2),[P.ResonatorMix]:36000,[P.BodyLevel]:11000,[P.BodyAir]:24000,[P.NaturalTuned]:56000,[P.ResonatorDecay]:38000,[P.AmpAttack]:0,[P.AmpDecay]:33000,[P.AmpSustain]:4000,[P.AmpRelease]:30000},

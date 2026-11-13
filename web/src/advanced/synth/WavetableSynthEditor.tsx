@@ -1,3 +1,6 @@
+import {SampleEditor} from './SampleEditor.tsx';
+import {factoryAttackSamples,validateAttack,sampleChecksum,maxAttackFrames,attackRootHz} from './wavetableAttack.ts';
+import {defaultSample,type SampleExciter} from './schema.ts';
 import {AssetStorageSelector} from "./AssetStorageSelector.tsx";
 import {IntervalControls,PartialsDialog} from './WavetableIntervalControls.tsx';
 import {bodyPartials,unisonPitches,customBody,defaultTuning,type TuningGrid} from './wavetableIntervals.ts';
@@ -66,8 +69,9 @@ export function WavetableSynthEditor({ transport,onDeviceEngineLoaded }: { trans
   const [tables,setTables]=useState<TableRef[]>([]),[selectedTable,setSelectedTable]=useState<TableAsset>(),[importing,setImporting]=useState<'new'|'edit'|undefined>();
   useEffect(()=>{void listTables().then(setTables).catch(()=>undefined);},[]);
   useEffect(()=>{let disposed=false;setSelectedTable(undefined);if(preset.table)void getTable(preset.table.id).then(t=>{if(!disposed)setSelectedTable(t);}).catch(error=>{if(!disposed)fail(error);});return()=>{disposed=true;};},[preset.table?.id]);
+  const [attackOpen,setAttackOpen]=useState(false);
   const [partsOpen,setPartsOpen]=useState(false),[tuning,setTuning]=useState<TuningGrid>(defaultTuning);
-  const p = partsOpen&&option(P.Resonator,preset.parameters[P.Resonator])!==3 ? [...preset.parameters.slice(0,P.Partial1Mode),...bodyPartials(preset).flat()] : preset.parameters;
+  const p = partsOpen&&option(P.Resonator,preset.parameters[P.Resonator])!==3 ? [...preset.parameters.slice(0,P.Partial1Mode),...bodyPartials(preset).flat(),...preset.parameters.slice(P.AttackFrames)] : preset.parameters;
   const root = useRef<HTMLElement>(null);
   const [preview] = useState(() => new WavetablePreview(preset));
   const [client, setClient] = useState<PhysicalSynthClient>();
@@ -96,11 +100,11 @@ export function WavetableSynthEditor({ transport,onDeviceEngineLoaded }: { trans
         const grid=await c.readTuning();if(!disposed)setTuning(grid);
         setDevice(state); setReady(true); setFailed(false);
         if (state.instrument === wavetableEngine && !retainedDraft.current) {
-          const held = await c.readWavetable(), effects = await c.readEffects(), mono = await c.monoSettings();
+          const held = await c.readWavetable(), attack=await c.readWavetableAttack(held.patch), effects = await c.readEffects(), mono = await c.monoSettings();
           const crc = tableCrc(held.patch);
           const found = crc ? [...factoryTables, ...await listTables()].find(t => t.crc === crc) : undefined;
           if (!disposed && !retainedDraft.current)
-            resetPreset({...wavetablePreset('Device RAM', held.patch), effects, mono, table: found ? {id: found.id, name: found.name} : undefined});
+            resetPreset({...wavetablePreset('Device RAM', {...held.patch,attack}), effects, mono, table: found ? {id: found.id, name: found.name} : undefined});
         }
         setMessage(state.instrument === wavetableEngine ? state.state === 'playing' ? 'Wavetable running. Play the keys.' : 'Wavetable selected. Start the synth to play.' : retainedDraft.current ? 'Draft retained. Start synth to hear it.' : 'Start synth to load this sound.');
       } catch (error) { if (!disposed) fail(error); } finally { statusPolling = false; }
@@ -128,14 +132,14 @@ export function WavetableSynthEditor({ transport,onDeviceEngineLoaded }: { trans
   const queue = (key: string, update: () => Promise<unknown>) => { if (client && deviceRef.current?.instrument === wavetableEngine) edits.current.set(key, update); };
   const operation = async (run: () => Promise<PhysicalState>, label: string) => {
     setOperationLabel(label); setFailed(false); setLoading(true);
-    try { const state = await run(); if (alive.current) { setDevice(state); setMessage(state.state === 'playing' ? 'Sound updated · play the keys.' : 'Wavetable patch loaded.'); } }
-    catch (error) { fail(error); } finally { if (alive.current) setLoading(false); }
+    try { const state = await run(); if (alive.current) { setDevice(state); setMessage(state.state === 'playing' ? 'Sound updated · play the keys.' : 'Wavetable patch loaded.'); } return true; }
+    catch (error) { fail(error);return false; } finally { if (alive.current) setLoading(false); }
   };
   const settle = async () => { edits.current.clear(); while (flushing.current && alive.current) await new Promise(r => setTimeout(r, 15)); };
   const loadOnDevice = (next: WavetablePreset, start: boolean) => client && ready ? operation(async () => {
     await settle(); const state = await client.status();
-    let tableChanged=state.instrument!==wavetableEngine;
-    if(!tableChanged){const held=await client.readWavetable();tableChanged=tableCrc(held.patch)!==tableCrc(next);}
+    let tableChanged=state.instrument!==wavetableEngine,attackChanged=Boolean(next.attack),attackRestart=false;
+    if(!tableChanged){const held=await client.readWavetable();tableChanged=tableCrc(held.patch)!==tableCrc(next);attackChanged=[P.AttackFrames,P.AttackCrcLow,P.AttackCrcHigh].some(id=>held.patch.parameters[id]!==next.parameters[id]);}
     if(tableChanged||state.state==='stopped'){
       const crc=tableCrc(next);
       try{await client.selectWavetableTable(crc);}catch(error){
@@ -143,6 +147,7 @@ export function WavetableSynthEditor({ transport,onDeviceEngineLoaded }: { trans
         await client.selectWavetableTable(crc,asset.prepared);
       }
     }
+    if(next.attack&&(attackChanged||state.state==='stopped')){await client.setWavetableAttack(next.attack);attackRestart=state.state==='playing';}
     // The board admits a patch against the rack it holds; clear the previous
     // sound's rack first so the new patch and rack are each checked once.
     await client.effects({...next.effects, order: [], routes: next.effects.routes?.map(() => 0)});
@@ -152,7 +157,7 @@ export function WavetableSynthEditor({ transport,onDeviceEngineLoaded }: { trans
     await client.monoSettings(mono);
     await client.applyWavetable(next);
     await client.effects(next.effects);
-    return (start||restart||(tableChanged&&state.state==='playing')) && (await client.status()).state !== 'playing' ? client.start(wavetableEngine) : client.status();
+    return (start||restart||attackRestart||(tableChanged&&state.state==='playing')) && (await client.status()).state !== 'playing' ? client.start(wavetableEngine) : client.status();
   }, start ? 'Starting wavetable…' : 'Loading sound…') : Promise.resolve();
   const apply = async (next: WavetablePreset) => { retainedDraft.current = true; resetPreset(next); setTool('value'); setLocked(false); setRouteMenu(undefined); setTables(await listTables().catch(()=>[])); if (onDevice) await loadOnDevice(next, false); };
   const restore = (direction: 'undo' | 'redo') => { setRouteMenu(undefined); const next = direction === 'undo' ? undo() : redo(); if (next && onDevice) void loadOnDevice(next, false); };
@@ -184,6 +189,21 @@ export function WavetableSynthEditor({ transport,onDeviceEngineLoaded }: { trans
     if(partialField(id)>=0||(id===P.Resonator&&option(P.Resonator,input)===3)){setFields({[id]:input});return;}
     const next={...preset,parameters:preset.parameters.map((v,i)=>i===id?input:v)};if(!canUse(next))return;
     retainedDraft.current=true;setPreset(next);queue(`p${id}`,()=>client!.editWavetable(id,input));
+  };
+  const useAttack=async(sample:SampleExciter,preview=false)=>{
+    const attack=validateAttack({name:sample.name,frames:sample.frames})!,parameters=[...preset.parameters],crc=sampleChecksum(attack.frames);
+    parameters[P.AttackFrames]=attack.frames.length;parameters[P.AttackCrcLow]=crc&65535;parameters[P.AttackCrcHigh]=crc>>>16;
+    parameters[P.TransientShape]=optionValue(P.TransientShape,3);parameters[P.Transient]=sample.gain;
+    const next={...preset,parameters,attack};if(!canUse(next))throw Error('Reduce voices or effects before adding the attack.');
+    retainedDraft.current=true;setPreset(next);
+    if(client&&ready){if(await loadOnDevice(next,preview)===false)throw Error('Could not load the attack sample.');if(preview)await client.previewWavetableAttack();}
+    else if(preview)throw Error('Connect Advanced to preview through the synth.');
+  };
+  const chooseAttack=(value:string)=>{
+    if(value==='import'){setAttackOpen(true);return;}
+    if(value.startsWith('sample:')){const attack=factoryAttackSamples[Number(value.slice(7))];void useAttack({...defaultSample(),...attack,enabled:true,gain:p[P.Transient]||30000}).catch(fail);return;}
+    if(value==='custom'){setParameter(P.TransientShape,optionValue(P.TransientShape,3));return;}
+    setFields({[P.TransientShape]:optionValue(P.TransientShape,Number(value)),[P.Transient]:p[P.Transient]||30000,[P.AttackRoot]:Number(value)===1?54172:34125});
   };
   const setModSetting = (bank: number, id: number, value: number) => {
     retainedDraft.current = true; setPreset(x => ({...x, mod: x.mod.map((m, b) => b === bank ? m.map((v, i) => i === id ? value : v) : m) as [number[], number[]]}));
@@ -306,6 +326,7 @@ export function WavetableSynthEditor({ transport,onDeviceEngineLoaded }: { trans
     <PreviewNote>{(_key, held) => <SignalFlow stages={flow} subActive={p[P.Sub] > 0} playing={held} onSelect={select}/>}</PreviewNote>
 
     <datalist id="wt-ratio-choices">{['1/4','1/3','1/2','1/1','5/4','4/3','3/2','5/3','7/4','2/1','3/1','4/1'].map(v=><option key={v} value={v}/>)}</datalist>
+    {attackOpen&&<SampleEditor progress={progress} options={{maxFrames:maxAttackFrames,looping:false,title:'Wavetable attack',previewLabel:'Preview in synth',gainLabel:'Attack level',gainText:v=>`${Math.round(v/65535*100)}%`}} sample={{...defaultSample(),name:preset.attack?.name??'',frames:preset.attack?.frames??[],gain:p[P.Transient]||30000}} onApply={sample=>useAttack(sample)} onPreview={sample=>useAttack(sample,true)} onClose={()=>setAttackOpen(false)}/>}
     {partsOpen&&<PartialsDialog onClose={()=>setPartsOpen(false)}><p>Shape four resonances. Ratios preserve their musical relationships; steps and periods follow the selected tuning. Editing a partial creates a Custom body.</p><div className="wt-partial-presets"><button onClick={()=>setParameter(P.Resonator,optionValue(P.Resonator,1))}>Bell</button><button onClick={()=>setParameter(P.Resonator,optionValue(P.Resonator,2))}>Wood</button><button onClick={()=>{const values:Record<number,number>={};[1,2,3,4].forEach((n,j)=>{values[P.Partial1Mode+j*7]=optionValue(P.Partial1Mode,1);values[P.Partial1Interval+j*7]=32768;values[P.Partial1Num+j*7]=n;values[P.Partial1Den+j*7]=1;});setFields(values);}}>Harmonic</button><button onClick={()=>{const values:Record<number,number>={};[1,3,3,6].forEach((n,j)=>{values[P.Partial1Mode+j*7]=optionValue(P.Partial1Mode,1);values[P.Partial1Interval+j*7]=32768;values[P.Partial1Num+j*7]=n;values[P.Partial1Den+j*7]=j===1?2:1;});setFields(values);}}>Open fifths</button></div><div className="wt-partial-controls">{Array.from({length:4},(_,j)=>{const at=P.Partial1Mode+j*7;return <fieldset key={j}><legend>Partial {j+1}</legend><IntervalControls label={`Partial ${j+1}`} parameters={p} spec={{mode:at,amount:at+1,num:at+2,den:at+3}} disabled={busy} onFields={setFields} control={control}/><div className="knob-bank">{control(at+4,'Level')}{control(at+5,'Decay')}{control(at+6,'Pan')}</div></fieldset>;})}</div></PartialsDialog>}
     <div className="wt-workspace">
       <div className="wt-stages">
@@ -329,7 +350,7 @@ export function WavetableSynthEditor({ transport,onDeviceEngineLoaded }: { trans
           {choice(P.UnisonMode,unisonNames,'Unison mode')}<div className="knob-bank">{option(P.UnisonMode,p[P.UnisonMode])===0?control(P.Detune):option(P.UnisonMode,p[P.UnisonMode])===1?control(P.BeatRate):null}{control(P.Width)}{control(P.EdgeBlend)}</div>{option(P.UnisonMode,p[P.UnisonMode])===2&&<IntervalControls label="Stack" parameters={p} spec={{mode:P.StackPitchMode,amount:P.StackInterval,num:P.StackRatioNum,den:P.StackRatioDen}} disabled={busy} onFields={setFields} control={control}/>}{choice(P.PhaseMode,['Random','Reset','Evenly spread'],'Start phase')}<p className="panel-note">Start phase applies to new notes. Reset strengthens the attack; evenly spread can thin a stack at very low detune.</p>
         </>)}
         {stage('layers', 'Layers', p[P.Noise] > 0 || p[P.Transient] > 0 || p[P.Sub] > 0, <>
-          <div className="wt-layer"><div className="knob-bank">{control(P.Noise)}{control(P.Transient, 'Attack transient')}</div>{choice(P.TransientShape, transientNames, 'Transient shape')}</div>
+          <div className="wt-layer"><div className="knob-bank">{control(P.Noise)}{control(P.Transient,'Attack level')}</div><label>Attack sample<select aria-label="Attack sample" disabled={busy} value={option(P.TransientShape,p[P.TransientShape])===3?'custom':String(option(P.TransientShape,p[P.TransientShape]))} onChange={e=>chooseAttack(e.target.value)}>{transientNames.slice(0,3).map((name,i)=><option key={name} value={i}>{name}</option>)}{preset.attack&&<option value="custom">{preset.attack.name}</option>}<optgroup label="Textures">{factoryAttackSamples.slice(0,3).map((sample,i)=><option key={sample.name} value={`sample:${i}`}>{sample.name}</option>)}</optgroup><optgroup label="Recordings · CC0">{factoryAttackSamples.slice(3).map((sample,i)=><option key={sample.name} value={`sample:${i+3}`}>{sample.name}</option>)}</optgroup><option value="import">Import audio…</option></select></label><div className="sample-access"><button type="button" disabled={busy} onClick={()=>setAttackOpen(true)}>{preset.attack?'Edit attack…':'Import attack…'}</button><span>{preset.attack?`${preset.attack.name} · ${(preset.attack.frames.length/16).toFixed(0)} ms`:'One short recording adds an independent onset or texture.'}</span></div><label>Attack playback<select aria-label="Attack playback" disabled={busy} value={option(P.AttackPlayback,p[P.AttackPlayback])} onChange={e=>setParameter(P.AttackPlayback,optionValue(P.AttackPlayback,Number(e.target.value)))}><option value="0">Fixed texture</option><option value="1">Follow note</option></select></label>{option(P.AttackPlayback,p[P.AttackPlayback])===1&&control(P.AttackRoot,'Sample root',v=>`${attackRootHz(v).toFixed(1)} Hz`)}<p className="panel-note">Fixed keeps the recording’s texture in every register. Follow note transposes the attack from its root frequency using the played pitch and tuning. The attack is audible with the body off.</p></div>
           <div className="wt-layer wt-sub"><div className="knob-bank">{control(P.Sub)}</div><IntervalControls label="Sub" parameters={p} spec={{mode:P.SubPitchMode,amount:P.SubCoarse,num:P.SubRatioNum,den:P.SubRatioDen,fine:P.SubFine}} disabled={busy} onFields={setFields} control={control}/>{choice(P.SubShape, ['Sine', 'Triangle'], 'Sub shape')}<small>Clean sub skips the resonator, filter and FX rack.</small></div>
         </>)}
         {stage('resonator', 'Resonator', resonator > 0, <>

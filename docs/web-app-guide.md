@@ -94,6 +94,17 @@ the top quarter of Drive lowers the ceiling. Level compensation is not drawn.
 and Wood–Metal Color, Intensity blends the EQ, and Focus sharpens its bands. Try Wooden Cabinet, Glass Chamber,
 Pinned Piano and Drifting Wire.
 
+The Advanced Wavetable Attack dropdown includes six CC0 impact recordings and
+three generated textures, plus Click, Tonal pop and Air puff. Import audio or
+Edit attack opens the shared sample editor for trimming, normalization and
+fades. Clips are mono, 16 kHz and at most 256 ms; Preview in synth auditions
+them through the whole sound. Attack level controls the blend and accepts
+modulation. Fixed playback preserves the texture across the keyboard; Follow
+note uses Root Hz to transpose a pitched clip with the played frequency and
+selected tuning. Recording partials retain their internal relationships. Use
+the tuned body for independently tuned partials. Portable sounds include the
+clip; native device presets reference the uploaded immutable asset.
+
 Drag knobs vertically; hold Shift for fine adjustment. The sticky toolbar
 keeps sources visible in Physical Strings and Wavetable. Click a source to arm
 it: available destinations glow faintly in its color, and unavailable or

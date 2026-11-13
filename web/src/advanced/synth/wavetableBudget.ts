@@ -26,7 +26,7 @@ export function wavetableCost(p: WavetablePatch & {effects?: FxRack}): Wavetable
     unison: (copies - 1) * (blend ? 82 : 52),
     intervals: option(P.UnisonMode,p.parameters[P.UnisonMode]) ? copies*(option(P.UnisonMode,p.parameters[P.UnisonMode])===2?8:4) : 0,
     warp: warp === 0 ? 0 : copies * (warp === 4 ? 17 : 12),
-    layers: (active(p, P.Noise) ? 8 : 0) + (active(p, P.Transient) ? 24 : 0) + (active(p, P.Sub) ? 10 : 0),
+    layers: (active(p, P.Noise) ? 8 : 0) + (active(p, P.Transient) ? 24+(option(P.AttackPlayback,p.parameters[P.AttackPlayback])?4:0) : 0) + (active(p, P.Sub) ? 10 : 0),
     resonator: resonator === 0 ? 0 : option(P.BodyMotion,p.parameters[P.BodyMotion])===2 ? 400 : 240,
     filter: filterOpen(p) ? 0 : 32,
     // Second oscillator: once per voice when heard or phase-modulating.

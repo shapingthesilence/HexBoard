@@ -445,3 +445,15 @@ WAV imports label detected pitch or show an explicit uncertain C4 placeholder; m
 Sampler authoring uses a single Recording/Mapping workspace and a fixed audition dock. `sampler/authoring.ts` owns tiny-periodic search and reversible PCM edits; `SamplerMidiInput.ts` preserves channel/note identity for browser audition. See [the workflow guide](../docs/sampler-tuning.md).
 
 Source pitch recognition uses short-frame normalized correlation with conservative precision refinement; rendered-loop verification retains its strict precision path. The Iowa pizzicato E2 regression fixture includes its source/license record. Native-rate filtering/downsampling is exposed only for Classic export.
+
+
+Advanced wavetable attacks use `wavetableAttack.ts`, schema v7 (97 parameters /
+165 words), and the shared `SampleEditor`. The editor disables looping and caps
+clips at 4096 mono 16 kHz frames. `sampleEditing.ts` owns preparation and CRC32;
+Physical Strings retains its longer sample and loop settings. The six CC0
+recordings, original OGG sources and provenance live in
+`src/advanced/synth/attack-samples/`. Regenerate prepared PCM with
+`npm run generate:attack-samples`; its resampler is pure and uses the pinned
+Vorbis decoder. Portable v7 sounds require matching PCM/count/CRC. Device files
+reference audio-owned immutable storage. Main/audio transfer operations 87–92
+and serial asset kind 2 are defined by Advanced's web-control protocol.

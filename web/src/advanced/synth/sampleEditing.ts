@@ -30,3 +30,6 @@ export function sampleLoopFromSelection(mode:0|1|2,trimStart:number,loopStart:nu
  let crossfade=Math.min(3200,Math.floor((end-start)/2),Math.round(crossfadeMs*sampleRate/1000));if(crossfade===1)crossfade=2;
  return {mode,start,end,crossfade};
 }
+
+// Shared PCM identity for both sample-attack instruments.
+export function sampleChecksum(frames:readonly number[]){let crc=0xffffffff;for(const v of frames)for(const byte of [v&255,(v>>8)&255]){crc^=byte;for(let i=0;i<8;i++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}return (crc^0xffffffff)>>>0;}

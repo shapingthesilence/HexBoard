@@ -1,0 +1,56 @@
+[
+  {
+    "name": "Glass tick",
+    "file": "impactGlass_light_000.ogg",
+    "sha256": "d750cf88097d0c3e69920e6e14496e1444e1a9da01aa4cca8f5ec8cb44c57b4f",
+    "creator": "Kenney",
+    "license": "CC0-1.0",
+    "sourceUrl": "https://kenney.nl/assets/impact-sounds",
+    "mirrorUrl": "https://raw.githubusercontent.com/GeorgeQLe/assets-sfx-combat/9662dc1bed3b06ae753045915f9accfac044c7ce/assets/kenney/impact-sounds/Audio/impactGlass_light_000.ogg"
+  },
+  {
+    "name": "Metal chip",
+    "file": "impactMetal_light_000.ogg",
+    "sha256": "33b5e6e37c6e9d54e07bf5a89b12c76e879f40c1ea83cdd82714df1d6f9fec6d",
+    "creator": "Kenney",
+    "license": "CC0-1.0",
+    "sourceUrl": "https://kenney.nl/assets/impact-sounds",
+    "mirrorUrl": "https://raw.githubusercontent.com/GeorgeQLe/assets-sfx-combat/9662dc1bed3b06ae753045915f9accfac044c7ce/assets/kenney/impact-sounds/Audio/impactMetal_light_000.ogg"
+  },
+  {
+    "name": "Wood tap",
+    "file": "impactWood_medium_000.ogg",
+    "sha256": "1723a9fd25103ed41af06054814e84e65f4a772bac86ab2dc927da93d9592ff5",
+    "creator": "Kenney",
+    "license": "CC0-1.0",
+    "sourceUrl": "https://kenney.nl/assets/impact-sounds",
+    "mirrorUrl": "https://raw.githubusercontent.com/GeorgeQLe/assets-sfx-combat/9662dc1bed3b06ae753045915f9accfac044c7ce/assets/kenney/impact-sounds/Audio/impactWood_medium_000.ogg"
+  },
+  {
+    "name": "Tin rattle",
+    "file": "impactTin_medium_000.ogg",
+    "sha256": "f4bbee66ca191ec744b84fc07ac9ed2a6fda955d51cfed8360f12b62815d3cbd",
+    "creator": "Kenney",
+    "license": "CC0-1.0",
+    "sourceUrl": "https://kenney.nl/assets/impact-sounds",
+    "mirrorUrl": "https://raw.githubusercontent.com/GeorgeQLe/assets-sfx-combat/9662dc1bed3b06ae753045915f9accfac044c7ce/assets/kenney/impact-sounds/Audio/impactTin_medium_000.ogg"
+  },
+  {
+    "name": "Felt scuff",
+    "file": "footstep_carpet_000.ogg",
+    "sha256": "b9524658b52a99a20590f8feefc103088637fd13ea8ec35811aee785e1f2f330",
+    "creator": "Kenney",
+    "license": "CC0-1.0",
+    "sourceUrl": "https://kenney.nl/assets/impact-sounds",
+    "mirrorUrl": "https://raw.githubusercontent.com/GeorgeQLe/assets-sfx-combat/9662dc1bed3b06ae753045915f9accfac044c7ce/assets/kenney/impact-sounds/Audio/footstep_carpet_000.ogg"
+  },
+  {
+    "name": "Plate shimmer",
+    "file": "impactPlate_light_000.ogg",
+    "sha256": "6e797cf8a5bfc52d7ed5eb47c227974c1cf2a674954fec5b539cea7d62c7282c",
+    "creator": "Kenney",
+    "license": "CC0-1.0",
+    "sourceUrl": "https://kenney.nl/assets/impact-sounds",
+    "mirrorUrl": "https://raw.githubusercontent.com/GeorgeQLe/assets-sfx-combat/9662dc1bed3b06ae753045915f9accfac044c7ce/assets/kenney/impact-sounds/Audio/impactPlate_light_000.ogg"
+  }
+]
