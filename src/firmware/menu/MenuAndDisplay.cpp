@@ -742,9 +742,7 @@ GEMItem menuItemUSBBootloader("Update Firmware", rebootToBootloader);
 void syncSettingsToRuntime(bool redrawMenu);
 void refreshMenuChoicesForCurrentTuning();
 void rebuildRuntimeStateFromCurrentSelection();
-void updateEditorMenuVisibility();
 void updateMainMenuDynamicLabels();
-void tuningIntonationModeChanged();
 void updateSerialDebugMenuVisibility();
 void serialDebugRuntimeChanged(GEMCallbackData callbackData);
 
@@ -1126,9 +1124,7 @@ void installHardwareSpecificMenuItems() {
 ////////////////////////////////////////////////////////////////
 
 const GEMSpinnerBoundariesByte spinnerBoundariesBPM = { 1, 255, 1 };
-GEMSpinner spinnerJustIntonationBPM(spinnerBoundariesBPM, GEM_LOOP);
 GEMSpinner spinnerSynthBPM(spinnerBoundariesBPM, GEM_LOOP);
-GEMSpinner spinnerBPM_MultiplierOfJI(spinnerBoundariesBPM, GEM_LOOP);
 
 ///////////////////////////////////////////////////////////////////
 
@@ -1566,18 +1562,6 @@ PersistentCallbackInfo callbackInfoCC74 = {
 GEMItem menuItemSelectCC74value("CC 74 Value", CC74value, spinnerCC74Value, universalSaveCallback,
                                 reinterpret_cast<void*>(&callbackInfoCC74));
 
-// Layout rotation selection
-SelectOptionByte optionByteLayoutRotation[] = { { "0 Deg", 0 }, { "60 Deg", 1 }, { "120 Deg", 2 }, { "180 Deg", 3 }, { "240 Deg", 4 }, { "300 Deg", 5 } };
-GEMSelect selectLayoutRotation(6, optionByteLayoutRotation);
-PersistentCallbackInfo callbackInfoLayoutRotation = {
-  static_cast<uint8_t>(SettingKey::LayoutRotation),
-  reinterpret_cast<void*>(&layoutRotation),
-  nullptr,
-  updateLayoutAndRotate
-};
-GEMItem menuItemSelectLayoutRotation("Layout Rot", layoutRotation, selectLayoutRotation, universalSaveCallback,
-                                     reinterpret_cast<void*>(&callbackInfoLayoutRotation));
-
 // Device/display rotation selection
 SelectOptionByte optionByteDeviceRotation[] = { { "0 Deg", 0 }, { "90 Deg", 1 }, { "180 Deg", 2 }, { "270 Deg", 3 } };
 GEMSelect selectDeviceRotation(sizeof(optionByteDeviceRotation) / sizeof(SelectOptionByte), optionByteDeviceRotation);
@@ -1590,85 +1574,6 @@ PersistentCallbackInfo callbackInfoDeviceRotation = {
 GEMItem menuItemSelectDeviceRotation("Device Rot", deviceRotation, selectDeviceRotation, universalSaveCallback,
                                      reinterpret_cast<void*>(&callbackInfoDeviceRotation));
 
-// Layout mirroring toggles
-PersistentCallbackInfo callbackInfoMirrorLR = {
-  static_cast<uint8_t>(SettingKey::MirrorLeftRight),
-  reinterpret_cast<void*>(&mirrorLeftRight),
-  nullptr,
-  updateLayoutAndRotate
-};
-GEMItem mirrorLeftRightGEMItem("Flip L/R", mirrorLeftRight, universalSaveCallback,
-                                reinterpret_cast<void*>(&callbackInfoMirrorLR));
-
-PersistentCallbackInfo callbackInfoMirrorUD = {
-  static_cast<uint8_t>(SettingKey::MirrorUpDown),
-  reinterpret_cast<void*>(&mirrorUpDown),
-  nullptr,
-  updateLayoutAndRotate
-};
-GEMItem mirrorUpDownGEMItem("Flip U/D", mirrorUpDown, universalSaveCallback,
-                             reinterpret_cast<void*>(&callbackInfoMirrorUD));
-
-// Dynamic just intonation toggles and parameters
-PersistentCallbackInfo callbackInfoJustIntonationBPMSync = {
-  static_cast<uint8_t>(SettingKey::JustIntonationBPMSync),
-  reinterpret_cast<void*>(&useJustIntonationBPM),
-  nullptr,
-  tuningIntonationModeChanged
-};
-GEMItem menuItemToggleJI_BPM("JI BPM Sync", useJustIntonationBPM, universalSaveCallback,
-                              reinterpret_cast<void*>(&callbackInfoJustIntonationBPMSync));
-
-PersistentCallbackInfo callbackInfoBeatBPM = {
-  static_cast<uint8_t>(SettingKey::BeatBPM),
-  reinterpret_cast<void*>(&justIntonationBPM),
-  nullptr,
-  refreshMidiRouting
-};
-GEMItem menuItemSetJI_BPM("Beat BPM", justIntonationBPM, spinnerJustIntonationBPM, universalSaveCallback,
-                          reinterpret_cast<void*>(&callbackInfoBeatBPM));
-
-PersistentCallbackInfo callbackInfoBPM_Mult = {
-  static_cast<uint8_t>(SettingKey::BPMMultiplier),
-  reinterpret_cast<void*>(&justIntonationBPM_Multiplier),
-  nullptr,
-  refreshMidiRouting
-};
-GEMItem menuItemSetJI_BPM_Multiplier("BPM Mult.", justIntonationBPM_Multiplier, spinnerBPM_MultiplierOfJI, universalSaveCallback,
-                                     reinterpret_cast<void*>(&callbackInfoBPM_Mult));
-
-PersistentCallbackInfo callbackInfoDynamicJI = {
-  static_cast<uint8_t>(SettingKey::DynamicJI),
-  reinterpret_cast<void*>(&useDynamicJustIntonation),
-  nullptr,
-  tuningIntonationModeChanged
-};
-GEMItem menuItemToggleDynamicJI("Dynamic JI", useDynamicJustIntonation, universalSaveCallback,
-                                reinterpret_cast<void*>(&callbackInfoDynamicJI));
-
-SelectOptionByte optionByteDynamicJIRatioTable[] = {
-  { "3Limit", DYNAMIC_JI_RATIO_TABLE_3_LIMIT },
-  { "5Limit", DYNAMIC_JI_RATIO_TABLE_5_LIMIT },
-  { "7Limit", DYNAMIC_JI_RATIO_TABLE_7_LIMIT },
-  { "11Limit", DYNAMIC_JI_RATIO_TABLE_11_LIMIT },
-  { "13Limit", DYNAMIC_JI_RATIO_TABLE_13_LIMIT },
-  { "17Limit", DYNAMIC_JI_RATIO_TABLE_17_LIMIT },
-  { "19Limit", DYNAMIC_JI_RATIO_TABLE_19_LIMIT },
-  { "23Limit", DYNAMIC_JI_RATIO_TABLE_23_LIMIT },
-  { "29Limit", DYNAMIC_JI_RATIO_TABLE_29_LIMIT },
-  { "31Limit", DYNAMIC_JI_RATIO_TABLE_31_LIMIT },
-  { "37Limit", DYNAMIC_JI_RATIO_TABLE_37_LIMIT },
-  { "41Limit", DYNAMIC_JI_RATIO_TABLE_41_LIMIT }
-};
-GEMSelect selectDynamicJIRatioTable(sizeof(optionByteDynamicJIRatioTable) / sizeof(SelectOptionByte), optionByteDynamicJIRatioTable);
-PersistentCallbackInfo callbackInfoDynamicJIRatioTable = {
-  static_cast<uint8_t>(SettingKey::DynamicJIRatioTable),
-  reinterpret_cast<void*>(&dynamicJIRatioTable),
-  nullptr,
-  refreshMidiRouting
-};
-GEMItem menuItemSelectDynamicJIRatioTable("JI Table", dynamicJIRatioTable, selectDynamicJIRatioTable, universalSaveCallback,
-                                          reinterpret_cast<void*>(&callbackInfoDynamicJIRatioTable));
 
 SelectOptionByte optionByteColor[] = { { "Rainbow", RAINBOW_MODE }, { "Diatonic", DIATONIC_COLOR_MODE }, { "Alt", ALTERNATE_COLOR_MODE }, { "Fifths", RAINBOW_OF_FIFTHS_MODE }, { "Piano", PIANO_COLOR_MODE }, { "Alt Piano", PIANO_ALT_COLOR_MODE }, { "Filament", PIANO_INCANDESCENT_COLOR_MODE }, { "Custom", CUSTOM_COLOR_MODE } };
 GEMSelect selectColor(sizeof(optionByteColor) / sizeof(SelectOptionByte), optionByteColor);
@@ -2684,27 +2589,6 @@ void playbackModeChanged() {
   updateSynthMenuVisibility();
 }
 
-void updateEditorMenuVisibility() {
-  byte currentIndex = menuPageEditor.getCurrentMenuItemIndex();
-
-  menuItemSelectDynamicJIRatioTable.hide(!useDynamicJustIntonation);
-  menuItemSetJI_BPM.hide(!useJustIntonationBPM);
-  menuItemSetJI_BPM_Multiplier.hide(!useJustIntonationBPM);
-
-  byte itemCount = menuPageEditor.getItemsCount();
-  if (itemCount > 0) {
-    if (currentIndex >= itemCount) {
-      currentIndex = itemCount - 1;
-    }
-    menuPageEditor.setCurrentMenuItemIndex(currentIndex);
-  }
-}
-
-void tuningIntonationModeChanged() {
-  updateEditorMenuVisibility();
-  refreshMidiRouting();
-}
-
 byte normalizeDynamicJIRatioTable(byte value) {
   switch (value) {
     case DYNAMIC_JI_RATIO_TABLE_3_LIMIT:
@@ -2814,11 +2698,9 @@ void syncSettingsToRuntime(bool redrawMenu) {
   programChange = settingValue(SettingKey::ProgramChange);
 
   useJustIntonationBPM = settingEnabled(SettingKey::JustIntonationBPMSync);
-  justIntonationBPM = settingValue(SettingKey::BeatBPM);
   justIntonationBPM_Multiplier = settingValue(SettingKey::BPMMultiplier);
   useDynamicJustIntonation = settingEnabled(SettingKey::DynamicJI);
   dynamicJIRatioTable = normalizeDynamicJIRatioTable(settingValue(SettingKey::DynamicJIRatioTable));
-  updateEditorMenuVisibility();
   bootAnimationEnabled = settingEnabled(SettingKey::BootAnimationEnabled);
   noteDisplayMode = normalizeNoteDisplayMode(settingValue(SettingKey::DisplayPlayedNotes));
   settings[static_cast<uint8_t>(SettingKey::DisplayPlayedNotes)] = noteDisplayMode;
@@ -3373,16 +3255,7 @@ void setupColorsMenuPage() {
 void setupEditorMenuPage() {
   menuPageMain.addMenuItem(menuGotoEditor);
   menuPageEditor.addMenuItem(menuGotoSynth);
-  menuPageEditor.addMenuItem(menuItemToggleDynamicJI);
-  menuPageEditor.addMenuItem(menuItemSelectDynamicJIRatioTable);
-  menuPageEditor.addMenuItem(menuItemToggleJI_BPM);
-  menuPageEditor.addMenuItem(menuItemSetJI_BPM);
-  menuPageEditor.addMenuItem(menuItemSetJI_BPM_Multiplier);
-  menuPageEditor.addMenuItem(menuItemSelectLayoutRotation);
-  menuPageEditor.addMenuItem(mirrorLeftRightGEMItem);
-  menuPageEditor.addMenuItem(mirrorUpDownGEMItem);
   menuPageEditor.addMenuItem(menuItemSelectDeviceRotation);
-  updateEditorMenuVisibility();
 }
 
 void setupSynthMenuPage() {

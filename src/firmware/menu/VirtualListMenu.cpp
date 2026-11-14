@@ -227,13 +227,24 @@ void drawRows() {
             break;
         }
       }
-      const bool checkboxRow = rowType(itemIndex) == VirtualListMenuRowType::Checkbox;
-      const bool valueRow = checkboxRow || rowType(itemIndex) == VirtualListMenuRowType::Value;
+      const VirtualListMenuRowType type = providerItemCount() == 0 ? VirtualListMenuRowType::Button : rowType(itemIndex);
+      const bool checkboxRow = type == VirtualListMenuRowType::Checkbox;
+      const bool valueRow = checkboxRow || type == VirtualListMenuRowType::Value;
+      // A Link or Label row may show a read-only value, such as the summary
+      // beside a link to a settings page.
+      char sideValue[16] = {};
+      const bool sideValueRow = (type == VirtualListMenuRowType::Link || type == VirtualListMenuRowType::Label)
+                                && activeProvider.getValue
+                                && activeProvider.getValue(activeProvider.context, itemIndex - 1, sideValue, sizeof(sideValue));
       // Leave room for a right-edge marker. Rows without an icon start one
       // character further left, so the same length already ends short of it.
-      const uint8_t labelLength = valueRow ? (VIRTUAL_LIST_VALUES_LEFT_OFFSET-6)/VIRTUAL_LIST_FONT_WIDTH
+      const uint8_t labelLength = (valueRow || sideValueRow) ? (VIRTUAL_LIST_VALUES_LEFT_OFFSET-6)/VIRTUAL_LIST_FONT_WIDTH
                                            : static_cast<uint8_t>(menuItemFullLength() - (icon ? 1 : 0));
       printMenuString(label, labelLength);
+      if (sideValueRow) {
+        u8g2.setCursor(VIRTUAL_LIST_VALUES_LEFT_OFFSET, yText);
+        printMenuString(sideValue, (u8g2.getDisplayWidth() - 8 - VIRTUAL_LIST_VALUES_LEFT_OFFSET) / VIRTUAL_LIST_FONT_WIDTH);
+      }
       if (checkboxRow) {
         u8g2.drawFrame(VIRTUAL_LIST_VALUES_LEFT_OFFSET, yDraw, 7, 7);
         if (activeProvider.isChecked

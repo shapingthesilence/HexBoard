@@ -976,7 +976,7 @@ namespace {
 constexpr SettingKey geometryAuditionKeys[] = {
   SettingKey::CurrentTuning, SettingKey::CurrentLayout, SettingKey::CurrentScale,
   SettingKey::CurrentKeyStepsFromA, SettingKey::CurrentKeyStepsFromAHigh, SettingKey::ColorMode,
-  SettingKey::DeviceRotation, SettingKey::LayoutRotation, SettingKey::MirrorLeftRight, SettingKey::MirrorUpDown
+  SettingKey::DeviceRotation
 };
 constexpr size_t GEOMETRY_AUDITION_KEY_COUNT = sizeof(geometryAuditionKeys) / sizeof(geometryAuditionKeys[0]);
 
@@ -1061,10 +1061,7 @@ bool restoreGeometryAuditionCommitted() {
   }
   current.keyStepsFromA = committed.keyStepsFromA;
   colorMode = settingValue(SettingKey::ColorMode);
-  layoutRotation = settingValue(SettingKey::LayoutRotation) % 6;
   deviceRotation = settingValue(SettingKey::DeviceRotation) % 4;
-  mirrorLeftRight = settingEnabled(SettingKey::MirrorLeftRight);
-  mirrorUpDown = settingEnabled(SettingKey::MirrorUpDown);
   return true;
 }
 
@@ -1502,14 +1499,11 @@ bool applyUserGeometryRuntimeLayout(const GeometryObjectSlot& object) {
   userGeometryRuntime.active = true;
   userGeometryRuntime.deviceRotation = storedDeviceRotation;
   userGeometryRuntime.layoutCenterStepsFromC = static_cast<int16_t>(centerStepsFromC);
+  // Layout rotation and the mirrors are profile settings applied on top of
+  // every layout; a record's own rotation and mirror fields are validated
+  // above but not applied.
   deviceRotation = storedDeviceRotation;
-  layoutRotation = storedLayoutRotation;
-  mirrorLeftRight = (mirrorFlags & 0x01u) != 0;
-  mirrorUpDown = (mirrorFlags & 0x02u) != 0;
   settings[static_cast<uint8_t>(SettingKey::DeviceRotation)] = deviceRotation;
-  settings[static_cast<uint8_t>(SettingKey::LayoutRotation)] = layoutRotation;
-  settings[static_cast<uint8_t>(SettingKey::MirrorLeftRight)] = mirrorLeftRight;
-  settings[static_cast<uint8_t>(SettingKey::MirrorUpDown)] = mirrorUpDown;
   clearUserGeometryButtonRuntimeOverrides();
   applyLayout();
   applyDeviceDisplayRotation();

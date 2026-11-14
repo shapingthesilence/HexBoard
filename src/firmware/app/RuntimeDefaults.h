@@ -108,7 +108,6 @@ extern uint64_t metronomeVisualFlashUntil;
 extern bool metronomeAccent;
 extern bool mirrorLeftRight;
 extern bool mirrorUpDown;
-extern byte justIntonationBPM;
 extern byte justIntonationBPM_Multiplier;
 extern bool useJustIntonationBPM;
 extern bool useDynamicJustIntonation;

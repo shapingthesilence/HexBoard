@@ -69,7 +69,6 @@ bool mirrorLeftRight = false;
 bool mirrorUpDown = false;
 
 //  Just Intonation related global variables
-byte justIntonationBPM = 60;
 byte justIntonationBPM_Multiplier = 1;
 bool useJustIntonationBPM = false;
 bool useDynamicJustIntonation = false;

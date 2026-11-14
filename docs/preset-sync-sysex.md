@@ -886,25 +886,25 @@ Recommended TLVs:
 | `0x24` | `DownLeftSteps` | `i16-le` |
 | `0x26` | `ExplicitButtonMapRef` | Object reference |
 | `0x27` | `DeviceRotation` | Required `u8`, `0..3` for `0/90/180/270` degrees |
-| `0x28` | `LayoutRotation` | `u8`, `0..5` for musical 60-degree rotations |
-| `0x29` | `MirrorFlags` | `u8` bit 0 left/right, bit 1 up/down |
+| `0x28` | `LayoutRotation` | `u8`, `0..5`; validated, not applied |
+| `0x29` | `MirrorFlags` | `u8` bit 0 left/right, bit 1 up/down; validated, not applied |
 | `0x2A` | `CenterStepsFromC` | Optional `i32-le`; generated pitch assigned to `CenterButton`, default `0` |
 
 This matches the current firmware pitch-layout model closely enough for simple
 on-device editing: choose tuning, center button, across steps, and down-left
 steps. `DeviceRotation` is the four-step physical/display orientation and does
-not alter pitches. `LayoutRotation` and `MirrorFlags` transform the musical
-vectors. Current factory layouts encode `DeviceRotation` plus the musical
-transform fields, with zero musical rotation and no mirrors.
+not alter pitches. Musical rotation and mirroring are profile settings
+(`LayoutRotation`, `MirrorLeftRight`, `MirrorUpDown`) applied on top of every
+layout, so firmware validates a layout's `LayoutRotation` and `MirrorFlags`
+but does not apply them. Hosts write `0` for both, as factory layouts do.
 `CenterStepsFromC` lets a host re-center or transpose the affine layout without
 changing pitches; current firmware accepts the range of its signed 16-bit step
 indices.
 
 Current firmware live Apply supports `LayoutKind = 1` vector layouts. Applying
 a layout replaces the runtime layout name, center button, center-step offset,
-vectors, device rotation, musical rotation, and mirrors; clears previous
-explicit button overrides; then rebuilds scale membership, MIDI pitch
-assignment, display orientation, and LED color caches.
+vectors, and device rotation; clears previous explicit button overrides; then
+rebuilds scale membership, MIDI pitch assignment, display orientation, and LED color caches.
 
 A web bundle may contain multiple `UserLayout` objects for the same tuning. A
 generated vector layout can still be edited on-device with the compact
@@ -919,8 +919,8 @@ DownLeftSteps = -UpRightSteps
 UpRightSteps = -DownLeftSteps
 ```
 
-Direct changes to `LayoutRotation` and `MirrorFlags` leave pitch, color, and
-action overrides attached to physical button indices. The web editor's spatial
+The on-device `Orientation` rotation and flips leave pitch, color, and action
+overrides attached to physical button indices. The web editor's spatial
 toolbar instead rewrites the vector layout and moves override coordinates
 together, centered on its primary selected key.
 

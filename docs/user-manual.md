@@ -160,9 +160,43 @@ edge of its row when it appears in the list. Selecting a tuning also loads the
 first linked layout, scale, colors, and custom key assignments so the
 board is immediately playable.
 
-Dynamic JI controls live under `Editor`.
+The first row, `Intonation`, shows the current just-intonation mode (`Fixed`,
+`Dyn JI`, `BPM JI`, or `Dyn+BPM`) and opens a page with:
 
-When MPE is active, Dynamic JI and JI BPM Sync send the closest MIDI note for
+- `Dynamic JI`
+- `JI Table` when `Dynamic JI` is on
+- `BPM Sync`
+- `BPM Mult` and `Sound Tempo` when `BPM Sync` is on
+
+These are profile settings: they apply to every tuning and stay as they are
+when you choose another tuning. Back returns to the tuning list.
+
+`JI Table` selects the maximum prime limit used by Dynamic JI ratio matching:
+`3Limit`, `5Limit`, `7Limit`, and higher options through `41Limit`. Lower-limit
+tables restrict the prime factors; higher-limit tables offer more interval
+choices.
+
+Dynamic JI tunes each new note against the oldest held note, preserving that
+note's existing adjustment when the original anchor is released. Matching uses
+actual frequency ratios across registers, including in non-octave tunings such
+as Bohlen-Pierce. Powers of two extend the ratio search without changing the
+tuning's layout or treating its repeat period as 1200 cents. An arbitrary
+non-rational period is approximated by JI like other intervals.
+
+Simple ratios within a quarter of a nominal tuning step are preferred. If none
+is close enough, Dynamic JI chooses the nearest ratio using a denser Pythagorean
+fallback that stays within every selectable prime limit. Notes therefore remain
+in a JI relationship to the anchor instead of falling back to static tuning.
+Fallback corrections can exceed a quarter step, especially in very fine tunings.
+
+`BPM Sync` retunes notes to a grid set by the current sound's `Tempo`
+(`Editor` -> `Synth` -> `Tempo`) multiplied by `BPM Mult`. `Sound Tempo` shows
+that tempo; it changes with the sound, not here. With both JI modes on,
+subsequent notes inherit the held anchor's BPM correction. If a BPM grid is too
+coarse to represent a note or the tuning reference above zero, that note skips
+BPM correction.
+
+When MPE is active, Dynamic JI and BPM Sync send the closest MIDI note for
 the final retuned pitch, then use pitch bend only for the remaining fractional
 part. The onboard synth uses the computed JI cents directly, so its JI pitch
 resolution is not limited by the `MPE Bend` setting.
@@ -186,7 +220,16 @@ Choosing a layout remaps button pitches, loads its custom key assignments when
 present, and restores that layout's default device
 rotation in 90-degree steps.
 
-Layout rotation, flip, and display rotation controls live under `Editor`.
+The first row, `Orientation`, shows `Normal`, `Rotated`, `Flipped`, or
+`Rot+Flp` and opens a page with:
+
+- `Rotation`, which turns the musical axes in 60-degree steps
+- `Flip L/R`, which mirrors the layout around the middle key, physical button `65`
+- `Flip U/D`, which mirrors the layout vertically across the grid
+
+Orientation is a profile setting applied on top of whichever layout is chosen,
+so it stays as it is when you change layout or tuning. Back returns to the
+layout list.
 
 ### Scale
 
@@ -249,46 +292,13 @@ choosing a new tuning, layout, scale, or profile.
 Options include:
 
 - `Synth`
-- `Dynamic JI`
-- `JI Table` when `Dynamic JI` is enabled
-- `JI BPM Sync`
-- `Beat BPM` when `JI BPM Sync` is enabled
-- `BPM Mult.` when `JI BPM Sync` is enabled
-- `Layout Rot`
-- `Flip L/R`
-- `Flip U/D`
 - `Device Rot`
 
-`JI Table` selects the maximum prime limit used by Dynamic JI ratio matching:
-`3Limit`, `5Limit`, `7Limit`, and higher options through `41Limit`. Lower-limit
-tables restrict the prime factors; higher-limit tables offer more interval
-choices.
-
-Dynamic JI tunes each new note against the oldest held note, preserving that
-note's existing adjustment when the original anchor is released. Matching uses
-actual frequency ratios across registers, including in non-octave tunings such
-as Bohlen-Pierce. Powers of two extend the ratio search without changing the
-tuning's layout or treating its repeat period as 1200 cents. An arbitrary
-non-rational period is approximated by JI like other intervals.
-
-Simple ratios within a quarter of a nominal tuning step are preferred. If none
-is close enough, Dynamic JI chooses the nearest ratio using a denser Pythagorean
-fallback that stays within every selectable prime limit. Notes therefore remain
-in a JI relationship to the anchor instead of falling back to static tuning.
-Fallback corrections can exceed a quarter step, especially in very fine tunings.
-
-`Beat BPM` and `BPM Mult.` control the BPM-synced retuning grid and are hidden
-when `JI BPM Sync` is off. With both JI modes enabled, subsequent notes inherit
-the held anchor's BPM correction. If a BPM grid is too coarse to represent a
-note or the tuning reference above zero, that note skips BPM correction.
-
-`Layout Rot` rotates the musical axes in 60-degree steps. `Flip L/R` mirrors
-the layout around the middle key, physical button `65`. `Flip U/D` mirrors the
-layout vertically across the grid. `Device Rot` changes the physical
-device/display orientation through `0`, `90`, `180`, and `270` degrees without
-changing the musical layout. User layouts can provide defaults for all four
-fields; the menu keeps the names distinct because device rotation never changes
-which pitch a physical key plays.
+`Device Rot` changes the physical device/display orientation through `0`, `90`,
+`180`, and `270` degrees without changing which pitch a physical key plays.
+Layouts can store a default device rotation, which choosing the layout applies.
+Just-intonation controls are under `Tuning` -> `Intonation`, and layout rotation
+and flips under `Layout` -> `Orientation`.
 
 #### Synth
 

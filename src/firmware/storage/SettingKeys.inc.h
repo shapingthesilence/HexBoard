@@ -38,6 +38,8 @@ HEXBOARD_SETTING(GlobalBrightness, BRIGHT_DIM)
 HEXBOARD_SETTING(AnimationType, ANIMATE_BUTTON)
 HEXBOARD_SETTING(ProgramChange, 0)
 HEXBOARD_SETTING(JustIntonationBPMSync, 0)
+// Unused: JI BPM Sync follows the sound's Tempo. Kept so later keys keep
+// their stored positions.
 HEXBOARD_SETTING(BeatBPM, 60)
 HEXBOARD_SETTING(BPMMultiplier, 1)
 HEXBOARD_SETTING(DynamicJI, 0)
