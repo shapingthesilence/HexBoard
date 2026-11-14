@@ -19,13 +19,15 @@ export function filterOpen(p: WavetablePatch) {
 }
 export function wavetableCost(p: WavetablePatch & {effects?: FxRack}): WavetableCost {
   const copies = option(P.Unison, p.parameters[P.Unison]) + 1, warp = option(P.WarpMode, p.parameters[P.WarpMode]);
-  const blend = p.parameters[P.Brightness] < 65470 || routed(p, P.Brightness);
+  // Warp sweeps cross spectral levels at full Brightness too, including live knob edits.
+  const blend = p.parameters[P.Brightness] < 65470 || routed(p, P.Brightness) || warp !== 0;
   const resonator = option(P.Resonator, p.parameters[P.Resonator]);
   const cycles = {
     oscillator: 20 + (blend ? 82 : 52),  // Copy cost includes the per-sample pitch ramp.
     unison: (copies - 1) * (blend ? 82 : 52),
     intervals: option(P.UnisonMode,p.parameters[P.UnisonMode]) ? copies*(option(P.UnisonMode,p.parameters[P.UnisonMode])===2?8:4) : 0,
     warp: warp === 0 ? 0 : copies * (warp === 4 ? 17 : 12),
+    warpControl: warp === 4 ? 20 : warp === 3 ? 40 : warp === 2 ? 5 : 0,
     layers: (active(p, P.Noise) ? 8 : 0) + (active(p, P.Transient) ? 24+(option(P.AttackPlayback,p.parameters[P.AttackPlayback])?4:0) : 0) + (active(p, P.Sub) ? 10 : 0),
     resonator: resonator === 0 ? 0 : option(P.BodyMotion,p.parameters[P.BodyMotion])===2 ? 400 : 240,
     filter: filterOpen(p) ? 0 : 32,
@@ -35,7 +37,7 @@ export function wavetableCost(p: WavetablePatch & {effects?: FxRack}): Wavetable
     osc2: active(p, P.Osc2Level) || active(p, P.PhaseMod) ? ([2, 3].includes(option(P.Osc2Shape, p.parameters[P.Osc2Shape])) ? 34 : 30) + (active(p, P.PhaseMod) ? 36 : 0) : 0
   };
   const stages: Record<WavetableStage, number> = {
-    oscillator: Math.round(cycles.oscillator * usPerCycle + fixedUs), osc2: Math.round(cycles.osc2 * usPerCycle), warp: Math.round(cycles.warp * usPerCycle), unison: Math.round(cycles.unison * usPerCycle)+Math.round(cycles.intervals*usPerCycle),
+    oscillator: Math.round(cycles.oscillator * usPerCycle + fixedUs), osc2: Math.round(cycles.osc2 * usPerCycle), warp: Math.round(cycles.warp * usPerCycle)+Math.round(cycles.warpControl*usPerCycle), unison: Math.round(cycles.unison * usPerCycle)+Math.round(cycles.intervals*usPerCycle),
     layers: Math.round(cycles.layers * usPerCycle), resonator: Math.round(cycles.resonator * usPerCycle), drive: Math.round(cycles.drive * usPerCycle), filter: Math.round(cycles.filter * usPerCycle),
     amp: 0, output: (p.effects ? p.effects.order.reduce((sum,id)=>sum+effectDspCost(id),fxRoutingUsage(p.effects).cost) : 0)
   };

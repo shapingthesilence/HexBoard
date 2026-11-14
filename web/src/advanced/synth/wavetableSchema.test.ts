@@ -121,7 +121,7 @@ it('pins the estimate the board enforces (Advanced wavetable_budget_test.cpp)',(
  const with_=(values:[number,number][])=>{const p=initialWavetable();for(const [id,v] of values)p.parameters[id]=v;return p;};
  const dense=with_([[P.Unison,optionValue(P.Unison,4)],[P.Brightness,34000],[P.WarpMode,optionValue(P.WarpMode,1)],[P.WarpAmount,24000],[P.Noise,12000],[P.Transient,12000],[P.Sub,24000],[P.Cutoff,45000],[P.Resonance,20000]]);
  const worst=with_([[P.Unison,optionValue(P.Unison,6)],[P.Brightness,40000],[P.WarpMode,optionValue(P.WarpMode,4)],[P.Noise,1],[P.Transient,1],[P.Sub,1],[P.Resonator,optionValue(P.Resonator,1)],[P.Resonance,1]]);
- expect([wavetableCost({...initialWavetable(),effects:defaultFx()}).us,wavetableCost({...initialWavetable(),effects:wavetableDefaultFx()}).us,wavetableCost({...initialWavetable(),effects:full()}).us,wavetableCost({...dense,effects:full()}).us,wavetableCost({...worst,effects:full()}).us]).toEqual([1012,1098,1833,2777,3921]);
+ expect([wavetableCost({...initialWavetable(),effects:defaultFx()}).us,wavetableCost({...initialWavetable(),effects:wavetableDefaultFx()}).us,wavetableCost({...initialWavetable(),effects:full()}).us,wavetableCost({...dense,effects:full()}).us,wavetableCost({...worst,effects:full()}).us]).toEqual([1012,1098,1833,2777,3974]);
  // Second oscillator: saw phase-modulating, and a heard sine.
  const pm={...dense,parameters:dense.parameters.map((v,i)=>i===P.Osc2Shape?optionValue(P.Osc2Shape,2):i===P.PhaseMod?30000:v)},heard={...dense,parameters:dense.parameters.map((v,i)=>i===P.Osc2Level?20000:v)};
  expect([wavetableCost({...pm,effects:full()}).us,wavetableCost({...heard,effects:full()}).us]).toEqual([2963,2857]);
@@ -143,4 +143,11 @@ describe('pitch, mono and second oscillator', () => {
     expect(html.indexOf('wt-stage-osc2')).toBeLessThan(html.indexOf('wt-stage-warp'));
     for (const label of ['Osc 2 shape', 'Phase mod', 'Carrier unit', 'Fine', 'Voice mode']) expect(html).toContain(label);
   });
+});
+
+
+it('reserves spectral crossfades for warp sweeps and manual edits at full brightness',()=>{
+ const p=initialWavetable();p.parameters[P.WarpMode]=optionValue(P.WarpMode,4);
+ expect(wavetableCost(p).us).toBe(1439);
+ p.routes[2]={source:5,destination:P.WarpAmount,depth:65536};expect(wavetableCost(p).us).toBe(1439);
 });
