@@ -36,12 +36,12 @@ import {targetingEscape, sourceClickTool} from './modulationTargeting.ts';
 import {RouteChip, RouteMenu, dropDepth, useSourceDrag} from './modulationGestures.tsx';
 import {type FxRack,modulationRate, modulationSeconds} from './schema.ts';
 import {
-  P, S, unisonNames,bodyMotionNames,partialField,modSettingCount, osc2Names, filterNames, modulatable, option, optionValue, parameterCount,
+  P, S, driveNames, unisonNames,bodyMotionNames,partialField,modSettingCount, osc2Names, filterNames, modulatable, option, optionValue, parameterCount,
   resonatorNames, tableCrc, routeDepth, routesUsed, sameWavetable, sourceCount, transientNames, warpAmountDescription, warpNames, wavetableEngine,
   wavetableParameters, wavetablePreset, wavetableSourceColors, wavetableSourceShort, wavetableSources, withRoute, bipolarSource, type WavetablePreset
 } from './wavetableSchema.ts';
 import {filterOpen, wavetableCapacityUs, wavetableCost, wavetableSourceCost, wavetableRouteLimit, type WavetableStage} from './wavetableBudget.ts';
-import {FilterCurve, ResonatorPartials, SignalFlow, TableTerrain, UnisonField, WarpScope} from './WavetableVisuals.tsx';
+import {DriveScope, FilterCurve, ResonatorPartials, SignalFlow, TableTerrain, UnisonField, WarpScope} from './WavetableVisuals.tsx';
 import './PhysicalSynthEditor.css';
 import './SynthIdentity.css';
 import './WavetableSynthEditor.css';
@@ -53,7 +53,7 @@ const store = (key: string, value: unknown) => { try { writeStoredText(localStor
 const centredParameters = new Set<number>([P.StackInterval,...Array.from({length:4},(_,j)=>P.Partial1Pan+j*7),...Array.from({length:4},(_,j)=>P.Partial1Interval+j*7),P.Coarse, P.Fine, P.SubCoarse, P.SubFine, P.Osc2Coarse, P.Osc2Fine, P.FilterEnvelope, P.AmpAttackCurve, P.AmpDecayCurve, P.AmpReleaseCurve]);
 const stageOrder: {id: WavetableStage; label: string}[] = [
   {id: 'oscillator', label: 'Oscillator'}, {id: 'osc2', label: 'Osc 2'}, {id: 'warp', label: 'Warp'}, {id: 'unison', label: 'Unison'}, {id: 'layers', label: 'Layers'},
-  {id: 'resonator', label: 'Resonator'}, {id: 'filter', label: 'Filter'}, {id: 'amp', label: 'Amp'}, {id: 'output', label: 'Output'}
+  {id: 'resonator', label: 'Resonator'}, {id: 'drive', label: 'Drive'}, {id: 'filter', label: 'Filter'}, {id: 'amp', label: 'Amp'}, {id: 'output', label: 'Output'}
 ];
 function modText(id: number, v: number) {
   if (id === 2) return `${Math.round(v / 65535 * 100)}%`;
@@ -266,9 +266,9 @@ export function WavetableSynthEditor({ transport,onDeviceEngineLoaded }: { trans
     </fieldset>;
 
   const copies = option(P.Unison, p[P.Unison]) + 1, warpMode = option(P.WarpMode, p[P.WarpMode]), resonator = option(P.Resonator, p[P.Resonator]);
-  const filterBypassed = filterOpen(preset);
+  const filterBypassed = filterOpen(preset), filterOff = option(P.FilterBypass, p[P.FilterBypass]) === 1, driveMode = option(P.DriveMode, p[P.DriveMode]);
   const flow = stageOrder.map(s => ({...s, cost: pct(cost.stages[s.id]),
-    active: s.id === 'osc2' ? p[P.Osc2Level] > 0 || p[P.PhaseMod] > 0 : s.id === 'warp' ? warpMode > 0 : s.id === 'unison' ? copies > 1 : s.id === 'layers' ? p[P.Noise] > 0 || p[P.Transient] > 0 : s.id === 'resonator' ? resonator > 0 : s.id === 'filter' ? !filterBypassed : s.id === 'output' ? true : true}));
+    active: s.id === 'osc2' ? p[P.Osc2Level] > 0 || p[P.PhaseMod] > 0 : s.id === 'warp' ? warpMode > 0 : s.id === 'unison' ? copies > 1 : s.id === 'layers' ? p[P.Noise] > 0 || p[P.Transient] > 0 : s.id === 'resonator' ? resonator > 0 : s.id === 'drive' ? driveMode > 0 : s.id === 'filter' ? !filterBypassed : s.id === 'output' ? true : true}));
   const select = (id: string) => { setFocused(id); document.getElementById(`wt-stage-${id}`)?.scrollIntoView({behavior: 'smooth', block: 'nearest'}); window.setTimeout(() => setFocused(f => f === id ? undefined : f), 1200); };
   const editorBank = sourceEditor === undefined ? 0 : sourceEditor === S.Env1 || sourceEditor === S.Lfo1 ? 0 : 1;
   const hint = tool === 'modulate' ? `${wavetableSources[source]}${locked ? ' locked' : ''} → drag knobs · ${locked ? 'click it again or Esc to finish' : 'Shift-click to lock'}` : `Drag knobs or pictures · drag a source onto a knob · ⌥/Alt-drag adds ${wavetableSourceShort[source]} · drag a route ring or chip for depth`;
@@ -343,7 +343,7 @@ export function WavetableSynthEditor({ transport,onDeviceEngineLoaded }: { trans
           {choice(P.WarpMode, warpNames, 'Warp mode')}
           <PreviewValues ids={[P.WarpAmount, P.Frame, P.Brightness]}>{([amount, frame, brightness]) => <WarpScope table={selectedTable?.prepared} mode={warpMode} amount={amount} frame={frame} brightness={brightness}/>}</PreviewValues>
           <div className="knob-bank">{control(P.WarpAmount, warpMode === 4 ? 'Sync ratio' : 'Amount', v => warpAmountDescription(warpMode, v))}{control(P.WarpBias)}</div>
-        </>, warpMode ? 'Alias guard trades top-end sparkle for cleaner highs as warp adds harmonics.' : 'Bend the phase for new harmonics without another oscillator.')}
+        </>, warpMode === 4 ? 'Sync restarts the cycle at the ratio. Its level is matched to the plain table automatically.' : warpMode ? 'Alias guard trades top-end sparkle for cleaner highs as warp adds harmonics.' : 'Bend the phase for new harmonics without another oscillator.')}
         {stage('unison', 'Unison', copies > 1, <>
           {choice(P.Unison, ['1', '2', '3', '4', '5', '6', '7'], 'Unison voices')}
           <PreviewValues ids={[P.Detune,P.Width,P.FrameSpread,P.EdgeBlend,P.Coarse,P.Fine,P.StackInterval,P.BeatRate]}>{([detune,width,spread,blend,coarse,fine,stack,beat]) => {const values=p.map(v=>v/65535);for(const [id,v] of [[P.Detune,detune],[P.Coarse,coarse],[P.Fine,fine],[P.StackInterval,stack],[P.BeatRate,beat]])values[id]=v;return <UnisonField blend={blend} copies={copies} detune={detune} width={width} spread={spread} pitches={unisonPitches(preset,tuning,values)}/>;}}</PreviewValues>
@@ -358,11 +358,20 @@ export function WavetableSynthEditor({ transport,onDeviceEngineLoaded }: { trans
           <PreviewValues ids={[P.ResonatorTune, P.ResonatorDecay, P.ResonatorMix]}>{([tune, decay, mix]) => <ResonatorPartials mode={resonator} tune={tune} decay={decay} mix={mix} patch={preset} grid={tuning}/>}</PreviewValues>
           <div className="knob-bank">{control(P.ResonatorMix, 'Mix')}{control(P.BodyLevel)}{control(P.ResonatorTune,option(P.BodyMotion,p[P.BodyMotion])===3?'Partial focus':'Tune',v=>option(P.BodyMotion,p[P.BodyMotion])===3?`${(1+3*v/65535).toFixed(2)}`:`${(3*v/65535).toFixed(2)} periods`)}{control(P.NaturalTuned)}{control(P.ResonatorDecay)}{control(P.BodyAir)}</div>{choice(P.BodyMotion,bodyMotionNames,'Body movement')}<button type="button" disabled={busy} onClick={()=>setPartsOpen(true)}>Customize partials…</button><p className="panel-note">Follows the board’s current tuning · {tuning.count} steps · period ×{(2**tuning.period).toFixed(3)}. Sounds keep their interval choices when the tuning changes.</p>
         </>, resonator ? 'Body level balances wet and dry. Continuous sweep can leave the tuning; snapped/crossfaded pitches and partial-level movement follow it at 100% Tuned.' : undefined)}
+        {stage('drive', 'Drive', driveMode > 0, <>
+          {choice(P.DriveMode, driveNames, 'Drive shape')}
+          <PreviewValues ids={[P.Drive, P.Frame, P.Brightness, P.WarpAmount]}>{([drive, frame, brightness, amount]) => <DriveScope table={selectedTable?.prepared} mode={driveMode} amount={drive} frame={frame} brightness={brightness} warpMode={warpMode} warpAmount={amount}/>}</PreviewValues>
+          <div className="knob-bank">{control(P.Drive)}</div>
+        </>, driveMode ? 'Per voice, before the filter. Harder strikes and louder envelope stages distort more; level stays matched.' : 'Add grit ahead of the filter: Soft warms, Hard clips, Fold wraps the peaks.')}
         {stage('filter', 'Filter', !filterBypassed, <>
-          {choice(P.FilterMode, filterNames, 'Filter mode')}
+          <div className="source-tabs wt-choice" role="radiogroup" aria-label="Filter mode">
+            <button type="button" role="radio" aria-checked={filterOff} aria-pressed={filterOff} disabled={busy} onClick={() => setParameter(P.FilterBypass, 65535)}>Off</button>
+            {filterNames.map((name, i) => { const on = !filterOff && option(P.FilterMode, p[P.FilterMode]) === i; return <button type="button" role="radio" key={name} aria-label={name} title={name} aria-checked={on} aria-pressed={on} disabled={busy}
+              onClick={() => filterOff ? setFields({[P.FilterBypass]: 0, [P.FilterMode]: optionValue(P.FilterMode, i)}) : setParameter(P.FilterMode, optionValue(P.FilterMode, i))}>{name.replace('-pass', '')}</button>; })}
+          </div>
           <PreviewValues ids={[P.Cutoff]}>{([cutoff]) => <FilterCurve cutoff={p[P.Cutoff] / 65535} resonance={p[P.Resonance] / 65535} mode={option(P.FilterMode, p[P.FilterMode])} live={cutoff} disabled={busy || tool !== 'value'} onChange={(c, r) => { setParameter(P.Cutoff, c); setParameter(P.Resonance, r); }}/>}</PreviewValues>
           <div className="knob-bank">{control(P.Cutoff)}{control(P.Resonance)}{control(P.KeyTrack)}{control(P.FilterEnvelope, 'Env 1 amount')}</div>
-        </>, filterBypassed ? 'Fully open · bypassed to save DSP.' : 'Per voice, stereo. Envelope 1 moves the cutoff by Env 1 amount.')}
+        </>, filterOff ? 'Off · voices skip the filter. Its settings are kept.' : filterBypassed ? 'Fully open · bypassed to save DSP.' : 'Per voice, stereo. Envelope 1 moves the cutoff by Env 1 amount.')}
         {stage('amp', 'Amp', true, <>
           <CurvedEnvelope label="Amp" disabled={busy || tool !== 'value'}
             values={{attack: modulationSeconds(p[P.AmpAttack]), decay: modulationSeconds(p[P.AmpDecay]), sustain: p[P.AmpSustain] / 65535, release: modulationSeconds(p[P.AmpRelease])}}

@@ -4,7 +4,7 @@ import {useLayoutEffect, useMemo, useRef, type KeyboardEvent, type PointerEvent,
 import {animationEase} from '../../animation.ts';
 import {filterResponse} from './FilterResponse.tsx';
 import {levelBits} from './wavetable/prepare.mjs';
-import {cutoffHz} from './wavetableSchema.ts';
+import {cutoffHz, driveCurve, driveGain, driveMakeup} from './wavetableSchema.ts';
 import {usePreviewAnimation} from './SynthVisualPreview.tsx';
 import {CanvasPlot, plotDot, strokeWave, wavePath} from './CanvasPlot.tsx';
 // UI-only previews of the board's wavetable model. They follow the firmware's
@@ -128,6 +128,24 @@ export function WarpScope({mode, amount, frame, brightness,table}: {table?:Uint8
     ctx.strokeStyle = c.accent; ctx.lineWidth = 1.8; ctx.stroke();
     ctx.fillStyle = c.text; ctx.font = `10px ${c.font}`; ctx.fillText(top > 1.01 ? `×${top.toFixed(1)}` : 'phase', 8, 18);
     strokeWave(ctx, wave, 112, 54, 184, 44, scale); ctx.strokeStyle = c.trace; ctx.lineWidth = 2; ctx.stroke();
+  }}/>;
+}
+
+/** Drive: the shaping curve (input → output) beside the cycle it produces, over the clean cycle. */
+export function DriveScope({mode, amount, frame, brightness, warpMode, warpAmount, table}: {table?:Uint8Array;mode: number; amount: number; frame: number; brightness: number; warpMode: number; warpAmount: number}) {
+  const clean = useMemo(() => { const wave = table?assetWave(table,frame*15,brightness,warpMode,warpAmount,160):waveform(frameSpectrum(frame * 15, brightness), warpMode, warpAmount, 160), peak = peakOf([wave]); return wave.map(v => v / peak); }, [table, frame, brightness, warpMode, warpAmount]);
+  const pre = driveGain(amount), post = driveMakeup(amount);
+  const driven = useMemo(() => clean.map(v => post * driveCurve(mode, pre * v)), [clean, mode, pre, post]);
+  const curve = useMemo(() => Array.from({length: 97}, (_, i) => post * driveCurve(mode, pre * (i / 48 - 1))), [mode, pre, post]);
+  return <CanvasPlot className="wt-drive-scope" width={300} height={110} role="img" aria-label={mode ? `Drive preview · +${(24.08 * amount).toFixed(0)} dB into the shaper` : 'Drive preview · off'} paint={(ctx, c) => {
+    ctx.fillStyle = c.raised; ctx.strokeStyle = c.border; ctx.beginPath(); ctx.roundRect(4, 6, 96, 96, 6); ctx.fill(); ctx.stroke();
+    ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(4, 102); ctx.lineTo(100, 6); ctx.moveTo(4, 54); ctx.lineTo(100, 54); ctx.moveTo(52, 6); ctx.lineTo(52, 102); ctx.moveTo(112, 54); ctx.lineTo(296, 54); ctx.stroke(); ctx.setLineDash([]);
+    ctx.save(); ctx.beginPath(); ctx.rect(4, 6, 96, 96); ctx.clip(); ctx.beginPath();
+    curve.forEach((y, i) => { const py = Math.round((54 - y * 48) * 10) / 10; if (i) ctx.lineTo(4 + i, py); else ctx.moveTo(4, py); });
+    ctx.strokeStyle = c.accent; ctx.lineWidth = 1.8; ctx.stroke(); ctx.restore();
+    ctx.fillStyle = c.text; ctx.font = `10px ${c.font}`; ctx.fillText(mode ? `×${pre.toFixed(pre < 10 ? 1 : 0)} in` : 'clean', 8, 18);
+    if (mode) { strokeWave(ctx, clean, 112, 54, 184, 44, 1); ctx.setLineDash([4, 3]); ctx.strokeStyle = c.frame; ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]); }
+    strokeWave(ctx, driven, 112, 54, 184, 44, 1); ctx.strokeStyle = c.trace; ctx.lineWidth = 2; ctx.stroke();
   }}/>;
 }
 

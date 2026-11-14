@@ -45,7 +45,7 @@ describe('18-word envelope banks', () => {
     const patch = initialWavetable(); patch.parameters[P.AmpDecayCurve] = 9000; patch.mod[1][17] = 60000;
     const words = wavetableWords(patch);
     expect(words).toHaveLength(wordCount);
-    expect(editCount).toBe(97 + 36);
+    expect(editCount).toBe(100 + 36);
     expect(wavetableFromWords(words)).toEqual(patch);
     const v3 = {format: 'hexboard.wavetable.v3', name: 'Old', parameters: initialWavetable().parameters.slice(0, 34), mod: initialWavetable().mod.map(m => m.slice(0, 16)), routes: initialWavetable().routes};
     expect(() => wavetableFromUnknown(v3)).toThrow();

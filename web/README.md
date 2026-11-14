@@ -447,8 +447,8 @@ Sampler authoring uses a single Recording/Mapping workspace and a fixed audition
 Source pitch recognition uses short-frame normalized correlation with conservative precision refinement; rendered-loop verification retains its strict precision path. The Iowa pizzicato E2 regression fixture includes its source/license record. Native-rate filtering/downsampling is exposed only for Classic export.
 
 
-Advanced wavetable attacks use `wavetableAttack.ts`, schema v7 (97 parameters /
-165 words), and the shared `SampleEditor`. The editor disables looping and caps
+Advanced wavetable attacks use `wavetableAttack.ts`, schema v8 (100 parameters /
+168 words), and the shared `SampleEditor`. The editor disables looping and caps
 clips at 4096 mono 16 kHz frames. `sampleEditing.ts` owns preparation and CRC32;
 Physical Strings retains its longer sample and loop settings. The six CC0
 recordings, original OGG sources and provenance live in

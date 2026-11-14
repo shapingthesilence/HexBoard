@@ -8,13 +8,13 @@ import {P, S, option, routeCount, sourceCount, type WavetablePatch} from './wave
 // dual-bank crossfade); reserve 240 / 400. Rack costs use the shared model.
 export const wavetableCapacityUs = 2873;
 const fixedUs = 460, usPerCycle = 2.56 * 1.036;
-export type WavetableStage = 'oscillator' | 'osc2' | 'warp' | 'unison' | 'layers' | 'resonator' | 'filter' | 'amp' | 'output';
+export type WavetableStage = 'oscillator' | 'osc2' | 'warp' | 'unison' | 'layers' | 'resonator' | 'drive' | 'filter' | 'amp' | 'output';
 export interface WavetableCost {us: number; stages: Record<WavetableStage, number>; fits: boolean}
 const routed = (p: WavetablePatch, id: number) => p.routes.some(r => r.source < sourceCount && r.destination === id && r.depth !== 0);
 const active = (p: WavetablePatch, id: number) => p.parameters[id] > 0 || routed(p, id);
-/** True when the filter is bypassed: open low-pass with no resonance or movement. */
+/** True when the filter is bypassed: switched off, or an open low-pass with no resonance or movement. */
 export function filterOpen(p: WavetablePatch) {
-  return option(P.FilterMode, p.parameters[P.FilterMode]) === 0 && p.parameters[P.Cutoff] >= 65470 && p.parameters[P.Resonance] < 655 &&
+  return option(P.FilterBypass, p.parameters[P.FilterBypass]) === 1 || option(P.FilterMode, p.parameters[P.FilterMode]) === 0 && p.parameters[P.Cutoff] >= 65470 && p.parameters[P.Resonance] < 655 &&
     p.parameters[P.KeyTrack] === 0 && p.parameters[P.FilterEnvelope] === 32768 && ![P.Cutoff, P.Resonance, P.KeyTrack, P.FilterEnvelope].some(id => routed(p, id));
 }
 export function wavetableCost(p: WavetablePatch & {effects?: FxRack}): WavetableCost {
@@ -29,12 +29,14 @@ export function wavetableCost(p: WavetablePatch & {effects?: FxRack}): Wavetable
     layers: (active(p, P.Noise) ? 8 : 0) + (active(p, P.Transient) ? 24+(option(P.AttackPlayback,p.parameters[P.AttackPlayback])?4:0) : 0) + (active(p, P.Sub) ? 10 : 0),
     resonator: resonator === 0 ? 0 : option(P.BodyMotion,p.parameters[P.BodyMotion])===2 ? 400 : 240,
     filter: filterOpen(p) ? 0 : 32,
+    // Stereo antiderivative shaper: measured +204 to +292 µs at 8+2 voices (November 14).
+    drive: [0, 90, 90, 110][option(P.DriveMode, p.parameters[P.DriveMode])],
     // Second oscillator: once per voice when heard or phase-modulating.
     osc2: active(p, P.Osc2Level) || active(p, P.PhaseMod) ? ([2, 3].includes(option(P.Osc2Shape, p.parameters[P.Osc2Shape])) ? 34 : 30) + (active(p, P.PhaseMod) ? 36 : 0) : 0
   };
   const stages: Record<WavetableStage, number> = {
     oscillator: Math.round(cycles.oscillator * usPerCycle + fixedUs), osc2: Math.round(cycles.osc2 * usPerCycle), warp: Math.round(cycles.warp * usPerCycle), unison: Math.round(cycles.unison * usPerCycle)+Math.round(cycles.intervals*usPerCycle),
-    layers: Math.round(cycles.layers * usPerCycle), resonator: Math.round(cycles.resonator * usPerCycle), filter: Math.round(cycles.filter * usPerCycle),
+    layers: Math.round(cycles.layers * usPerCycle), resonator: Math.round(cycles.resonator * usPerCycle), drive: Math.round(cycles.drive * usPerCycle), filter: Math.round(cycles.filter * usPerCycle),
     amp: 0, output: (p.effects ? p.effects.order.reduce((sum,id)=>sum+effectDspCost(id),fxRoutingUsage(p.effects).cost) : 0)
   };
   const us = Object.values(stages).reduce((a, b) => a + b, 0);

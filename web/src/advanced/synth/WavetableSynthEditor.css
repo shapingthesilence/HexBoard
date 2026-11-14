@@ -11,7 +11,7 @@
 
 /* Signal flow rail */
 .wavetable-editor .wt-flow { position: relative; margin: 4px 0 10px; padding: 8px 8px 22px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-raised); }
-.wavetable-editor .wt-flow ol { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+.wavetable-editor .wt-flow ol { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
 .wavetable-editor .wt-flow li { position: relative; }
 .wavetable-editor .wt-flow li + li::before { content: ""; position: absolute; left: -12px; top: 50%; width: 12px; height: 2px; background: var(--border-strong); }
 .wavetable-editor .wt-flow li + li::after { content: ""; position: absolute; left: -5px; top: calc(50% - 3px); border: 4px solid transparent; border-left-color: var(--border-strong); }
@@ -20,7 +20,7 @@
 .wavetable-editor .wt-flow li[data-active] button { opacity: 1; border-color: var(--brand); background: var(--surface-accent); }
 .wavetable-editor .wt-flow-name { font-size: 11px; font-weight: 600; }
 .wavetable-editor .wt-flow-cost { font-size: 9px; color: var(--text-soft); font-variant-numeric: tabular-nums; }
-.wavetable-editor .wt-flow-sub { position: absolute; left: calc(44.4% + 4px); right: 8px; bottom: 5px; height: 12px; border: 1px dashed var(--border-strong); border-top: 0; border-radius: 0 0 8px 8px; opacity: .45; }
+.wavetable-editor .wt-flow-sub { position: absolute; left: calc(40% + 4px); right: 8px; bottom: 5px; height: 12px; border: 1px dashed var(--border-strong); border-top: 0; border-radius: 0 0 8px 8px; opacity: .45; }
 .wavetable-editor .wt-flow-sub[data-active] { opacity: 1; border-color: var(--wt-trace-2); }
 .wavetable-editor .wt-flow-sub span { position: absolute; left: 50%; bottom: -6px; transform: translateX(-50%); padding: 0 6px; background: var(--surface-raised); font-size: 9px; color: var(--text-soft); white-space: nowrap; }
 
@@ -42,7 +42,7 @@
 .wavetable-editor .wt-sub small { text-align: center; }
 
 /* Pictures */
-.wavetable-editor .wt-terrain, .wavetable-editor .wt-warp-scope, .wavetable-editor svg.wt-unison, .wavetable-editor svg.wt-partials, .wavetable-editor .wt-filter, .wavetable-editor svg.wt-envelope { display: block; width: 100%; height: auto; border-radius: 8px; background: var(--wt-scope); touch-action: none; }
+.wavetable-editor .wt-terrain, .wavetable-editor .wt-warp-scope, .wavetable-editor .wt-drive-scope, .wavetable-editor svg.wt-unison, .wavetable-editor svg.wt-partials, .wavetable-editor .wt-filter, .wavetable-editor svg.wt-envelope { display: block; width: 100%; height: auto; border-radius: 8px; background: var(--wt-scope); touch-action: none; }
 .wavetable-editor :is(svg, canvas)[role="slider"] { cursor: grab; }
 .wavetable-editor :is(svg, canvas)[role="slider"]:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .wavetable-editor .wt-axis { fill: var(--text-soft); font-size: 10px; }
@@ -69,8 +69,8 @@
   .wavetable-editor .wt-stage-oscillator { grid-column: span 4; }
 }
 @media (max-width: 720px) {
-  .wavetable-editor .wt-flow ol { grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 8px; }
-  .wavetable-editor .wt-flow li:nth-child(5)::before, .wavetable-editor .wt-flow li:nth-child(5)::after { display: none; }
+  .wavetable-editor .wt-flow ol { grid-template-columns: repeat(5, minmax(0, 1fr)); row-gap: 8px; }
+  .wavetable-editor .wt-flow li:nth-child(6)::before, .wavetable-editor .wt-flow li:nth-child(6)::after { display: none; }
   .wavetable-editor .wt-flow-sub { display: none; }
   .wavetable-editor .wt-stages { grid-template-columns: minmax(0, 1fr); }
   .wavetable-editor .wt-stage, .wavetable-editor .wt-stage-oscillator { grid-column: auto; }

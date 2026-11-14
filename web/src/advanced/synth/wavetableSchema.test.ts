@@ -1,7 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {P, S, effectiveWavetable, factoryWavetablePresets, initialWavetable, option, optionValue, routeKey, routesUsed, sourceCount, validWavetable, wavetableFromUnknown, wavetableFromWords, wavetablePreset, wavetableWords, withRoute, wordCount, editCount, wavetableFormat, wavetableDefaultFx} from './wavetableSchema.ts';
+import {P, S, effectiveWavetable, factoryWavetablePresets, initialWavetable, option, optionValue, routeKey, routesUsed, sourceCount, validWavetable, wavetableFromUnknown, wavetableFromWords, wavetablePreset, wavetableWords, withRoute, wordCount, editCount, wavetableFormat, wavetableDefaultFx, driveCurve, driveGain, driveMakeup} from './wavetableSchema.ts';
 import {wavetableCapacityUs, wavetableCost, filterOpen} from './wavetableBudget.ts';
 import {defaultFx} from './schema.ts';
 import {fxRoutePatch} from './fxRouting.ts';
@@ -56,6 +56,24 @@ describe('wavetable DSP estimate', () => {
     const us = wavetableCost({...combined, effects: wavetableDefaultFx()}).us;
     expect(us).toBeGreaterThan(2200); expect(us).toBeLessThan(2873); expect(us).toBeLessThan(wavetableCapacityUs);
   });
+  it('switches the filter off and charges drive like the board', () => {
+    const p = initialWavetable(), base = wavetableCost(p).us;
+    expect(filterOpen(p)).toBe(false);
+    p.parameters[P.FilterBypass] = 65535;
+    expect(filterOpen(p)).toBe(true); expect(wavetableCost(p).us).toBe(base - 85);
+    const driven = initialWavetable(); driven.parameters[P.DriveMode] = optionValue(P.DriveMode, 1);
+    expect(wavetableCost(driven).us).toBe(base + 239);
+    driven.parameters[P.DriveMode] = optionValue(P.DriveMode, 3); expect(wavetableCost(driven).us).toBe(base + 292);
+    expect(validWavetable(withRoute(driven, P.Drive, S.Pressure, 20000)!.patch)).toBe(true);
+    expect(withRoute(driven, P.Drive, S.Pressure, 20000)!.patch.routes.some(r => r.destination === P.Drive)).toBe(true);
+    for (const id of [P.DriveMode, P.FilterBypass]) { const bad = initialWavetable(); bad.routes[2] = {source: S.Pressure, destination: id, depth: 1}; expect(validWavetable(bad)).toBe(false); }
+  });
+  it('shapes drive like the board: unity slope, bounded, level-matched makeup', () => {
+    expect(driveCurve(1, .01)).toBeCloseTo(.01, 4); expect(driveCurve(1, 1.5)).toBeCloseTo(1); expect(driveCurve(1, -9)).toBe(-1);
+    expect(driveCurve(2, .5)).toBe(.5); expect(driveCurve(2, 3)).toBe(1);
+    expect(driveCurve(3, 1.5)).toBeCloseTo(.5); expect(driveCurve(3, 3)).toBeCloseTo(-1);
+    expect(driveGain(1)).toBe(16); expect(driveMakeup(1)).toBeCloseTo(.5);
+  });
   it('treats a fully open, unmoving low-pass as bypassed', () => {
     const p = initialWavetable(); p.parameters[P.Resonance] = 0;
     expect(filterOpen(p)).toBe(true);
@@ -73,7 +91,7 @@ describe('wavetable previews', () => {
   });
   it('renders offline in signal-flow order and in the engine selector', () => {
     const html = renderToStaticMarkup(createElement(WavetableSynthEditor, {}));
-    const order = ['Oscillator', 'Warp', 'Unison', 'Layers', 'Resonator', 'Filter', 'Amp', 'Output'].map(s => html.indexOf(`wt-stage-${s.toLowerCase()}`));
+    const order = ['Oscillator', 'Warp', 'Unison', 'Layers', 'Resonator', 'Drive', 'Filter', 'Amp', 'Output'].map(s => html.indexOf(`wt-stage-${s.toLowerCase()}`));
     expect(order.every((at, i) => at > 0 && (i === 0 || at > order[i - 1]))).toBe(true);
     // Continuous meter/readout updates must not become screen-reader announcements.
     expect(html).toContain('<output aria-live="off"');

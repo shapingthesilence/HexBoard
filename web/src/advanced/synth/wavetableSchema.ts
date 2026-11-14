@@ -7,7 +7,7 @@ import {fxRoutePatch} from './fxRouting.ts';
 // Wavetable patch: mirrors Advanced src/synth/wavetable_patch.h. Normalized U16
 // parameters, two envelope/LFO banks in the Physical Strings layout and sparse
 // source -> parameter routes, carried on the generic engine transport.
-export const wavetableEngine = 7, wavetableSchema = 7;  // Short sample attacks; current development format only.
+export const wavetableEngine = 7, wavetableSchema = 8;  // Voice drive and filter switch; current development format only.
 export const P = {
   Frame: 0, FrameSpread: 1, Unison: 2, Detune: 3, Width: 4, WarpMode: 5, WarpAmount: 6, WarpBias: 7, Brightness: 8,
   Noise: 9, Transient: 10, TransientShape: 11, Sub: 12, SubPitchMode: 13, SubShape: 14,
@@ -29,9 +29,11 @@ export const P = {
   Partial2Mode:71, Partial2Interval:72, Partial2Num:73, Partial2Den:74, Partial2Level:75, Partial2Decay:76, Partial2Pan:77,
   Partial3Mode:78, Partial3Interval:79, Partial3Num:80, Partial3Den:81, Partial3Level:82, Partial3Decay:83, Partial3Pan:84,
   Partial4Mode:85, Partial4Interval:86, Partial4Num:87, Partial4Den:88, Partial4Level:89, Partial4Decay:90, Partial4Pan:91,
-  AttackFrames:92,AttackCrcLow:93,AttackCrcHigh:94,AttackRoot:95,AttackPlayback:96
+  AttackFrames:92,AttackCrcLow:93,AttackCrcHigh:94,AttackRoot:95,AttackPlayback:96,
+  // Per-voice drive ahead of the filter, and the filter switch (0 = filter in use).
+  DriveMode:97, Drive:98, FilterBypass:99
 } as const;
-export const parameterCount = 97, modSettingCount = 18, routeCount = 16;
+export const parameterCount = 100, modSettingCount = 18, routeCount = 16;
 export const editCount = parameterCount + 2 * modSettingCount, wordCount = editCount + 2 * routeCount;
 export const S = {Velocity: 0, Pressure: 1, Release: 2, TiltX: 3, TiltY: 4, Env1: 5, Lfo1: 6, Env2: 7, Lfo2: 8, Joystick: 9, Pedal: 10} as const;
 export const sourceCount = 11;
@@ -42,9 +44,20 @@ export const wavetableSourceColors = ['#efb86b', '#5cdac6', '#b29aff', '#70b8ff'
 export const warpNames = ['Off', 'Fold', 'Poly', 'Duty', 'Sync'] as const;
 export const resonatorNames = ['Off', 'Bell', 'Wood', 'Custom'] as const;
 export const filterNames = ['Low-pass', 'Band-pass', 'High-pass'] as const;
+export const driveNames = ['Off', 'Soft', 'Hard', 'Fold'] as const;
+/** Drive pre-gain 2^(4 v) and the makeup that holds a loud note near its clean level. */
+export const driveGain = (v: number) => 2 ** (4 * v);
+export const driveMakeup = (v: number) => driveGain(v) ** -.25;
+/** The board's drive curves: unity-slope cubic to +-1, hard clip, triangle fold. */
+export function driveCurve(mode: number, x: number) {
+  if (mode === 3) { const u = x + 1 - 4 * Math.floor((x + 1) / 4); return u < 2 ? u - 1 : 3 - u; }
+  const a = Math.abs(x);
+  if (mode === 2) return a < 1 ? x : Math.sign(x);
+  return mode === 1 ? a < 1.5 ? x * (1 - 4 / 27 * a * a) : Math.sign(x) : x;
+}
 export const transientNames = ['Click', 'Tonal pop', 'Air puff', 'Custom sample'] as const;
 export const shapeNames = ['Sine', 'Triangle', 'Saw', 'Square'] as const;
-const optionCounts: Record<number, number> = {[P.Unison]: 7, [P.WarpMode]: 5, [P.TransientShape]: 4,[P.AttackPlayback]:2, [P.SubShape]: 2, [P.FilterMode]: 3, [P.Resonator]: 4, [P.Classic]: 2,[P.PhaseMode]:3,[P.Osc2Shape]:5};
+const optionCounts: Record<number, number> = {[P.Unison]: 7, [P.WarpMode]: 5, [P.TransientShape]: 4,[P.AttackPlayback]:2,[P.DriveMode]:4,[P.FilterBypass]:2, [P.SubShape]: 2, [P.FilterMode]: 3, [P.Resonator]: 4, [P.Classic]: 2,[P.PhaseMode]:3,[P.Osc2Shape]:5};
 export const pitchNames = ['Cents', 'Ratio', 'Tuning steps', 'Tuning periods'] as const;
 export const unisonNames = ['Cents', 'Beats / second', 'Interval stack'] as const;
 export const bodyMotionNames = ['Continuous sweep', 'Snapped pitches', 'Crossfaded pitches', 'Partial levels'] as const;
@@ -68,7 +81,7 @@ export const bipolarSource = (source: number, p?: WavetablePatch) => source === 
 
 export interface WavetableRoute {source: number; destination: number; depth: number}
 export interface WavetablePatch {parameters: number[]; mod: [number[], number[]]; routes: WavetableRoute[]}
-export const wavetableFormat = 'hexboard.wavetable.v7';
+export const wavetableFormat = 'hexboard.wavetable.v8';
 /** mono: Physical Strings' shared voice mode, priority and glide. */
 export interface WavetablePreset extends WavetablePatch {format: typeof wavetableFormat; name: string; effects: FxRack; table?: {id:string;name:string}; mono?: MonoConfig; attack?:AttackSample}
 /** New wavetable sounds start with the two-voice Ensemble in the shared FX rack. */
@@ -228,7 +241,10 @@ export const wavetableParameters: ParameterInfo[] = [
   ]).flat(),
   {name:'Attack frames',describe:v=>String(v)},{name:'Attack CRC low',describe:v=>String(v)},{name:'Attack CRC high',describe:v=>String(v)},
   {name:'Sample root',describe:v=>`${(20*100**(v/65535)).toFixed(1)} Hz`},
-  {name:'Attack playback',describe:v=>option(P.AttackPlayback,v)?'Follow note':'Fixed texture'}
+  {name:'Attack playback',describe:v=>option(P.AttackPlayback,v)?'Follow note':'Fixed texture'},
+  {name:'Drive shape',describe:v=>driveNames[option(P.DriveMode,v)]},
+  {name:'Drive',describe:v=>`+${(24.08*v/65535).toFixed(1)} dB`},
+  {name:'Filter',describe:v=>option(P.FilterBypass,v)?'Off':'On'}
 ];
 export function warpAmountDescription(mode: number, v: number) { return mode === 4 ? `×${(1 + 7 * v / 65535).toFixed(2)} sync` : pct(v); }
 

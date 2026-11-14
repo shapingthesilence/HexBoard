@@ -9,7 +9,7 @@ it('saves sample bytes with their checked identity and refuses missing or change
  const sound=wavetablePreset('Grain',{...p,attack});expect(wavetableFromUnknown(JSON.parse(JSON.stringify(sound)))).toEqual(sound);
  expect(()=>wavetableFromUnknown({...sound,attack:undefined})).toThrow('attack');
  const altered={...attack,frames:[...attack.frames]};altered.frames[100]^=1;expect(()=>wavetableFromUnknown({...sound,attack:altered})).toThrow('attack');
- expect(parameterCount).toBe(97);expect(wordCount).toBe(165);for(const id of [P.AttackFrames,P.AttackCrcLow,P.AttackCrcHigh,P.AttackRoot,P.AttackPlayback])expect(modulatable(id)).toBe(false);
+ expect(parameterCount).toBe(100);expect(wordCount).toBe(168);for(const id of [P.AttackFrames,P.AttackCrcLow,P.AttackCrcHigh,P.AttackRoot,P.AttackPlayback])expect(modulatable(id)).toBe(false);
  expect(validWavetable(p)).toBe(true);p.parameters[P.AttackFrames]=4097;expect(validWavetable(p)).toBe(false);
 });
 it('bounds short samples, keeps contrasting deterministic textures and exact tuning roots',()=>{
