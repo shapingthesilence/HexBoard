@@ -774,7 +774,8 @@ void openUserGeometryMenu(UserGeometryMenuKind kind) {
 }
 
 // Intonation (from Tuning) and Orientation (from Layout) hold profile
-// settings. They apply to every tuning and layout and are never part of one.
+// settings. They apply to every tuning and layout and are never part of one,
+// except Device Rot, which choosing a layout sets to that layout's default.
 enum class GeometrySettingRow : uint8_t {
   DynamicJI,
   JITable,
@@ -782,6 +783,7 @@ enum class GeometrySettingRow : uint8_t {
   BPMMultiplier,
   Tempo,
   Rotation,
+  DeviceRotation,
   FlipLeftRight,
   FlipUpDown
 };
@@ -813,6 +815,7 @@ void rebuildGeometrySettingRows() {
     }
   } else {
     add(GeometrySettingRow::Rotation);
+    add(GeometrySettingRow::DeviceRotation);
     add(GeometrySettingRow::FlipLeftRight);
     add(GeometrySettingRow::FlipUpDown);
   }
@@ -843,7 +846,8 @@ bool geometrySettingsLabel(void*, uint16_t index, char* output, size_t outputLen
     case GeometrySettingRow::BPMSync: label = "BPM Sync"; break;
     case GeometrySettingRow::BPMMultiplier: label = "BPM Mult"; break;
     case GeometrySettingRow::Tempo: label = "Sound Tempo"; break;
-    case GeometrySettingRow::Rotation: label = "Rotation"; break;
+    case GeometrySettingRow::Rotation: label = "Layout Rot"; break;
+    case GeometrySettingRow::DeviceRotation: label = "Device Rot"; break;
     case GeometrySettingRow::FlipLeftRight: label = "Flip L/R"; break;
     case GeometrySettingRow::FlipUpDown: label = "Flip U/D"; break;
   }
@@ -858,6 +862,7 @@ VirtualListMenuRowType geometrySettingsRowType(void*, uint16_t index) {
     case GeometrySettingRow::JITable:
     case GeometrySettingRow::BPMMultiplier:
     case GeometrySettingRow::Rotation:
+    case GeometrySettingRow::DeviceRotation:
       return VirtualListMenuRowType::Value;
     case GeometrySettingRow::Tempo:
       return VirtualListMenuRowType::Label;
@@ -893,6 +898,9 @@ bool geometrySettingsValue(void*, uint16_t index, char* output, size_t outputLen
       return true;
     case GeometrySettingRow::Rotation:
       snprintf(output, outputLength, "%u Deg", static_cast<unsigned>((layoutRotation % 6) * 60));
+      return true;
+    case GeometrySettingRow::DeviceRotation:
+      snprintf(output, outputLength, "%u Deg", static_cast<unsigned>((deviceRotation % 4) * 90));
       return true;
     default:
       return false;
@@ -958,6 +966,12 @@ void geometrySettingsAdjust(void*, uint16_t index, int delta) {
       layoutRotation = static_cast<byte>((layoutRotation % 6 + 6 + step) % 6);
       storeGeometryProfileSetting(SettingKey::LayoutRotation, layoutRotation);
       updateLayoutAndRotate();
+      break;
+    case GeometrySettingRow::DeviceRotation:
+      // Turns the screen and grid together; the keys keep their pitches.
+      deviceRotation = static_cast<byte>((deviceRotation % 4 + 4 + step) % 4);
+      storeGeometryProfileSetting(SettingKey::DeviceRotation, deviceRotation);
+      applyDeviceDisplayRotation();
       break;
     default:
       break;

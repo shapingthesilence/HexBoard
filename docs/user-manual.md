@@ -126,7 +126,7 @@ The main menu includes:
 - `Buzzer`
 - `Lights & Colors`
 - `Transpose`
-- `Editor`
+- `Synth`
 - `Profiles`
 - `Settings`
 
@@ -190,7 +190,7 @@ in a JI relationship to the anchor instead of falling back to static tuning.
 Fallback corrections can exceed a quarter step, especially in very fine tunings.
 
 `BPM Sync` retunes notes to a grid set by the current sound's `Tempo`
-(`Editor` -> `Synth` -> `Tempo`) multiplied by `BPM Mult`. `Sound Tempo` shows
+(`Synth` -> `Tempo`) multiplied by `BPM Mult`. `Sound Tempo` shows
 that tempo; it changes with the sound, not here. With both JI modes on,
 subsequent notes inherit the held anchor's BPM correction. If a BPM grid is too
 coarse to represent a note or the tuning reference above zero, that note skips
@@ -223,13 +223,17 @@ rotation in 90-degree steps.
 The first row, `Orientation`, shows `Normal`, `Rotated`, `Flipped`, or
 `Rot+Flp` and opens a page with:
 
-- `Rotation`, which turns the musical axes in 60-degree steps
+- `Layout Rot`, which turns the musical axes in 60-degree steps
+- `Device Rot`, which turns the screen and grid in 90-degree steps, for
+  example to hold the board sideways to suit a rotated layout; each key keeps
+  its pitch
 - `Flip L/R`, which mirrors the layout around the middle key, physical button `65`
 - `Flip U/D`, which mirrors the layout vertically across the grid
 
-Orientation is a profile setting applied on top of whichever layout is chosen,
-so it stays as it is when you change layout or tuning. Back returns to the
-layout list.
+`Layout Rot` and the flips are profile settings applied on top of whichever
+layout is chosen, so they stay as they are when you change layout or tuning.
+`Device Rot` is reset to the chosen layout's default when you choose a layout.
+Back returns to the layout list.
 
 ### Scale
 
@@ -284,23 +288,7 @@ the physical layout in place. Scale highlighting and `Scale Lock` follow each
 button's transposed note in the selected key and scale. Explicit per-key custom
 color overrides stay fixed.
 
-### Editor
-
-`Editor` contains fine controls that shape how the current setup behaves without
-choosing a new tuning, layout, scale, or profile.
-
-Options include:
-
-- `Synth`
-- `Device Rot`
-
-`Device Rot` changes the physical device/display orientation through `0`, `90`,
-`180`, and `270` degrees without changing which pitch a physical key plays.
-Layouts can store a default device rotation, which choosing the layout applies.
-Just-intonation controls are under `Tuning` -> `Intonation`, and layout rotation
-and flips under `Layout` -> `Orientation`.
-
-#### Synth
+### Synth
 
 This page controls the onboard synth.
 
@@ -489,7 +477,7 @@ the modulation direction, and `Off` disables it.
 each measure is accented.
 
 The top-level `Sound:<sound>` item and the `Sound:<sound>` item inside
-`Editor` -> `Synth` both open the `Sounds` list. The library holds up to
+`Synth` both open the `Sounds` list. The library holds up to
 `512` named presets in up to `32` folders, with up to `32` presets in each
 folder. Saving into a full folder or a full library is refused. Each settings profile remembers its selected
 synth preset or `Blank` state. Auto-save and manual profile saves also preserve
@@ -526,7 +514,7 @@ the app lists how many existing destination presets will be replaced and waits
 for confirmation.
 
 The load list also includes `Blank`. Loading from the top-level `Sound` item
-returns to the main menu; loading or saving from `Editor` -> `Synth` returns to
+returns to the main menu; loading or saving from `Synth` returns to
 `Synth`. Loading a preset changes only the current synth parameters and
 wavetable reference, which can still be preserved by profile auto-save. The
 currently loaded catalog preset shows a diamond at the right edge of its row

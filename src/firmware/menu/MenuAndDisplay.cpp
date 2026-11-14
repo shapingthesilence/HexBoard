@@ -611,9 +611,7 @@ GEMPage menuPageScales("Scales", menuPageMain);
 GEMItem menuGotoScales(mainScaleMenuLabel, menuPageScales);
 GEMPage menuPageColors("Lights & Colors", menuPageMain);
 GEMItem menuGotoColors("Lights & Colors", menuPageColors);
-GEMPage menuPageEditor("Editor", menuPageMain);
-GEMItem menuGotoEditor("Editor", menuPageEditor);
-GEMPage menuPageSynth("Synth", menuPageEditor);
+GEMPage menuPageSynth("Synth", menuPageMain);
 GEMItem menuGotoSynth("Synth", menuPageSynth);
 GEMPage menuPageSynthWavetableLoad("Wavetables", menuPageSynth);
 GEMItem menuGotoSynthWavetableLoad(currentSynthWavetableMenuLabel, menuPageSynthWavetableLoad);
@@ -1561,18 +1559,6 @@ PersistentCallbackInfo callbackInfoCC74 = {
 };
 GEMItem menuItemSelectCC74value("CC 74 Value", CC74value, spinnerCC74Value, universalSaveCallback,
                                 reinterpret_cast<void*>(&callbackInfoCC74));
-
-// Device/display rotation selection
-SelectOptionByte optionByteDeviceRotation[] = { { "0 Deg", 0 }, { "90 Deg", 1 }, { "180 Deg", 2 }, { "270 Deg", 3 } };
-GEMSelect selectDeviceRotation(sizeof(optionByteDeviceRotation) / sizeof(SelectOptionByte), optionByteDeviceRotation);
-PersistentCallbackInfo callbackInfoDeviceRotation = {
-  static_cast<uint8_t>(SettingKey::DeviceRotation),
-  reinterpret_cast<void*>(&deviceRotation),
-  nullptr,
-  applyDeviceDisplayRotation
-};
-GEMItem menuItemSelectDeviceRotation("Device Rot", deviceRotation, selectDeviceRotation, universalSaveCallback,
-                                     reinterpret_cast<void*>(&callbackInfoDeviceRotation));
 
 
 SelectOptionByte optionByteColor[] = { { "Rainbow", RAINBOW_MODE }, { "Diatonic", DIATONIC_COLOR_MODE }, { "Alt", ALTERNATE_COLOR_MODE }, { "Fifths", RAINBOW_OF_FIFTHS_MODE }, { "Piano", PIANO_COLOR_MODE }, { "Alt Piano", PIANO_ALT_COLOR_MODE }, { "Filament", PIANO_INCANDESCENT_COLOR_MODE }, { "Custom", CUSTOM_COLOR_MODE } };
@@ -3252,10 +3238,8 @@ void setupColorsMenuPage() {
   addPreviewMenuItem(menuPageColors, menuItemDimLedLevel, previewDimLedLevel);
 }
 
-void setupEditorMenuPage() {
-  menuPageMain.addMenuItem(menuGotoEditor);
-  menuPageEditor.addMenuItem(menuGotoSynth);
-  menuPageEditor.addMenuItem(menuItemSelectDeviceRotation);
+void setupSynthMenuLink() {
+  menuPageMain.addMenuItem(menuGotoSynth);
 }
 
 void setupSynthMenuPage() {
@@ -3467,7 +3451,7 @@ void setupMenu() {
   setupMainSynthPresetLoadMenuItem();
   setupColorsMenuPage();
   setupTransposeMenuItem();
-  setupEditorMenuPage();
+  setupSynthMenuLink();
   setupMidiMenuPage();
   setupControlMenuPage();
   setupSerialDebugMenuPage();
