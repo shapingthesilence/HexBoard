@@ -155,8 +155,8 @@ row marks the loaded item. Long names scroll when you leave the selection on the
 
 Use this section to choose the tuning for the whole board. Supplied factory
 tunings appear at the root in their original order, and additional saved
-tunings can be organized into folders. The active tuning shows a diamond in the left
-action-icon slot when it appears in the list. Selecting a tuning also loads the
+tunings can be organized into folders. The active tuning shows a diamond at the right
+edge of its row when it appears in the list. Selecting a tuning also loads the
 first linked layout, scale, colors, and custom key assignments so the
 board is immediately playable.
 
@@ -179,8 +179,8 @@ Changing tuning also resets:
 ### Layout
 
 Use this page to choose how pitch moves across the hex grid. Factory and saved
-layouts linked to the active tuning appear in a list. The active layout shows a diamond in
-the left action-icon slot when it appears in the list.
+layouts linked to the active tuning appear in a list. The active layout shows a diamond at
+the right edge of its row when it appears in the list.
 
 Choosing a layout remaps button pitches, loads its custom key assignments when
 present, and restores that layout's default device
@@ -195,7 +195,7 @@ Select `Key` to edit it with the encoder; back finishes editing.
 Select `Scale Lock` to toggle its checkbox.
 `Key` moves the scale root without retuning notes. `All Notes` includes every
 degree; the legacy `None` alias is omitted. Factory and saved scales linked to the
-active tuning appear in a list. The active scale shows a diamond in the left action-icon slot
+active tuning appear in a list. The active scale shows a diamond at the right edge of its row
 when it appears in the list.
 
 Choosing a scale updates scale membership while keeping the current user tuning,
@@ -370,7 +370,7 @@ which held notes were pressed, not the physical button numbers.
 Basic Shapes is the built-in rescue table. Supplied factory wavetables appear
 in the root directory, while user-imported wavetables can be organized into
 folders. Factory wavetables other than Basic Shapes can be edited or erased. The active
-wavetable shows a diamond in the left action-icon slot when it appears in the
+wavetable shows a diamond at the right edge of its row when it appears in the
 list. The factory image includes:
 
 - `Basic Shapes`: sine, triangle, saw, and square anchors
