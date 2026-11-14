@@ -2,15 +2,17 @@ import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {P,option,optionValue,pitchNames} from './wavetableSchema.ts';
 import {bipolar,defaultTuning,gridOffset,intervalDescription,intervalPitch,intervalValue,parseRatio,ratioText,type TuningGrid} from './wavetableIntervals.ts';
 export interface IntervalSpec{mode:number;amount:number;num:number;den:number;fine?:number}
-export function IntervalControls({label,parameters:p,spec,disabled,onFields,control}:{label:string;parameters:number[];spec:IntervalSpec;disabled:boolean;onFields:(values:Record<number,number>)=>void;control:(id:number,label?:string,describe?:(v:number)=>string)=>ReactNode}){
+/** Pitch as a unit, an optional ratio, and offset knobs. `before` places related knobs on the same row. */
+export function IntervalControls({label,parameters:p,spec,disabled,onFields,control,before}:{label:string;parameters:number[];spec:IntervalSpec;disabled:boolean;onFields:(values:Record<number,number>)=>void;control:(id:number,label?:string,describe?:(v:number)=>string)=>ReactNode;before?:ReactNode}){
  const mode=option(spec.mode,p[spec.mode]);
  const [text,setText]=useState(ratioText(p[spec.num],p[spec.den])),[invalid,setInvalid]=useState(false);
  useEffect(()=>{setText(ratioText(p[spec.num],p[spec.den]));setInvalid(false);},[p[spec.num],p[spec.den]]);
  const commit=()=>{const ratio=parseRatio(text);setInvalid(!ratio);if(ratio)onFields({[spec.num]:ratio[0],[spec.den]:ratio[1]});};
- return <div className="wt-interval"><label>{label} unit<select aria-label={`${label} unit`} disabled={disabled} value={mode} onChange={e=>onFields({[spec.mode]:optionValue(spec.mode,Number(e.target.value)),[spec.amount]:32768})}>{pitchNames.map((name,i)=><option key={name} value={i}>{name}</option>)}</select></label>
-  {mode===1&&<label>{label} ratio<input aria-label={`${label} ratio`} value={text} list="wt-ratio-choices" disabled={disabled} aria-invalid={invalid} onChange={e=>setText(e.target.value)} onBlur={commit} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}/>{invalid&&<small role="alert">Use a positive ratio such as 3/2, between 1/32 and 32.</small>}</label>}
-  <div className="knob-bank">{control(spec.amount,mode===1?'Offset':'Interval',v=>intervalDescription(mode,v))}{spec.fine!==undefined&&control(spec.fine,'Fine')}</div>
-  <small>{mode===1?'Ratio stays relative to the played note in every tuning.':mode===2?'Whole steps follow the board’s current tuning, including unequal intervals.':mode===3?'A period follows the tuning’s repeat interval.':'Cents are a fixed frequency interval.'}</small>
+ const help=mode===1?'Ratio stays relative to the played note in every tuning.':mode===2?'Whole steps follow the board’s current tuning, including unequal intervals.':mode===3?'A period follows the tuning’s repeat interval.':'Cents are a fixed frequency interval.';
+ return <div className="wt-interval">
+  <div className="wt-interval-fields"><label title={help}>Pitch unit<select aria-label={`${label} unit`} disabled={disabled} value={mode} onChange={e=>onFields({[spec.mode]:optionValue(spec.mode,Number(e.target.value)),[spec.amount]:32768})}>{pitchNames.map((name,i)=><option key={name} value={i}>{name}</option>)}</select></label>
+  {mode===1&&<label title="A ratio to the played note, such as 3/2">Ratio<input aria-label={`${label} ratio`} value={text} list="wt-ratio-choices" disabled={disabled} aria-invalid={invalid} onChange={e=>setText(e.target.value)} onBlur={commit} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}/>{invalid&&<small role="alert">Use a positive ratio such as 3/2, between 1/32 and 32.</small>}</label>}</div>
+  <div className="knob-bank">{before}{control(spec.amount,mode===1?'Offset':'Interval',v=>intervalDescription(mode,v))}{spec.fine!==undefined&&control(spec.fine,'Fine')}</div>
  </div>;
 }
 export function PartialsDialog({children,actions,onClose}:{children:ReactNode;actions?:ReactNode;onClose:()=>void}){
@@ -81,4 +83,29 @@ export function PartialsPicture({parts,grid=defaultTuning,active,disabled,onActi
    <rect x={panLeft} y={y-7} width={panRight-panLeft} height="14" rx="7"/><circle cx={panX(pans[index])} cy={y} r={(3+3.5*Math.sqrt(levels[index])).toFixed(1)}/>
   </g>;})}
  </svg>;
+}
+
+/** The attack recording at a glance. */
+/** Built-in attack shapes as loudness outlines: click, tonal pop, air puff. */
+const attackShapes=[(i:number)=>Math.exp(-i/2.5),(i:number)=>Math.exp(-i/11)*Math.abs(Math.sin(i*.8+.9)),(i:number)=>i/9*Math.exp(1-i/9)*(.55+.45*grain(i))];
+function grain(i:number){const x=Math.sin(i*127.1+3.3)*43758.5453;return x-Math.floor(x);}
+/** One strip for the layer mix: the attack burst at note-on over the steady noise bed, each as tall as its level. */
+export function LayersPicture({shape,frames,level,noise}:{shape:number;frames?:ArrayLike<number>;level:number;noise:number}){
+ const columns=120,span=columns,gain=level?level**.6:0,bed=noise?noise**.6:0;
+ let burst:number[];
+ if(frames?.length){const peak=Math.max(1,...Array.from(frames,Math.abs)),step=frames.length/span;
+  burst=Array.from({length:span},(_,i)=>{let top=0;for(let k=Math.floor(i*step);k<Math.min(frames.length,Math.floor((i+1)*step)+1);++k)top=Math.max(top,Math.abs(frames[k]));return top/peak;});
+ }else burst=Array.from({length:span},(_,i)=>(attackShapes[shape]??attackShapes[0])(i));
+ const bars=(height:(i:number)=>number,count:number)=>Array.from({length:count},(_,i)=>{const v=13*height(i);return v<.2?'':`M${i+.5} ${(14-v).toFixed(1)}V${(14+v).toFixed(1)}`;}).join('');
+ return <svg className="wt-layers-picture" viewBox={`0 0 ${columns} 28`} preserveAspectRatio="none" role="img" aria-label="Attack and noise levels">
+  <path className="wt-layers-axis" d={`M0 14H${columns}`}/>
+  <path className="wt-layers-ghost" d={bars(i=>burst[i],span)}/>
+  <path className="wt-layers-noise" d={bars(i=>bed*(.35+.65*grain(i+40)),columns)}/>
+  <path className="wt-layers-attack" d={bars(i=>gain*burst[i],span)}/>
+ </svg>;
+}
+/** Two cycles of the sub's wave, as tall as its level. */
+export function SubWave({triangle,level}:{triangle:boolean;level:number}){
+ const wave=(amp:number)=>`M${Array.from({length:49},(_,i)=>{const t=i/24%1,v=triangle?(t<.25?4*t:t<.75?2-4*t:4*t-4):Math.sin(2*Math.PI*t);return `${i} ${(12-amp*v).toFixed(1)}`;}).join('L')}`;
+ return <svg className="wt-sub-wave" viewBox="0 0 48 24" preserveAspectRatio="none" role="img" aria-label="Sub wave"><path className="wt-sub-ghost" d={wave(10)}/><path d={wave(level?10*level**.6:0)}/></svg>;
 }

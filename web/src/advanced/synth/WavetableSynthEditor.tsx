@@ -2,7 +2,7 @@ import {SampleEditor} from './SampleEditor.tsx';
 import {factoryAttackSamples,validateAttack,sampleChecksum,maxAttackFrames,attackRootHz} from './wavetableAttack.ts';
 import {defaultSample,type SampleExciter} from './schema.ts';
 import {AssetStorageSelector} from "./AssetStorageSelector.tsx";
-import {IntervalControls,PartialsDialog,PartialsPicture} from './WavetableIntervalControls.tsx';
+import {LayersPicture,SubWave,IntervalControls,PartialsDialog,PartialsPicture} from './WavetableIntervalControls.tsx';
 import {bodyPartials,unisonPitches,customBody,defaultTuning,type TuningGrid} from './wavetableIntervals.ts';
 import {MonoControls} from './MonoControls.tsx';
 import {PresetLibrary} from './PresetLibrary.tsx';
@@ -49,7 +49,7 @@ import './WavetableSynthEditor.css';
 // Browser storage can be unavailable (private windows, tests); nothing here depends on it.
 const stored = (key: string) => { try { return localStorage.getItem(key); } catch { return null; } };
 const store = (key: string, value: unknown) => { try { writeStoredText(localStorage, key, JSON.stringify(value)); } catch { /* Keep working without persistence. */ } };
-// Controls whose neutral value is the centre (double-click resets there).
+// Controls whose neutral value is the centre (double-click resets there). Level resets to 0 dB instead.
 const centredParameters = new Set<number>([P.StackInterval,...Array.from({length:4},(_,j)=>P.Partial1Pan+j*7),...Array.from({length:4},(_,j)=>P.Partial1Interval+j*7),P.Coarse, P.Fine, P.SubCoarse, P.SubFine, P.Osc2Coarse, P.Osc2Fine, P.FilterEnvelope, P.AmpAttackCurve, P.AmpDecayCurve, P.AmpReleaseCurve]);
 const stageOrder: {id: WavetableStage; label: string}[] = [
   {id: 'oscillator', label: 'Oscillator'}, {id: 'osc2', label: 'Osc 2'}, {id: 'warp', label: 'Warp'}, {id: 'unison', label: 'Unison'}, {id: 'layers', label: 'Layers'},
@@ -246,7 +246,7 @@ export function WavetableSynthEditor({ transport,onDeviceEngineLoaded }: { trans
       onPointerEnter={() => setHoverTarget(id)} onPointerLeave={() => setHoverTarget(undefined)}>
       <strong>{label}</strong>
       <PreviewValues ids={[id]}>{([live]) => {const effective=partsOpen&&partialField(id)>=0&&option(P.Resonator,preset.parameters[P.Resonator])!==3?p[id]/65535:live;return <><div className="knob-wrap">
-        <Knob key={modulating ? `route-${source}` : 'value'} label={modulating ? `${wavetableSources[source]} to ${label}` : label} value={value} min={modulating ? -65536 : 0} max={modulating ? 65536 : 65535} neutral={!modulating && centredParameters.has(id) ? 32768 : undefined} keyStep={undefined}
+        <Knob key={modulating ? `route-${source}` : 'value'} label={modulating ? `${wavetableSources[source]} to ${label}` : label} value={value} min={modulating ? -65536 : 0} max={modulating ? 65536 : 65535} neutral={modulating ? undefined : id === P.Level ? 65535 : centredParameters.has(id) ? 32768 : undefined} keyStep={undefined}
           disabled={busy || full || (tool === 'modulate' && !canRoute)} baseValue={p[id]} effectiveValue={effective} routes={routes}
           onRouteDepth={(i, d) => { setRoute(id, i, d); }} onRouteMenu={menu} alternate={alternate}
           onChange={v => modulating ? setRoute(id, source, Math.round(v)) : setParameter(id, Math.round(v))} onRelease={() => { if (modulating && !locked) setTool('value'); }}/>
@@ -310,10 +310,10 @@ export function WavetableSynthEditor({ transport,onDeviceEngineLoaded }: { trans
     </div>
 
     <header className="instrument-title"><h2>Wavetable</h2><span>Stereo · 8 voices + 2 tails · {preset.table?.name??(tableCrc(preset)?'Custom':'Basic Shapes')} table</span>{activity ? <SynthProgress progress={activity}/> : <p role="status" className={failed ? 'error' : ''}>{message}</p>}</header>
-    <AssetStorageSelector client={client??undefined} disabled={busy}/>
     <div className="synth-activation" aria-label="Instrument playback">
       <div><strong>{!transport ? 'Connect Advanced to play' : !ready ? 'Synth connection unavailable' : playing ? 'Wavetable running' : device?.state === 'loading' ? 'Starting synth…' : device?.state === 'playing' ? 'Another engine is playing' : 'Synth stopped'}</strong>
         <small>{playing ? 'Edits apply on the next audio block.' : 'Start loads this sound and switches the board to Wavetable.'}</small></div>
+      <AssetStorageSelector client={client??undefined} disabled={busy}/>
       <div className="button-row">
         <button className="synth-start" disabled={!ready || busy || playing} onClick={() => void loadOnDevice(preset, true)}>Start synth</button>
         <button disabled={!ready || busy || device?.state !== 'playing'} onClick={() => void operation(() => client!.stop(), 'Stopping…')}>Stop synth</button>
@@ -339,23 +339,29 @@ export function WavetableSynthEditor({ transport,onDeviceEngineLoaded }: { trans
           <PreviewValues ids={[P.Frame, P.FrameSpread, P.WarpAmount, P.Brightness]}>{([frame, spread, amount, brightness]) => <TableTerrain table={selectedTable?.prepared} frame={p[P.Frame] / 65535} live={frame} spread={spread} copies={copies} warpMode={warpMode} warpAmount={amount} brightness={brightness} disabled={busy || tool !== 'value'} onFrame={v => setParameter(P.Frame, v)}/>}</PreviewValues></div>
           <div className="knob-bank">{control(P.Frame,'Frame',tableCrc(preset)?v=>`${(v/65535*15+1).toFixed(1)} / 16`:undefined)}{control(P.FrameSpread)}{control(P.Brightness)}</div><IntervalControls label="Carrier" parameters={p} spec={{mode:P.CarrierPitchMode,amount:P.Coarse,num:P.CarrierRatioNum,den:P.CarrierRatioDen,fine:P.Fine}} disabled={busy} onFields={setFields} control={control}/>
         </>, 'Scan the table with Frame · pressure moves it by default. Spread fans unison copies across neighbouring frames.')}
+        <div className="wt-column">
         {stage('osc2', 'Osc 2', p[P.Osc2Level] > 0 || p[P.PhaseMod] > 0, <>
           {choice(P.Osc2Shape, osc2Names, 'Osc 2 shape')}
-          <div className="knob-bank">{control(P.Osc2Level, 'Level')}{control(P.PhaseMod)}</div><IntervalControls label="Osc 2" parameters={p} spec={{mode:P.Osc2PitchMode,amount:P.Osc2Coarse,num:P.Osc2RatioNum,den:P.Osc2RatioDen,fine:P.Osc2Fine}} disabled={busy} onFields={setFields} control={control}/>
-        </>, 'Exact ratios such as 3/2 keep their relationship in every tuning. Tuning steps follow the current board tuning.')}
+          <IntervalControls label="Osc 2" parameters={p} spec={{mode:P.Osc2PitchMode,amount:P.Osc2Coarse,num:P.Osc2RatioNum,den:P.Osc2RatioDen,fine:P.Osc2Fine}} disabled={busy} onFields={setFields} control={control} before={<>{control(P.Osc2Level, 'Level')}{control(P.PhaseMod)}</>}/>
+        </>, 'A second voice to mix in, or to bend the main oscillator’s phase with Phase mod.')}
         {stage('warp', 'Warp', warpMode > 0, <>
           {choice(P.WarpMode, warpNames, 'Warp mode')}
           <PreviewValues ids={[P.WarpAmount, P.Frame, P.Brightness]}>{([amount, frame, brightness]) => <WarpScope table={selectedTable?.prepared} mode={warpMode} amount={amount} frame={frame} brightness={brightness}/>}</PreviewValues>
           <div className="knob-bank">{control(P.WarpAmount, warpMode === 4 ? 'Sync ratio' : 'Amount', v => warpAmountDescription(warpMode, v))}{control(P.WarpBias)}</div>
         </>, warpMode ? 'Alias guard trades top-end sparkle for cleaner highs as warp adds harmonics.' : 'Bend the phase for new harmonics without another oscillator.')}
+        </div>
         {stage('unison', 'Unison', copies > 1, <>
           {choice(P.Unison, ['1', '2', '3', '4', '5', '6', '7'], 'Unison voices')}
           <PreviewValues ids={[P.Detune,P.Width,P.FrameSpread,P.EdgeBlend,P.Coarse,P.Fine,P.StackInterval,P.BeatRate]}>{([detune,width,spread,blend,coarse,fine,stack,beat]) => {const values=p.map(v=>v/65535);for(const [id,v] of [[P.Detune,detune],[P.Coarse,coarse],[P.Fine,fine],[P.StackInterval,stack],[P.BeatRate,beat]])values[id]=v;return <UnisonField blend={blend} copies={copies} detune={detune} width={width} spread={spread} pitches={unisonPitches(preset,tuning,values)}/>;}}</PreviewValues>
           {choice(P.UnisonMode,unisonNames,'Unison mode')}<div className="knob-bank">{option(P.UnisonMode,p[P.UnisonMode])===0?control(P.Detune):option(P.UnisonMode,p[P.UnisonMode])===1?control(P.BeatRate):null}{control(P.Width)}{control(P.EdgeBlend)}</div>{option(P.UnisonMode,p[P.UnisonMode])===2&&<IntervalControls label="Stack" parameters={p} spec={{mode:P.StackPitchMode,amount:P.StackInterval,num:P.StackRatioNum,den:P.StackRatioDen}} disabled={busy} onFields={setFields} control={control}/>}{choice(P.PhaseMode,['Random','Reset','Evenly spread'],'Start phase')}<p className="panel-note">Start phase applies to new notes. Reset strengthens the attack; evenly spread can thin a stack at very low detune.</p>
         </>)}
         {stage('layers', 'Layers', p[P.Noise] > 0 || p[P.Transient] > 0 || p[P.Sub] > 0, <>
-          <div className="wt-layer"><div className="knob-bank">{control(P.Noise)}{control(P.Transient,'Attack level')}</div><label>Attack sample<select aria-label="Attack sample" disabled={busy} value={option(P.TransientShape,p[P.TransientShape])===3?'custom':String(option(P.TransientShape,p[P.TransientShape]))} onChange={e=>chooseAttack(e.target.value)}>{transientNames.slice(0,3).map((name,i)=><option key={name} value={i}>{name}</option>)}{preset.attack&&<option value="custom">{preset.attack.name}</option>}<optgroup label="Textures">{factoryAttackSamples.slice(0,3).map((sample,i)=><option key={sample.name} value={`sample:${i}`}>{sample.name}</option>)}</optgroup><optgroup label="Recordings · CC0">{factoryAttackSamples.slice(3).map((sample,i)=><option key={sample.name} value={`sample:${i+3}`}>{sample.name}</option>)}</optgroup><option value="import">Import audio…</option></select></label><div className="sample-access"><button type="button" disabled={busy} onClick={()=>setAttackOpen(true)}>{preset.attack?'Edit attack…':'Import attack…'}</button><span>{preset.attack?`${preset.attack.name} · ${(preset.attack.frames.length/16).toFixed(0)} ms`:'One short recording adds an independent onset or texture.'}</span></div><label>Attack playback<select aria-label="Attack playback" disabled={busy} value={option(P.AttackPlayback,p[P.AttackPlayback])} onChange={e=>setParameter(P.AttackPlayback,optionValue(P.AttackPlayback,Number(e.target.value)))}><option value="0">Fixed texture</option><option value="1">Follow note</option></select></label>{option(P.AttackPlayback,p[P.AttackPlayback])===1&&control(P.AttackRoot,'Sample root',v=>`${attackRootHz(v).toFixed(1)} Hz`)}<p className="panel-note">Fixed keeps the recording’s texture in every register. Follow note transposes the attack from its root frequency using the played pitch and tuning. The attack is audible with the body off.</p></div>
-          <div className="wt-layer wt-sub"><div className="knob-bank">{control(P.Sub)}</div><IntervalControls label="Sub" parameters={p} spec={{mode:P.SubPitchMode,amount:P.SubCoarse,num:P.SubRatioNum,den:P.SubRatioDen,fine:P.SubFine}} disabled={busy} onFields={setFields} control={control}/>{choice(P.SubShape, ['Sine', 'Triangle'], 'Sub shape')}<small>Clean sub skips the resonator, filter and FX rack.</small></div>
+          <div className="wt-layer"><h4>Attack &amp; noise</h4>
+            <div className="wt-layer-row"><select aria-label="Attack sample" disabled={busy} value={option(P.TransientShape,p[P.TransientShape])===3?'custom':String(option(P.TransientShape,p[P.TransientShape]))} onChange={e=>chooseAttack(e.target.value)}>{transientNames.slice(0,3).map((name,i)=><option key={name} value={i}>{name}</option>)}{preset.attack&&<option value="custom">{preset.attack.name}</option>}<optgroup label="Textures">{factoryAttackSamples.slice(0,3).map((sample,i)=><option key={sample.name} value={`sample:${i}`}>{sample.name}</option>)}</optgroup><optgroup label="Recordings · CC0">{factoryAttackSamples.slice(3).map((sample,i)=><option key={sample.name} value={`sample:${i+3}`}>{sample.name}</option>)}</optgroup><option value="import">Import audio…</option></select><button type="button" disabled={busy} onClick={()=>setAttackOpen(true)}>{preset.attack?'Edit…':'Import…'}</button></div>
+            <LayersPicture shape={option(P.TransientShape,p[P.TransientShape])} frames={option(P.TransientShape,p[P.TransientShape])===3?preset.attack?.frames:undefined} level={p[P.Transient]/65535} noise={p[P.Noise]/65535}/>
+            {choice(P.AttackPlayback,['Fixed texture','Follow note'],'Attack playback')}
+            <div className="knob-bank">{control(P.Transient,'Attack level')}{option(P.AttackPlayback,p[P.AttackPlayback])===1&&control(P.AttackRoot,'Sample root',v=>`${attackRootHz(v).toFixed(1)} Hz`)}{control(P.Noise)}</div></div>
+          <div className="wt-layer wt-sub"><h4>Sub</h4><div className="wt-layer-row">{choice(P.SubShape, ['Sine', 'Triangle'], 'Sub shape')}<SubWave triangle={option(P.SubShape,p[P.SubShape])===1} level={p[P.Sub]/65535}/></div><IntervalControls label="Sub" parameters={p} spec={{mode:P.SubPitchMode,amount:P.SubCoarse,num:P.SubRatioNum,den:P.SubRatioDen,fine:P.SubFine}} disabled={busy} onFields={setFields} control={control} before={control(P.Sub,'Level')}/><small>The clean sub skips the resonator, filter and FX rack.</small></div>
         </>)}
         {stage('resonator', 'Resonator', resonator > 0, <>
           {choice(P.Resonator, resonatorNames, 'Resonator')}
