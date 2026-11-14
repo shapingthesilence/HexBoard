@@ -26,12 +26,15 @@
 
 /* Workspace */
 .wavetable-editor .wt-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 10px; align-items: start; }
-.wavetable-editor .wt-stages { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 8px; }
+.wavetable-editor .wt-stages { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .wavetable-editor .wt-column { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .wavetable-editor .wt-stage { min-width: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; transition: box-shadow 200ms ease, border-color 200ms ease, opacity 200ms ease; }
-.wavetable-editor .wt-stage-oscillator { grid-column: span 2; align-self: stretch; }
-.wavetable-editor .wt-stage-output { flex-direction: row; flex-wrap: wrap; align-items: center; }
-.wavetable-editor .wt-stage-output > small { flex: 1 1 140px; }
+.wavetable-editor .wt-column > .wt-stage:last-child { flex: 1; }
+.wavetable-editor .wt-stage-oscillator { grid-column: span 2; }
+/* Amp and the narrow Output strip share the last two columns. */
+.wavetable-editor .wt-tail { grid-column: span 2; flex-direction: row; }
+.wavetable-editor .wt-tail > .wt-stage-amp { flex: 1; }
+.wavetable-editor .wt-column.wt-tail > .wt-stage-output { flex: 0 0 150px; }
 .wavetable-editor .wt-stage:not([data-active]) > :not(legend):not(.wt-choice):not(.wt-stage-note) { opacity: .62; }
 .wavetable-editor .wt-stage[data-focused] { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
 .wavetable-editor .wt-stage legend { display: flex; align-items: center; gap: 6px; }
@@ -82,6 +85,8 @@
 }
 @media (max-width: 900px) {
   .wavetable-editor .wt-stages { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wavetable-editor .wt-tail { grid-column: auto; flex-direction: column; }
+  .wavetable-editor .wt-tail > .wt-stage-output { flex: 1; }
 }
 @media (max-width: 720px) {
   .wavetable-editor .wt-flow ol { grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 8px; }

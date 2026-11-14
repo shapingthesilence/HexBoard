@@ -373,6 +373,7 @@ export function WavetableSynthEditor({ transport,onDeviceEngineLoaded }: { trans
           <PreviewValues ids={[P.Cutoff]}>{([cutoff]) => <FilterCurve cutoff={p[P.Cutoff] / 65535} resonance={p[P.Resonance] / 65535} mode={option(P.FilterMode, p[P.FilterMode])} live={cutoff} disabled={busy || tool !== 'value'} onChange={(c, r) => { setParameter(P.Cutoff, c); setParameter(P.Resonance, r); }}/>}</PreviewValues>
           <div className="knob-bank">{control(P.Cutoff)}{control(P.Resonance)}{control(P.KeyTrack)}{control(P.FilterEnvelope, 'Env 1 amount')}</div>
         </>, filterBypassed ? 'Fully open · bypassed to save DSP.' : 'Per voice, stereo. Envelope 1 moves the cutoff by Env 1 amount.')}
+        <div className="wt-column wt-tail">
         {stage('amp', 'Amp', true, <>
           <CurvedEnvelope label="Amp" disabled={busy || tool !== 'value'}
             values={{attack: modulationSeconds(p[P.AmpAttack]), decay: modulationSeconds(p[P.AmpDecay]), sustain: p[P.AmpSustain] / 65535, release: modulationSeconds(p[P.AmpRelease])}}
@@ -386,6 +387,7 @@ export function WavetableSynthEditor({ transport,onDeviceEngineLoaded }: { trans
           <div className="knob-bank">{control(P.Level)}</div>
           <small>The FX rack, including Ensemble, follows the voice mix; the clean sub joins after it.</small>
         </>)}
+        </div>
       </div>
       <aside className="wt-side">
         <FxRackEditor rack={preset.effects} busy={busy} onChange={setEffects} canApply={rack => { const next = wavetableCost({...preset, effects: rack}); return next.fits || next.us <= cost.us; }}
