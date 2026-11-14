@@ -976,7 +976,7 @@ namespace {
 constexpr SettingKey geometryAuditionKeys[] = {
   SettingKey::CurrentTuning, SettingKey::CurrentLayout, SettingKey::CurrentScale,
   SettingKey::CurrentKeyStepsFromA, SettingKey::CurrentKeyStepsFromAHigh, SettingKey::ColorMode,
-  SettingKey::DeviceRotation
+  SettingKey::DeviceRotation, SettingKey::LayoutRotation, SettingKey::MirrorLeftRight, SettingKey::MirrorUpDown
 };
 constexpr size_t GEOMETRY_AUDITION_KEY_COUNT = sizeof(geometryAuditionKeys) / sizeof(geometryAuditionKeys[0]);
 
@@ -1061,7 +1061,10 @@ bool restoreGeometryAuditionCommitted() {
   }
   current.keyStepsFromA = committed.keyStepsFromA;
   colorMode = settingValue(SettingKey::ColorMode);
+  layoutRotation = settingValue(SettingKey::LayoutRotation) % 6;
   deviceRotation = settingValue(SettingKey::DeviceRotation) % 4;
+  mirrorLeftRight = settingEnabled(SettingKey::MirrorLeftRight);
+  mirrorUpDown = settingEnabled(SettingKey::MirrorUpDown);
   return true;
 }
 
@@ -1191,8 +1194,28 @@ bool restoreGeometryReference(const GeometryProfileReference& reference) {
 bool loadGeometryRuntimeForProfile(uint8_t profileIndex) {
   bool previousApplyDefaultColorMode = applyGeometryBundleDefaultColorMode;
   applyGeometryBundleDefaultColorMode = false;
-  bool loaded =
-    restoreGeometryReferenceForProfile(profileIndex) || loadDefaultGeometryRuntime();
+  // Restoring a profile's own layout keeps the orientation saved with the
+  // profile, which may adjust that layout. A fallback layout loads as authored.
+  const uint8_t savedOrientation[] = {
+    settings[static_cast<uint8_t>(SettingKey::DeviceRotation)],
+    settings[static_cast<uint8_t>(SettingKey::LayoutRotation)],
+    settings[static_cast<uint8_t>(SettingKey::MirrorLeftRight)],
+    settings[static_cast<uint8_t>(SettingKey::MirrorUpDown)]
+  };
+  const bool restored = restoreGeometryReferenceForProfile(profileIndex);
+  if (restored) {
+    settings[static_cast<uint8_t>(SettingKey::DeviceRotation)] = savedOrientation[0];
+    settings[static_cast<uint8_t>(SettingKey::LayoutRotation)] = savedOrientation[1];
+    settings[static_cast<uint8_t>(SettingKey::MirrorLeftRight)] = savedOrientation[2];
+    settings[static_cast<uint8_t>(SettingKey::MirrorUpDown)] = savedOrientation[3];
+    deviceRotation = savedOrientation[0] % 4;
+    layoutRotation = savedOrientation[1] % 6;
+    mirrorLeftRight = savedOrientation[2] != 0;
+    mirrorUpDown = savedOrientation[3] != 0;
+    applyLayout();
+    applyDeviceDisplayRotation();
+  }
+  bool loaded = restored || loadDefaultGeometryRuntime();
   applyGeometryBundleDefaultColorMode = previousApplyDefaultColorMode;
   return loaded;
 }
@@ -1499,11 +1522,16 @@ bool applyUserGeometryRuntimeLayout(const GeometryObjectSlot& object) {
   userGeometryRuntime.active = true;
   userGeometryRuntime.deviceRotation = storedDeviceRotation;
   userGeometryRuntime.layoutCenterStepsFromC = static_cast<int16_t>(centerStepsFromC);
-  // Layout rotation and the mirrors are profile settings applied on top of
-  // every layout; a record's own rotation and mirror fields are validated
-  // above but not applied.
+  // A layout loads as authored: its rotations and mirrors replace any
+  // adjustment made to the previous layout.
   deviceRotation = storedDeviceRotation;
+  layoutRotation = storedLayoutRotation;
+  mirrorLeftRight = (mirrorFlags & 0x01u) != 0;
+  mirrorUpDown = (mirrorFlags & 0x02u) != 0;
   settings[static_cast<uint8_t>(SettingKey::DeviceRotation)] = deviceRotation;
+  settings[static_cast<uint8_t>(SettingKey::LayoutRotation)] = layoutRotation;
+  settings[static_cast<uint8_t>(SettingKey::MirrorLeftRight)] = mirrorLeftRight;
+  settings[static_cast<uint8_t>(SettingKey::MirrorUpDown)] = mirrorUpDown;
   clearUserGeometryButtonRuntimeOverrides();
   applyLayout();
   applyDeviceDisplayRotation();

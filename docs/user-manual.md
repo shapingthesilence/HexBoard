@@ -217,8 +217,7 @@ layouts linked to the active tuning appear in a list. The active layout shows a 
 the right edge of its row when it appears in the list.
 
 Choosing a layout remaps button pitches, loads its custom key assignments when
-present, and restores that layout's default device
-rotation in 90-degree steps.
+present, and loads the layout as authored, including its rotations and flips.
 
 The first row, `Orientation`, shows `Normal`, `Rotated`, `Flipped`, or
 `Rot+Flp` and opens a page with:
@@ -230,10 +229,9 @@ The first row, `Orientation`, shows `Normal`, `Rotated`, `Flipped`, or
 - `Flip L/R`, which mirrors the layout around the middle key, physical button `65`
 - `Flip U/D`, which mirrors the layout vertically across the grid
 
-`Layout Rot` and the flips are profile settings applied on top of whichever
-layout is chosen, so they stay as they are when you change layout or tuning.
-`Device Rot` is reset to the chosen layout's default when you choose a layout.
-Back returns to the layout list.
+These adjust the current layout. The profile keeps them across restarts, and
+choosing a layout or tuning loads that layout as authored again. Back returns
+to the layout list.
 
 ### Scale
 

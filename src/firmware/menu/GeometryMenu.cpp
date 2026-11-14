@@ -773,9 +773,9 @@ void openUserGeometryMenu(UserGeometryMenuKind kind) {
   openVirtualListMenu(provider);
 }
 
-// Intonation (from Tuning) and Orientation (from Layout) hold profile
-// settings. They apply to every tuning and layout and are never part of one,
-// except Device Rot, which choosing a layout sets to that layout's default.
+// Intonation (from Tuning) holds profile settings that apply to every tuning.
+// Orientation (from Layout) adjusts the current layout; choosing a layout
+// loads it as authored again. A profile keeps its adjustments across restarts.
 enum class GeometrySettingRow : uint8_t {
   DynamicJI,
   JITable,
