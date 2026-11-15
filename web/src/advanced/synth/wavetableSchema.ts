@@ -7,11 +7,11 @@ import {fxRoutePatch} from './fxRouting.ts';
 // Wavetable patch: mirrors Advanced src/synth/wavetable_patch.h. Normalized U16
 // parameters, two envelope/LFO banks in the Physical Strings layout and sparse
 // source -> parameter routes, carried on the generic engine transport.
-export const wavetableEngine = 7, wavetableSchema = 8;  // Voice drive and filter switch; current development format only.
+export const wavetableEngine = 7, wavetableSchema = 9;  // Stereo filter offset replaces the Envelope 1 amount; current development format only.
 export const P = {
   Frame: 0, FrameSpread: 1, Unison: 2, Detune: 3, Width: 4, WarpMode: 5, WarpAmount: 6, WarpBias: 7, Brightness: 8,
   Noise: 9, Transient: 10, TransientShape: 11, Sub: 12, SubPitchMode: 13, SubShape: 14,
-  Cutoff: 15, Resonance: 16, FilterMode: 17, KeyTrack: 18, FilterEnvelope: 19,
+  Cutoff: 15, Resonance: 16, FilterMode: 17, KeyTrack: 18, FilterStereo: 19,
   AmpAttack: 20, AmpDecay: 21, AmpSustain: 22, AmpRelease: 23,
   Resonator: 24, ResonatorMix: 25, ResonatorTune: 26, ResonatorDecay: 27,
   Level: 28, Classic: 29, EdgeBlend: 30, PhaseMode: 31, TableLow: 32, TableHigh: 33,
@@ -199,7 +199,8 @@ export const wavetableParameters: ParameterInfo[] = [
   {name: 'Resonance', describe: pct},
   {name: 'Filter mode', describe: v => filterNames[option(P.FilterMode, v)]},
   {name: 'Key track', describe: pct},
-  {name: 'Env 1 → cutoff', describe: v => { const d = Math.round((v / 65535 - .5) * 200); return `${d > 0 ? '+' : ''}${d}%`; }},
+  // Right cutoff up and left down by this much (one octave each at full scale); negative swaps the sides.
+  {name: 'Stereo offset', describe: v => { const d = (v / 65535 - .5) * 2; return Math.abs(d) < .005 ? 'Centred' : `${d > 0 ? 'R' : 'L'} +${Math.abs(d).toFixed(2)} oct`; }},
   {name: 'Attack', describe: seconds},
   {name: 'Decay', describe: seconds},
   {name: 'Sustain', describe: pct},
@@ -283,10 +284,10 @@ export const factoryWavetablePresets: WavetablePreset[] = [
   preset('Glass Pad', {[P.Frame]: 9000, [P.FrameSpread]: 26000, [P.Unison]: o(P.Unison, 4), [P.Detune]: 30000, [P.Brightness]: 52000, [P.Cutoff]: 52000, [P.Resonance]: 9000, [P.AmpAttack]: 40000, [P.AmpRelease]: 48000},
     [{source: S.Pressure, destination: P.Frame, depth: 30000}, {source: S.Lfo1, destination: P.FrameSpread, depth: 12000}], [{8: 15000}],
     fxRoutePatch(ensembleRack(1, 62000), 25, 3, 20000)),
-  preset('Fold Lead', {[P.Frame]: 30000, [P.Unison]: o(P.Unison, 2), [P.Detune]: 14000, [P.WarpMode]: o(P.WarpMode, 1), [P.WarpAmount]: 22000, [P.Cutoff]: 47000, [P.Resonance]: 22000, [P.FilterEnvelope]: 44000, [P.AmpAttack]: 0, [P.AmpSustain]: 56000},
-    [{source: S.Pressure, destination: P.WarpAmount, depth: 38000}, {source: S.Lfo1, destination: P.WarpAmount, depth: 6000}, {source: S.Velocity, destination: P.Cutoff, depth: 9000}], [{0: 0, 1: 30000, 2: 0, 3: 26000, 8: 33000}]),
-  preset('Sync Bass', {[P.Frame]: 44000, [P.Unison]: 0, [P.WarpMode]: o(P.WarpMode, 4), [P.WarpAmount]: 9000, [P.Sub]: 42000, [P.Cutoff]: 38000, [P.Resonance]: 16000, [P.FilterEnvelope]: 52000, [P.KeyTrack]: 30000, [P.AmpAttack]: 0, [P.AmpDecay]: 34000, [P.AmpSustain]: 46000, [P.AmpRelease]: 26000},
-    [{source: S.Pressure, destination: P.WarpAmount, depth: 36000}, {source: S.Env1, destination: P.WarpAmount, depth: 14000}], [{0: 0, 1: 31000, 2: 0, 3: 28000}], defaultFx()),
+  preset('Fold Lead', {[P.Frame]: 30000, [P.Unison]: o(P.Unison, 2), [P.Detune]: 14000, [P.WarpMode]: o(P.WarpMode, 1), [P.WarpAmount]: 22000, [P.Cutoff]: 47000, [P.Resonance]: 22000, [P.AmpAttack]: 0, [P.AmpSustain]: 56000},
+    [{source: S.Pressure, destination: P.WarpAmount, depth: 38000}, {source: S.Lfo1, destination: P.WarpAmount, depth: 6000}, {source: S.Velocity, destination: P.Cutoff, depth: 9000}, {source: S.Env1, destination: P.Cutoff, depth: 22464}], [{0: 0, 1: 30000, 2: 0, 3: 26000, 8: 33000}]),
+  preset('Sync Bass', {[P.Frame]: 44000, [P.Unison]: 0, [P.WarpMode]: o(P.WarpMode, 4), [P.WarpAmount]: 9000, [P.Sub]: 42000, [P.Cutoff]: 38000, [P.Resonance]: 16000, [P.KeyTrack]: 30000, [P.AmpAttack]: 0, [P.AmpDecay]: 34000, [P.AmpSustain]: 46000, [P.AmpRelease]: 26000},
+    [{source: S.Pressure, destination: P.WarpAmount, depth: 36000}, {source: S.Env1, destination: P.WarpAmount, depth: 14000}, {source: S.Env1, destination: P.Cutoff, depth: 38464}], [{0: 0, 1: 31000, 2: 0, 3: 28000}], defaultFx()),
   preset('Bell Keys', {[P.AmpDecayCurve]: curveWord(-.5), [P.AmpReleaseCurve]: curveWord(-.4), [P.Frame]: 6000, [P.Unison]: o(P.Unison, 1), [P.Detune]: 9000, [P.Transient]: 30000, [P.TransientShape]: o(P.TransientShape, 1), [P.Resonator]: o(P.Resonator, 1), [P.ResonatorMix]: 34000, [P.ResonatorDecay]: 42000, [P.AmpAttack]: 0, [P.AmpDecay]: 46000, [P.AmpSustain]: 12000, [P.AmpRelease]: 44000},
     [{source: S.Velocity, destination: P.Transient, depth: 24000}, {source: S.Pressure, destination: P.ResonatorDecay, depth: 18000}, {source: S.Pressure, destination: P.Frame, depth: 16000}]),
   preset('Breath Choir', {[P.Frame]: 3000, [P.FrameSpread]: 14000, [P.Unison]: o(P.Unison, 4), [P.Detune]: 20000, [P.Noise]: 15000, [P.Transient]: 20000, [P.TransientShape]: o(P.TransientShape, 2), [P.FilterMode]: o(P.FilterMode, 1), [P.Cutoff]: 41000, [P.Resonance]: 26000, [P.AmpAttack]: 43000, [P.AmpRelease]: 46000},

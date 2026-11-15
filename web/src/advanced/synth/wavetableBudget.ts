@@ -15,7 +15,7 @@ const active = (p: WavetablePatch, id: number) => p.parameters[id] > 0 || routed
 /** True when the filter is bypassed: switched off, or an open low-pass with no resonance or movement. */
 export function filterOpen(p: WavetablePatch) {
   return option(P.FilterBypass, p.parameters[P.FilterBypass]) === 1 || option(P.FilterMode, p.parameters[P.FilterMode]) === 0 && p.parameters[P.Cutoff] >= 65470 && p.parameters[P.Resonance] < 655 &&
-    p.parameters[P.KeyTrack] === 0 && p.parameters[P.FilterEnvelope] === 32768 && ![P.Cutoff, P.Resonance, P.KeyTrack, P.FilterEnvelope].some(id => routed(p, id));
+    p.parameters[P.KeyTrack] === 0 && p.parameters[P.FilterStereo] === 32768 && ![P.Cutoff, P.Resonance, P.KeyTrack, P.FilterStereo].some(id => routed(p, id));
 }
 export function wavetableCost(p: WavetablePatch & {effects?: FxRack}): WavetableCost {
   const copies = option(P.Unison, p.parameters[P.Unison]) + 1, warp = option(P.WarpMode, p.parameters[P.WarpMode]);
@@ -30,7 +30,8 @@ export function wavetableCost(p: WavetablePatch & {effects?: FxRack}): Wavetable
     warpControl: warp === 4 ? 20 : warp === 3 ? 40 : warp === 2 ? 5 : 0,
     layers: (active(p, P.Noise) ? 8 : 0) + (active(p, P.Transient) ? 24+(option(P.AttackPlayback,p.parameters[P.AttackPlayback])?4:0) : 0) + (active(p, P.Sub) ? 10 : 0),
     resonator: resonator === 0 ? 0 : option(P.BodyMotion,p.parameters[P.BodyMotion])===2 ? 400 : 240,
-    filter: filterOpen(p) ? 0 : 32,
+    // Stereo offset: measured +16 to +23 µs peak at 8+2 voices (November 15).
+    filter: filterOpen(p) ? 0 : 32 + (p.parameters[P.FilterStereo] !== 32768 || routed(p, P.FilterStereo) ? 9 : 0),
     // Stereo antiderivative shaper: measured +204 to +292 µs at 8+2 voices (November 14).
     drive: [0, 90, 90, 110][option(P.DriveMode, p.parameters[P.DriveMode])],
     // Second oscillator: once per voice when heard or phase-modulating.

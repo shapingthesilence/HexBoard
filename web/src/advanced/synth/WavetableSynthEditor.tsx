@@ -50,7 +50,7 @@ import './WavetableSynthEditor.css';
 const stored = (key: string) => { try { return localStorage.getItem(key); } catch { return null; } };
 const store = (key: string, value: unknown) => { try { writeStoredText(localStorage, key, JSON.stringify(value)); } catch { /* Keep working without persistence. */ } };
 // Controls whose neutral value is the centre (double-click resets there). Level resets to 0 dB instead.
-const centredParameters = new Set<number>([P.StackInterval,...Array.from({length:4},(_,j)=>P.Partial1Pan+j*7),...Array.from({length:4},(_,j)=>P.Partial1Interval+j*7),P.Coarse, P.Fine, P.SubCoarse, P.SubFine, P.Osc2Coarse, P.Osc2Fine, P.FilterEnvelope, P.AmpAttackCurve, P.AmpDecayCurve, P.AmpReleaseCurve]);
+const centredParameters = new Set<number>([P.StackInterval,...Array.from({length:4},(_,j)=>P.Partial1Pan+j*7),...Array.from({length:4},(_,j)=>P.Partial1Interval+j*7),P.Coarse, P.Fine, P.SubCoarse, P.SubFine, P.Osc2Coarse, P.Osc2Fine, P.FilterStereo, P.AmpAttackCurve, P.AmpDecayCurve, P.AmpReleaseCurve]);
 const stageOrder: {id: WavetableStage; label: string}[] = [
   {id: 'oscillator', label: 'Oscillator'}, {id: 'osc2', label: 'Osc 2'}, {id: 'warp', label: 'Warp'}, {id: 'unison', label: 'Unison'}, {id: 'layers', label: 'Layers'},
   {id: 'resonator', label: 'Resonator'}, {id: 'drive', label: 'Drive'}, {id: 'filter', label: 'Filter'}, {id: 'amp', label: 'Amp'}, {id: 'output', label: 'Output'}
@@ -258,9 +258,9 @@ export function WavetableSynthEditor({ transport,onDeviceEngineLoaded }: { trans
   const choice = (id: number, names: readonly string[], label: string, values?: number[]) => <div className="source-tabs wt-choice" role="radiogroup" aria-label={label}>
     {names.map((name, i) => <button type="button" role="radio" key={name} aria-checked={option(id, p[id]) === i} aria-pressed={option(id, p[id]) === i} disabled={busy} onClick={() => setParameter(id, values?.[i] ?? optionValue(id, i))}>{name}</button>)}
   </div>;
-  const stage = (id: WavetableStage, title: string, active: boolean, children: ReactNode, note?: string) =>
+  const stage = (id: WavetableStage, title: string, active: boolean, children: ReactNode, note?: string, hint?: string) =>
     <fieldset id={`wt-stage-${id}`} className={`wt-stage wt-stage-${id}`} data-active={active || undefined} data-focused={focused === id || undefined} disabled={busy}>
-      <legend>{title}{cost.stages[id] > 0 && <span className="wt-cost" title="Share of the DSP estimate">{pct(cost.stages[id])}%</span>}</legend>
+      <legend>{title}{cost.stages[id] > 0 && <span className="wt-cost" title="Share of the DSP estimate">{pct(cost.stages[id])}%</span>}{hint && <span className="wt-hint" role="note" tabIndex={0} aria-label={hint} title={hint}>?</span>}</legend>
       {note && <p className="panel-note wt-stage-note">{note}</p>}
       {children}
     </fieldset>;
@@ -343,12 +343,12 @@ export function WavetableSynthEditor({ transport,onDeviceEngineLoaded }: { trans
         {stage('osc2', 'Osc 2', p[P.Osc2Level] > 0 || p[P.PhaseMod] > 0, <>
           {choice(P.Osc2Shape, osc2Names, 'Osc 2 shape')}
           <IntervalControls label="Osc 2" parameters={p} spec={{mode:P.Osc2PitchMode,amount:P.Osc2Coarse,num:P.Osc2RatioNum,den:P.Osc2RatioDen,fine:P.Osc2Fine}} disabled={busy} onFields={setFields} control={control} before={<>{control(P.Osc2Level, 'Level')}{control(P.PhaseMod)}</>}/>
-        </>, 'A second voice to mix in, or to bend the main oscillator’s phase with Phase mod.')}
+        </>, undefined, 'A second voice to mix in, or to bend the main oscillator’s phase with Phase mod.')}
         {stage('warp', 'Warp', warpMode > 0, <>
           {choice(P.WarpMode, warpNames, 'Warp mode')}
           <PreviewValues ids={[P.WarpAmount, P.Frame, P.Brightness]}>{([amount, frame, brightness]) => <WarpScope table={selectedTable?.prepared} mode={warpMode} amount={amount} frame={frame} brightness={brightness}/>}</PreviewValues>
           <div className="knob-bank">{control(P.WarpAmount, warpMode === 4 ? 'Sync ratio' : 'Amount', v => warpAmountDescription(warpMode, v))}{control(P.WarpBias)}</div>
-        </>, warpMode === 4 ? 'Sync restarts the cycle at the ratio. Its level is matched to the plain table automatically.' : warpMode ? 'Alias guard trades top-end sparkle for cleaner highs as warp adds harmonics.' : 'Bend the phase for new harmonics without another oscillator.')}
+        </>, undefined, warpMode === 4 ? 'Sync restarts the cycle at the ratio. Its level is matched to the plain table automatically.' : warpMode ? 'Alias guard trades top-end sparkle for cleaner highs as warp adds harmonics.' : 'Bend the phase for new harmonics without another oscillator.')}
         </div>
         {stage('unison', 'Unison', copies > 1, <>
           {choice(P.Unison, ['1', '2', '3', '4', '5', '6', '7'], 'Unison voices')}
@@ -366,22 +366,26 @@ export function WavetableSynthEditor({ transport,onDeviceEngineLoaded }: { trans
         {stage('resonator', 'Resonator', resonator > 0, <>
           {choice(P.Resonator, resonatorNames, 'Resonator')}
           <PreviewValues ids={[P.ResonatorTune, P.ResonatorDecay, P.ResonatorMix]}>{([tune, decay, mix]) => <ResonatorPartials mode={resonator} tune={tune} decay={decay} mix={mix} patch={preset} grid={tuning}/>}</PreviewValues>
-          <div className="knob-bank">{control(P.ResonatorMix, 'Mix')}{control(P.BodyLevel)}{control(P.ResonatorTune,option(P.BodyMotion,p[P.BodyMotion])===3?'Partial focus':'Tune',v=>option(P.BodyMotion,p[P.BodyMotion])===3?`${(1+3*v/65535).toFixed(2)}`:`${(3*v/65535).toFixed(2)} periods`)}{control(P.NaturalTuned)}{control(P.ResonatorDecay)}{control(P.BodyAir)}</div>{choice(P.BodyMotion,bodyMotionNames,'Body movement')}<button type="button" disabled={busy} onClick={()=>setPartsOpen(true)}>Customize partials…</button><p className="panel-note">Follows the board’s current tuning · {tuning.count} steps · period ×{(2**tuning.period).toFixed(3)}. Sounds keep their interval choices when the tuning changes.</p>
+          <div className="knob-bank">{control(P.ResonatorMix, 'Mix')}{control(P.BodyLevel)}{control(P.ResonatorTune,option(P.BodyMotion,p[P.BodyMotion])===3?'Partial focus':'Tune',v=>option(P.BodyMotion,p[P.BodyMotion])===3?`${(1+3*v/65535).toFixed(2)}`:`${(3*v/65535).toFixed(2)} periods`)}{control(P.NaturalTuned,'Tuned')}{control(P.ResonatorDecay)}{control(P.BodyAir,'Air')}</div>{choice(P.BodyMotion,bodyMotionNames,'Body movement')}<button type="button" disabled={busy} onClick={()=>setPartsOpen(true)}>Customize partials…</button><p className="panel-note">Follows the board’s current tuning · {tuning.count} steps · period ×{(2**tuning.period).toFixed(3)}. Sounds keep their interval choices when the tuning changes.</p>
         </>, resonator ? 'Body level balances wet and dry. Continuous sweep can leave the tuning; snapped/crossfaded pitches and partial-level movement follow it at 100% Tuned.' : undefined)}
+        <div className="wt-column">
         {stage('drive', 'Drive', driveMode > 0, <>
           {choice(P.DriveMode, driveNames, 'Drive shape')}
+          <div className="wt-scope-row">
           <PreviewValues ids={[P.Drive, P.Frame, P.Brightness, P.WarpAmount]}>{([drive, frame, brightness, amount]) => <DriveScope table={selectedTable?.prepared} mode={driveMode} amount={drive} frame={frame} brightness={brightness} warpMode={warpMode} warpAmount={amount}/>}</PreviewValues>
           <div className="knob-bank">{control(P.Drive)}</div>
-        </>, driveMode ? 'Per voice, before the filter. Harder strikes and louder envelope stages distort more; level stays matched.' : 'Add grit ahead of the filter: Soft warms, Hard clips, Fold wraps the peaks.')}
+          </div>
+        </>, undefined, driveMode ? 'Per voice, before the filter. Harder strikes and louder envelope stages distort more; level stays matched.' : 'Add grit ahead of the filter: Soft warms, Hard clips, Fold wraps the peaks.')}
         {stage('filter', 'Filter', !filterBypassed, <>
           <div className="source-tabs wt-choice" role="radiogroup" aria-label="Filter mode">
             <button type="button" role="radio" aria-checked={filterOff} aria-pressed={filterOff} disabled={busy} onClick={() => setParameter(P.FilterBypass, 65535)}>Off</button>
             {filterNames.map((name, i) => { const on = !filterOff && option(P.FilterMode, p[P.FilterMode]) === i; return <button type="button" role="radio" key={name} aria-label={name} title={name} aria-checked={on} aria-pressed={on} disabled={busy}
               onClick={() => filterOff ? setFields({[P.FilterBypass]: 0, [P.FilterMode]: optionValue(P.FilterMode, i)}) : setParameter(P.FilterMode, optionValue(P.FilterMode, i))}>{name.replace('-pass', '')}</button>; })}
           </div>
-          <PreviewValues ids={[P.Cutoff]}>{([cutoff]) => <FilterCurve cutoff={p[P.Cutoff] / 65535} resonance={p[P.Resonance] / 65535} mode={option(P.FilterMode, p[P.FilterMode])} live={cutoff} disabled={busy || tool !== 'value'} onChange={(c, r) => { setParameter(P.Cutoff, c); setParameter(P.Resonance, r); }}/>}</PreviewValues>
-          <div className="knob-bank">{control(P.Cutoff)}{control(P.Resonance)}{control(P.KeyTrack)}{control(P.FilterEnvelope, 'Env 1 amount')}</div>
-        </>, filterOff ? 'Off · voices skip the filter. Its settings are kept.' : filterBypassed ? 'Fully open · bypassed to save DSP.' : 'Per voice, stereo. Envelope 1 moves the cutoff by Env 1 amount.')}
+          <PreviewValues ids={[P.Cutoff, P.FilterStereo]}>{([cutoff, stereo]) => <FilterCurve cutoff={p[P.Cutoff] / 65535} resonance={p[P.Resonance] / 65535} mode={option(P.FilterMode, p[P.FilterMode])} live={cutoff} stereo={(stereo - .5) * 2} disabled={busy || tool !== 'value'} onChange={(c, r) => { setParameter(P.Cutoff, c); setParameter(P.Resonance, r); }}/>}</PreviewValues>
+          <div className="knob-bank">{control(P.Cutoff)}{control(P.Resonance)}{control(P.KeyTrack)}{control(P.FilterStereo, 'Stereo')}</div>
+        </>, undefined, filterOff ? 'Off · voices skip the filter. Its settings are kept.' : filterBypassed ? 'Fully open · bypassed to save DSP.' : 'Per voice, stereo. Stereo raises the right cutoff and lowers the left by up to an octave each; below centre the sides swap.')}
+        </div>
         <div className="wt-column wt-tail">
         {stage('amp', 'Amp', true, <>
           <CurvedEnvelope label="Amp" disabled={busy || tool !== 'value'}

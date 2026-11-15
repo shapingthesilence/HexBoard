@@ -195,10 +195,13 @@ export function ResonatorPartials({mode, tune, decay, mix,patch,grid=defaultTuni
 }
 
 /** Drag across for cutoff, up and down for resonance. */
-export function FilterCurve({cutoff, resonance, mode, live, disabled, onChange}: {cutoff: number; resonance: number; mode: number; live: number; disabled?: boolean; onChange: (cutoff: number, resonance: number) => void}) {
+/** `stereo` is the live stereo offset, -1..1: the right cutoff sits that many octaves above the centre and the left as far below. */
+export function FilterCurve({cutoff, resonance, mode, live, stereo = 0, disabled, onChange}: {cutoff: number; resonance: number; mode: number; live: number; stereo?: number; disabled?: boolean; onChange: (cutoff: number, resonance: number) => void}) {
   const dbY = (a: number) => 10 + (18 - Math.max(-42, Math.min(18, 20 * Math.log10(Math.max(1e-5, a))))) / 60 * 72;
   const curve = (c: number) => Array.from({length: 97}, (_, i) => Math.round(dbY(filterResponse(c, resonance, 1, mode, 20 * 1000 ** (i / 96))) * 10) / 10);
-  const liveCurve = useMemo(() => curve(live), [live, resonance, mode]);
+  const side = Math.abs(stereo) < .005 ? 0 : stereo / 9.813781, clamp = (c: number) => Math.max(0, Math.min(1, c));
+  const liveCurve = useMemo(() => curve(clamp(live - side)), [live, side, resonance, mode]);
+  const rightCurve = useMemo(() => side ? curve(clamp(live + side)) : undefined, [live, side, resonance, mode]);
   const baseCurve = useMemo(() => curve(cutoff), [cutoff, resonance, mode]);
   const xOf = (c: number) => 8 + Math.log(cutoffHz(c) / 20) / Math.log(1000) * 240;
   const set = (e: PointerEvent<HTMLCanvasElement>) => onChange(Math.round(dragValue(e, 'x') * 65535), Math.round(dragValue(e, 'y', true) * 65535));
@@ -211,6 +214,14 @@ export function FilterCurve({cutoff, resonance, mode, live, disabled, onChange}:
       line(liveCurve); ctx.lineTo(248, 90); ctx.lineTo(8, 90); ctx.closePath(); ctx.fillStyle = c.trace; ctx.globalAlpha = .14; ctx.fill(); ctx.globalAlpha = 1;
       line(baseCurve); ctx.setLineDash([4, 3]); ctx.strokeStyle = c.frame; ctx.stroke(); ctx.setLineDash([]);
       line(liveCurve); ctx.strokeStyle = c.trace; ctx.lineWidth = 2; ctx.stroke();
+      if (rightCurve) {
+        // Left keeps the trace color; right is drawn in the accent, each tagged at its cutoff.
+        line(rightCurve); ctx.lineTo(248, 90); ctx.lineTo(8, 90); ctx.closePath(); ctx.fillStyle = c.accent; ctx.globalAlpha = .14; ctx.fill(); ctx.globalAlpha = 1;
+        line(rightCurve); ctx.strokeStyle = c.accent; ctx.stroke();
+        ctx.font = `600 9px ${c.font}`; ctx.textAlign = 'center';
+        const tag = (text: string, at: number, color: string) => { ctx.fillStyle = color; ctx.fillText(text, Math.max(13, Math.min(243, xOf(at))), 88); };
+        tag('L', clamp(live - side), c.trace); tag('R', clamp(live + side), c.accent);
+      }
       ctx.fillStyle = c.brand; plotDot(ctx, xOf(cutoff), dbY(filterResponse(cutoff, resonance, 1, mode, cutoffHz(cutoff))), 6); ctx.strokeStyle = c.scope; ctx.stroke();
     }}/>;
 }

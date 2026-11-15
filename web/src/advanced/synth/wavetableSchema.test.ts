@@ -1,7 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {P, S, effectiveWavetable, factoryWavetablePresets, initialWavetable, option, optionValue, routeKey, routesUsed, sourceCount, validWavetable, wavetableFromUnknown, wavetableFromWords, wavetablePreset, wavetableWords, withRoute, wordCount, editCount, wavetableFormat, wavetableDefaultFx, driveCurve, driveGain, driveMakeup} from './wavetableSchema.ts';
+import {P, S, wavetableParameters, effectiveWavetable, factoryWavetablePresets, initialWavetable, option, optionValue, routeKey, routesUsed, sourceCount, validWavetable, wavetableFromUnknown, wavetableFromWords, wavetablePreset, wavetableWords, withRoute, wordCount, editCount, wavetableFormat, wavetableDefaultFx, driveCurve, driveGain, driveMakeup} from './wavetableSchema.ts';
 import {wavetableCapacityUs, wavetableCost, filterOpen} from './wavetableBudget.ts';
 import {defaultFx} from './schema.ts';
 import {fxRoutePatch} from './fxRouting.ts';
@@ -55,6 +55,18 @@ describe('wavetable DSP estimate', () => {
     set(P.Noise, 20000); set(P.Transient, 20000); set(P.Sub, 20000); set(P.Resonator, optionValue(P.Resonator, 2));
     const us = wavetableCost({...combined, effects: wavetableDefaultFx()}).us;
     expect(us).toBeGreaterThan(2200); expect(us).toBeLessThan(2873); expect(us).toBeLessThan(wavetableCapacityUs);
+  });
+  it('charges the stereo filter offset like the board and accepts it as a destination', () => {
+    const p = initialWavetable(), base = wavetableCost(p).us;
+    expect(p.parameters[P.FilterStereo]).toBe(32768);
+    p.parameters[P.FilterStereo] = 40000; expect(wavetableCost(p).us).toBe(base + 24);
+    const routed = withRoute(initialWavetable(), P.FilterStereo, S.Lfo1, 30000)!.patch;
+    expect(validWavetable(routed)).toBe(true); expect(wavetableCost(routed).us).toBe(base + 24);
+    const open = initialWavetable(); open.parameters[P.Resonance] = 0; expect(filterOpen(open)).toBe(true);
+    open.parameters[P.FilterStereo] = 20000; expect(filterOpen(open)).toBe(false);
+    expect(wavetableParameters[P.FilterStereo].describe(32768)).toBe('Centred');
+    expect(wavetableParameters[P.FilterStereo].describe(65535)).toBe('R +1.00 oct');
+    expect(wavetableParameters[P.FilterStereo].describe(0)).toBe('L +1.00 oct');
   });
   it('switches the filter off and charges drive like the board', () => {
     const p = initialWavetable(), base = wavetableCost(p).us;
