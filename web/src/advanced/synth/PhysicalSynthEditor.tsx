@@ -1,5 +1,6 @@
 import {AssetStorageSelector} from "./AssetStorageSelector.tsx";
-import {springBase,springNames,springRouteWord,springWord,springSourceNames,springSourceWords} from './pitchSpring.ts';
+import {springBase,springDirection,springDirectionWords,springNames,springRise,springRouteWord,springSource,springWord,springWords,springSourceNames,springSourceWords} from './pitchSpring.ts';
+import {PitchSpringView,directionGlyphs} from './PitchSpringView.tsx';
 import {isPhysicalPreset,presetDraftKey} from './presetLibrary.ts';
 import {PresetLibrary} from './PresetLibrary.tsx';
 import {useAutosave} from '../../editor/useAutosave.ts';
@@ -203,7 +204,7 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
     if(fxWaiting)setEffects(effects);else queue("fx",()=>client!.effects(effects));
   };
   const setParameter = (id: number, value: number) => {
-    if(id>=33){setModSetting(id===33?19:20,value);return;}
+    if(id>=33){setModSetting(id===33?springWords.amount:springWords.return,value);return;}
     if(!admit(parameterPatch(preset,id,value)))return;
     retainedDraft.current = true;
     setPreset(p => ({ ...p, sample:id===32?{...p.sample,direct:value}:p.sample, parameters: p.parameters.map((v, i) => i === id ? value : v) }));
@@ -281,6 +282,9 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
   const dropRoute=(id:number,src:number)=>{const t=targetState(id,src);if(!t.modulatable||t.full)return;if(!routeDepth(preset,id,src))setRoute(id,src,dropDepth);};
   const {drag,bind:dragBind,dragged}=useSourceDrag(dropRoute);
   const highlight=drag?.source??budgetSource;
+  const springPressure=springSource(preset.modulation.settings)===0;
+  const springKnob=(word:number,name:string,title:string,describe:(v:number)=>string)=>{const value=preset.modulation.settings[word];
+    return <div className="physical-control" key={word} title={title}><strong>{name}</strong><div className="knob-wrap"><Knob label={`Pitch spring ${name.toLowerCase()}`} value={value} valueText={describe(value)} disabled={busy||tool==="modulate"} onChange={v=>setModSetting(word,Math.round(v))}/></div><output>{describe(value)}</output></div>;};
   const control = (id: number) => {
     const base=id>=33?springBase(preset,id):preset.parameters[id];
     const original = id>=33?springNames[id-33]:physicalParameters[id],p=bowMode&&id===28?{...original,name:"Bow texture"}:original;
@@ -341,7 +345,7 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
 
 
     {drag&&<div className="mod-drag-ghost" data-blocked={drag.target!==undefined&&(()=>{const t=targetState(drag.target,drag.source);return !t.modulatable||t.full;})()||undefined} style={{left:drag.x+14,top:drag.y+14,borderColor:sourceColors[drag.source]}}><span className="source-dot" style={{background:sourceColors[drag.source]}}/>{sourceShortNames[drag.source]}</div>}
-    {routeMenu&&routeDepth(preset,routeMenu.target,routeMenu.source)!==0&&<RouteMenu title={`${physicalSources[routeMenu.source]} → ${(physicalParameters[routeMenu.target]??springNames[routeMenu.target-33]).name}`} color={sourceColors[routeMenu.source]} depth={routeDepth(preset,routeMenu.target,routeMenu.source)} x={routeMenu.x} y={routeMenu.y} onDepth={d=>setRoute(routeMenu.target,routeMenu.source,d)} onClose={()=>setRouteMenu(undefined)}/>}
+    {routeMenu&&routeDepth(preset,routeMenu.target,routeMenu.source)!==0&&<RouteMenu title={`${physicalSources[routeMenu.source]} → ${routeMenu.target>=33?`Spring ${springNames[routeMenu.target-33].name.toLowerCase()}`:physicalParameters[routeMenu.target].name}`} color={sourceColors[routeMenu.source]} depth={routeDepth(preset,routeMenu.target,routeMenu.source)} x={routeMenu.x} y={routeMenu.y} onDepth={d=>setRoute(routeMenu.target,routeMenu.source,d)} onClose={()=>setRouteMenu(undefined)}/>}
     {blockedTip && tool==="modulate"&&<div className="mod-limit-tooltip" role="tooltip" style={{left:Math.min(blockedTip.x,window.innerWidth-220),top:blockedTip.y}}>DSP budget full · reduce another feature</div>}
     <header className="instrument-title"><h2>Physical Strings</h2><span>Stereo</span>{activity?<SynthProgress progress={activity}/>:<p role="status" className={failed ? "error" : ""}>{message}</p>}</header>
     <div className="synth-activation" aria-label="Instrument playback">
@@ -429,7 +433,21 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
 
     </div>
     <div className="monitor-grid">
-    <fieldset className="pitch-spring-panel" disabled={busy}><legend>Pitch Spring</legend><div className="physical-grid mini-controls"><label className="physical-control">Source<select aria-label="Pitch spring source" value={preset.modulation.settings[18]} onChange={e=>setModSetting(18,+e.target.value)}>{springSourceNames.map((name,i)=><option key={name} value={springSourceWords[i]}>{name}</option>)}</select></label>{control(33)}{control(34)}<div className="physical-control"><label>Warble</label><Knob label="Pressure warble" value={preset.modulation.settings[21]} disabled={busy||tool==="modulate"} onChange={v=>setModSetting(21,Math.round(v))}/><output>{Math.round(preset.modulation.settings[21]/65535*100)}%</output></div></div><PreviewValues ids={[35]}>{([cents])=><div className="pitch-spring-meter" title="Approximation for the displayed note" role="meter" aria-label="Pitch spring gesture preview" aria-valuemin={-280} aria-valuemax={280} aria-valuenow={Math.round(cents)}><span style={{left:`${50+Math.max(-1,Math.min(1,cents/280))*48}%`}}/><output>{cents>=0?'+':''}{cents.toFixed(1)} ct</output></div>}</PreviewValues></fieldset>
+    <fieldset className="pitch-spring-panel" disabled={busy}><legend>Pitch Spring</legend>
+      <div className="spring-layout">
+        <PitchSpringView settings={preset.modulation.settings}/>
+        <div className="spring-controls">
+          <div className="spring-row">
+            <label className="spring-source">Follows<select aria-label="Pitch spring source" value={preset.modulation.settings[springWords.source]} onChange={e=>setModSetting(springWords.source,+e.target.value)}>{springSourceNames.map((name,i)=><option key={name} value={springSourceWords[i]}>{name}</option>)}</select></label>
+            <div className="source-tabs spring-direction" role="group" aria-label="Pitch spring direction">{(springPressure?["Both ways","Pressing in","Easing off"]:["Both ways","Rising","Falling"]).map((name,i)=><button type="button" key={name} disabled={busy} aria-pressed={springDirection(preset.modulation.settings)===i} title={["Bends while the source moves either way","Bends only while the source rises; coming back is silent","Bends only while the source falls back"][i]} onClick={()=>setModSetting(springWords.direction,springDirectionWords[i])}><svg className="drive-glyph" viewBox="0 0 24 14" aria-hidden="true"><path d={directionGlyphs[i]}/></svg>{name}</button>)}</div>
+          </div>
+          <div className="spring-groups">
+            <div className="spring-group"><span>Bend</span><div>{control(33)}{control(34)}</div></div>
+            <div className="spring-group"><span>Feel</span><div>{springKnob(springWords.weight,"Weight","Heavier springs ease into the bend and wobble more slowly",v=>`${Math.round(springRise(v)*1000)} ms`)}{springKnob(springWords.bounce,"Bounce","Overshoot and wobble as the bend settles. With a short Return it rings about the note",v=>v?`${Math.round(v/65535*100)}%`:"Off")}</div></div>
+          </div>
+        </div>
+      </div>
+    </fieldset>
     <fieldset className="expression-panel" disabled={busy}><legend>Expression</legend>
       <PreviewExpression>{live => <>{client&&ready&&<p className="panel-note">Tilt X ± {((live?.tiltX??0)*45).toFixed(1)}° · Y {((live?.tiltY??0)*45).toFixed(1)}° · {live?.motionValid?"Live":live?.motionDetected?"Waiting for valid gravity":"Connect for tilt"} {client&&ready&&<button disabled={busy||!live?.motionValid} onClick={()=>void operation(async()=>{await client.zeroMotion();return client.read();})}>Set tilt neutral</button>}</p>}
       <p className="panel-note">{client && ready ? live?.key === null || live?.key === undefined ? "Play a key to see its pressure." : `Key ${live.key} · ${live.held ? "held" : "released"}` : "Connect to see live key expression."}</p></>}</PreviewExpression>

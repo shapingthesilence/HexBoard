@@ -465,6 +465,22 @@
 /* Shared curved envelope inside the source editor follows the source color. */
 .mod-source-editor .curved-envelope { --envelope-color: var(--modulation-color, var(--brand)); margin: 2px 0 6px; }
 
-.pitch-spring-panel{grid-column:1/-1}.pitch-spring-panel .mini-controls{grid-template-columns:repeat(4,minmax(0,1fr));align-items:center}.pitch-spring-meter{position:relative;height:1.7rem;border-radius:6px;background:linear-gradient(90deg,transparent 49.6%,var(--text-soft) 50%,transparent 50.4%),var(--surface-muted);border:1px solid var(--border);margin-top:.35rem}.pitch-spring-meter>span{position:absolute;top:.35rem;width:.4rem;height:.4rem;border-radius:50%;background:var(--brand);transform:translateX(-50%)}.pitch-spring-meter output{position:absolute;right:.4rem;bottom:0;font-size:.7rem;color:var(--text-soft)}
-
-@media(max-width:520px){.pitch-spring-panel .mini-controls{grid-template-columns:repeat(2,minmax(0,1fr));}}
+/* Pitch Spring: the response picture beside its controls, as the Wavetable stages pair theirs. */
+.physical-editor .pitch-spring-panel { grid-column:1/-1; }
+.physical-editor .spring-layout { display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:12px;align-items:center; }
+.physical-editor .pitch-spring-view { position:relative; }
+.physical-editor .pitch-spring-plot { display:block;width:100%;height:auto;border-radius:7px;background:var(--synth-scope); }
+.physical-editor .pitch-spring-meter { position:absolute;top:0;right:0;bottom:0;width:6.4%;pointer-events:none; }
+.physical-editor .pitch-spring-meter::before { content:"";position:absolute;left:50%;top:7.1%;height:61.9%;width:1px;background:var(--border-strong); }
+.physical-editor .pitch-spring-meter > span { position:absolute;left:50%;width:9px;height:9px;margin:-4.5px 0 0 -4.5px;border-radius:50%;background:var(--synth-2,var(--brand));box-shadow:0 0 6px var(--synth-2,var(--brand)); }
+.physical-editor .pitch-spring-meter output { position:absolute;right:4px;bottom:4px;font-size:9px;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--text-soft); }
+.physical-editor .spring-row { display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px; }
+.physical-editor .spring-source { display:inline-flex;align-items:center;gap:6px;font-size:10px;color:var(--muted); }
+.physical-editor .spring-direction { flex:1 1 220px;margin:0; }
+.physical-editor .spring-direction button { display:inline-flex;align-items:center;justify-content:center;gap:6px;font-size:11px;white-space:nowrap; }
+.physical-editor .spring-groups { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px; }
+.physical-editor .spring-group { border:1px solid var(--border);border-radius:7px;padding:4px 4px 6px; }
+.physical-editor .spring-group > span { display:block;margin:0 0 2px 4px;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted); }
+.physical-editor .spring-group > div { display:grid;grid-template-columns:repeat(2,minmax(0,1fr)); }
+.physical-editor .spring-group .physical-control { width:100%; }
+@media(max-width:520px) { .physical-editor .spring-groups { grid-template-columns:minmax(0,1fr); } }

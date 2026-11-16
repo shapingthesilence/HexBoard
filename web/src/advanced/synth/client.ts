@@ -56,7 +56,7 @@ export function decodePhysicalState(payload: number[]): PhysicalState {
   const parameters = Array.from({ length: 33 }, (_, i) => decodeU21(payload.slice(6 + i * 3, 9 + i * 3)));
   const routes = Array.from({ length: 99 }, (_, i) => decodeU21(payload.slice(105 + i * 3, 108 + i * 3)) - 65536);
   return { state: (["stopped", "playing", "loading"] as const)[payload[1]], instrument: payload[2], bend,
-    preset: physicalPresetFromUnknown({ format: "hexboard.physical.v23",sample:defaultSample(),modulation:defaultModulation(),effects:defaultFx(),tiltRoutes:Array(66).fill(0), name: "Device RAM", parameters, routes, velocityEngine: payload[402] }) };
+    preset: physicalPresetFromUnknown({ format: "hexboard.physical.v24",sample:defaultSample(),modulation:defaultModulation(),effects:defaultFx(),tiltRoutes:Array(66).fill(0), name: "Device RAM", parameters, routes, velocityEngine: payload[402] }) };
 }
 export interface ControllerState {play:boolean;pedal:number;invert:boolean;minimum:number;maximum:number;tip:number;ring:number;valid:boolean;sustain:boolean;armed:boolean;expression:number;modulation:number}
 export interface MotionState {detected:boolean;valid:boolean;tiltX:number;tiltY:number;tiltRoutes:number[]}

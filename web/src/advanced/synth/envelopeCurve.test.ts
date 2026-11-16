@@ -36,10 +36,10 @@ describe('shared envelope curves', () => {
 
 describe('18-word envelope banks', () => {
   it('keeps physical gesture settings separate from the eighteen envelope words', () => {
-    const m = defaultModulation(); expect(m.settings).toHaveLength(40);
+    const m = defaultModulation(); expect(m.settings).toHaveLength(42);
     const old = {settings: m.settings.slice(0, 16).map((v, i) => i === 6 ? 50000 : v), routes: m.routes};
     expect(() => validateModulation(old)).toThrow();
-    expect(validateModulation(m).settings.slice(18)).toEqual([0,32768,23200,0,...Array(18).fill(32768)]);
+    expect(validateModulation(m).settings.slice(18)).toEqual([0,32768,23200,0,...Array(18).fill(32768),16384,0]);
   });
   it('round-trips current wavetable curves and rejects superseded development sounds', () => {
     const patch = initialWavetable(); patch.parameters[P.AmpDecayCurve] = 9000; patch.mod[1][17] = 60000;
