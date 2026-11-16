@@ -107,6 +107,18 @@ bool geometryBundleStoragePath(const uint8_t* tuningObjectId, char* output, size
   return true;
 }
 
+// Reading past a record keeps the file streaming; a seek makes LittleFS
+// refill its cache for every record, which dominated the startup scan.
+bool skipGeometryBytes(File& file, uint32_t length) {
+  uint8_t discard[256];
+  while (length > 0) {
+    const size_t chunk = std::min<size_t>(sizeof(discard), length);
+    if (file.read(discard, chunk) != chunk) return false;
+    length -= chunk;
+  }
+  return true;
+}
+
 bool readGeometryRecordMetadata(File& file,
                                 const char* storagePath,
                                 GeometryObjectIndexEntry& object) {
@@ -136,7 +148,7 @@ bool readGeometryRecordMetadata(File& file,
   object.storageOffset = file.position();
   if (object.bodyLength == 0 || object.bodyLength > GEOMETRY_OBJECT_MAX_RAW_BYTES
       || object.storageOffset + object.bodyLength > file.size()
-      || !file.seek(object.storageOffset + object.bodyLength)) return false;
+      || !skipGeometryBytes(file, object.bodyLength)) return false;
   object.recordLength = file.position() - object.recordOffset;
   return true;
 }
@@ -169,7 +181,9 @@ bool validateGeometryBundleFile(const char* path,
   }
   bundle.catalogOrder = header.catalogOrder;
   uint32_t crc = crc32Begin();
-  uint8_t buffer[128] = {};
+  // Core 0 only. Reads of this size go straight to flash instead of through
+  // the LittleFS cache, which shortens the startup library scan.
+  static uint8_t buffer[1024];
   while (file.available() > 0) {
     size_t chunk = std::min<size_t>(sizeof(buffer), file.available());
     if (file.read(buffer, chunk) != chunk) {
@@ -554,7 +568,7 @@ bool geometryBundleFileInfoForTuningHandle(uint16_t tuningHandle,
   return true;
 }
 
-bool parseGeometryObjectBody(const std::vector<uint8_t>& body, GeometryObjectSlot& object, std::string& error) {
+bool parseGeometryObjectBody(std::vector<uint8_t> body, GeometryObjectSlot& object, std::string& error) {
   if (body.size() < 8 || body[0] != 'H' || body[1] != 'B' || body[2] != 'S' || body[3] != '1') {
     error = "bad object magic";
     return false;
@@ -628,20 +642,17 @@ void load_geometry_objects() {
     sendToLog("File system not available. Using empty geometry catalog.");
     return;
   }
-  File directory = LittleFS.open(GEOMETRY_STORAGE_ROOT, "r");
-  if (!directory || !directory.isDirectory()) {
-    if (directory) directory.close();
+  if (!LittleFS.exists(GEOMETRY_STORAGE_ROOT)) {
     reportStorageHealthIssue(GEOMETRY_STORAGE_ROOT, "missing");
     sendToLog("Geometry bundle directory not found. Starting with an empty geometry library.");
     return;
   }
-  File entry;
-  while ((entry = directory.openNextFile())) {
+  // List names without opening each entry; validation opens the file once.
+  Dir directory = LittleFS.openDir(GEOMETRY_STORAGE_ROOT);
+  while (directory.next()) {
     char path[GEOMETRY_STORAGE_PATH_LENGTH] = {};
-    snprintf(path, sizeof(path), "%s", entry.fullName());
-    bool candidate = !entry.isDirectory() && pathHasGeometryBundleExtension(path);
-    entry.close();
-    if (!candidate) continue;
+    snprintf(path, sizeof(path), "%s/%s", GEOMETRY_STORAGE_ROOT, directory.fileName().c_str());
+    if (!directory.isFile() || !pathHasGeometryBundleExtension(path)) continue;
     GeometryBundleIndexEntry bundle = {};
     if (!validateGeometryBundleFile(path, bundle, true, false)) {
       reportStorageHealthIssue(path, "invalid bundle");
@@ -663,7 +674,6 @@ void load_geometry_objects() {
     geometryBundles.push_back(bundle);
     geometryCatalogObjectCount += bundle.recordCount;
   }
-  directory.close();
   if (!loadGeometryCatalogOrder()) sortGeometryBundlesAndAssignHandles();
   sendToLog("Geometry bundles loaded successfully (" + std::to_string(geometryBundles.size()) + " bundles, "
             + std::to_string(geometryCatalogObjectCount) + " objects).");
@@ -775,7 +785,7 @@ bool geometryObjectForMetadata(const GeometryObjectIndexEntry& entry, GeometryOb
   }
   GeometryObjectSlot parsed;
   std::string parseError;
-  if (!parseGeometryObjectBody(body, parsed, parseError)
+  if (!parseGeometryObjectBody(std::move(body), parsed, parseError)
       || parsed.objectType != entry.objectType
       || parsed.schemaMajor != entry.schemaMajor
       || parsed.schemaMinor != entry.schemaMinor
@@ -959,8 +969,147 @@ void writeCurrentGeometryReference(GeometryProfileReference& reference) {
   }
 }
 
+namespace {
+// A geometry audition plays a tuning, layout or scale without choosing it.
+// These settings are written by geometry loads; while the audition is
+// unchanged, saves record their values from before it.
+constexpr SettingKey geometryAuditionKeys[] = {
+  SettingKey::CurrentTuning, SettingKey::CurrentLayout, SettingKey::CurrentScale,
+  SettingKey::CurrentKeyStepsFromA, SettingKey::CurrentKeyStepsFromAHigh, SettingKey::ColorMode,
+  SettingKey::DeviceRotation, SettingKey::LayoutRotation, SettingKey::MirrorLeftRight, SettingKey::MirrorUpDown
+};
+constexpr size_t GEOMETRY_AUDITION_KEY_COUNT = sizeof(geometryAuditionKeys) / sizeof(geometryAuditionKeys[0]);
+
+struct GeometryAuditionSnapshot {
+  GeometryProfileReference reference = {};
+  uint8_t values[GEOMETRY_AUDITION_KEY_COUNT] = {};
+  int tuningIndex = 0;
+  int layoutIndex = 0;
+  int scaleIndex = 0;
+  int keyStepsFromA = 0;
+};
+
+bool geometryAuditionActive = false;
+GeometryAuditionSnapshot geometryAuditionCommitted;
+GeometryAuditionSnapshot geometryAuditionPlayed;
+uint8_t geometryAuditionHeldValues[GEOMETRY_AUDITION_KEY_COUNT] = {};
+bool geometryAuditionValuesSwapped = false;
+
+void captureGeometryAuditionSnapshot(GeometryAuditionSnapshot& snapshot) {
+  writeCurrentGeometryReference(snapshot.reference);
+  for (size_t i = 0; i < GEOMETRY_AUDITION_KEY_COUNT; ++i) {
+    snapshot.values[i] = settings[static_cast<uint8_t>(geometryAuditionKeys[i])];
+  }
+  snapshot.tuningIndex = current.tuningIndex;
+  snapshot.layoutIndex = current.layoutIndex;
+  snapshot.scaleIndex = current.scaleIndex;
+  snapshot.keyStepsFromA = current.keyStepsFromA;
+}
+
+bool sameGeometryAuditionSnapshot(const GeometryAuditionSnapshot& a, const GeometryAuditionSnapshot& b) {
+  return memcmp(&a.reference, &b.reference, sizeof(a.reference)) == 0
+         && memcmp(a.values, b.values, sizeof(a.values)) == 0
+         && a.tuningIndex == b.tuningIndex && a.layoutIndex == b.layoutIndex
+         && a.scaleIndex == b.scaleIndex && a.keyStepsFromA == b.keyStepsFromA;
+}
+
+bool restoreGeometryReference(const GeometryProfileReference& reference);
+}  // namespace
+
+bool geometryAuditionUnchanged() {
+  if (!geometryAuditionActive) return false;
+  GeometryAuditionSnapshot now;
+  captureGeometryAuditionSnapshot(now);
+  return sameGeometryAuditionSnapshot(now, geometryAuditionPlayed);
+}
+
+void beginGeometryAudition() {
+  // A changed audition was committed by whatever changed it.
+  if (geometryAuditionActive && !geometryAuditionUnchanged()) geometryAuditionActive = false;
+  if (!geometryAuditionActive) captureGeometryAuditionSnapshot(geometryAuditionCommitted);
+}
+
+void markGeometryAuditionPlayed() {
+  captureGeometryAuditionSnapshot(geometryAuditionPlayed);
+  geometryAuditionActive = true;
+}
+
+void commitGeometryAudition() {
+  geometryAuditionActive = false;
+}
+
+const GeometryProfileReference* geometryAuditionCommittedReference() {
+  return geometryAuditionActive ? &geometryAuditionCommitted.reference : nullptr;
+}
+
+bool restoreGeometryAuditionCommitted() {
+  if (!geometryAuditionActive) return false;
+  if (!geometryAuditionUnchanged()) { geometryAuditionActive = false; return false; }
+  geometryAuditionActive = false;
+  const GeometryAuditionSnapshot& committed = geometryAuditionCommitted;
+  current.tuningIndex = committed.tuningIndex;
+  current.layoutIndex = committed.layoutIndex;
+  current.scaleIndex = committed.scaleIndex;
+  if (committed.reference.flags & GEOMETRY_PROFILE_HAS_TUNING) {
+    const bool previousApplyDefaultColorMode = applyGeometryBundleDefaultColorMode;
+    applyGeometryBundleDefaultColorMode = false;
+    restoreGeometryReference(committed.reference);
+    applyGeometryBundleDefaultColorMode = previousApplyDefaultColorMode;
+  }
+  for (size_t i = 0; i < GEOMETRY_AUDITION_KEY_COUNT; ++i) {
+    settings[static_cast<uint8_t>(geometryAuditionKeys[i])] = committed.values[i];
+  }
+  current.keyStepsFromA = committed.keyStepsFromA;
+  colorMode = settingValue(SettingKey::ColorMode);
+  layoutRotation = settingValue(SettingKey::LayoutRotation) % 6;
+  deviceRotation = settingValue(SettingKey::DeviceRotation) % 4;
+  mirrorLeftRight = settingEnabled(SettingKey::MirrorLeftRight);
+  mirrorUpDown = settingEnabled(SettingKey::MirrorUpDown);
+  return true;
+}
+
+void beginSavingCommittedGeometrySettings() {
+  geometryAuditionValuesSwapped = false;
+  if (!geometryAuditionUnchanged()) {
+    geometryAuditionActive = false;
+    return;
+  }
+  for (size_t i = 0; i < GEOMETRY_AUDITION_KEY_COUNT; ++i) {
+    const uint8_t key = static_cast<uint8_t>(geometryAuditionKeys[i]);
+    geometryAuditionHeldValues[i] = settings[key];
+    settings[key] = geometryAuditionCommitted.values[i];
+  }
+  geometryAuditionValuesSwapped = true;
+}
+
+void endSavingCommittedGeometrySettings() {
+  if (!geometryAuditionValuesSwapped) return;
+  for (size_t i = 0; i < GEOMETRY_AUDITION_KEY_COUNT; ++i) {
+    settings[static_cast<uint8_t>(geometryAuditionKeys[i])] = geometryAuditionHeldValues[i];
+  }
+  geometryAuditionValuesSwapped = false;
+}
+
+void applyCommittedGeometryAuditionSettings(uint8_t* profileSettings) {
+  if (!profileSettings || !geometryAuditionUnchanged()) return;
+  for (size_t i = 0; i < GEOMETRY_AUDITION_KEY_COUNT; ++i) {
+    profileSettings[static_cast<uint8_t>(geometryAuditionKeys[i])] = geometryAuditionCommitted.values[i];
+  }
+}
+
 void rememberCurrentGeometryReferenceForProfile(uint8_t profileIndex) {
-  if (profileIndex >= PROFILE_COUNT || !userGeometryRuntime.tuningObjectSelected) {
+  if (profileIndex >= PROFILE_COUNT) {
+    return;
+  }
+  // An unchanged audition is never saved; the selection before it is.
+  if (geometryAuditionUnchanged()) {
+    if (geometryAuditionCommitted.reference.flags & GEOMETRY_PROFILE_HAS_TUNING) {
+      geometryProfileReferences[profileIndex] = geometryAuditionCommitted.reference;
+    }
+    return;
+  }
+  geometryAuditionActive = false;
+  if (!userGeometryRuntime.tuningObjectSelected) {
     return;
   }
   writeCurrentGeometryReference(geometryProfileReferences[profileIndex]);
@@ -970,7 +1119,12 @@ bool restoreGeometryReferenceForProfile(uint8_t profileIndex) {
   if (profileIndex >= PROFILE_COUNT) {
     return false;
   }
-  const GeometryProfileReference& reference = geometryProfileReferences[profileIndex];
+  geometryAuditionActive = false;
+  return restoreGeometryReference(geometryProfileReferences[profileIndex]);
+}
+
+namespace {
+bool restoreGeometryReference(const GeometryProfileReference& reference) {
   if ((reference.flags & GEOMETRY_PROFILE_HAS_TUNING) == 0) {
     return false;
   }
@@ -1035,11 +1189,33 @@ bool restoreGeometryReferenceForProfile(uint8_t profileIndex) {
   return true;
 }
 
+}  // namespace
+
 bool loadGeometryRuntimeForProfile(uint8_t profileIndex) {
   bool previousApplyDefaultColorMode = applyGeometryBundleDefaultColorMode;
   applyGeometryBundleDefaultColorMode = false;
-  bool loaded =
-    restoreGeometryReferenceForProfile(profileIndex) || loadDefaultGeometryRuntime();
+  // Restoring a profile's own layout keeps the orientation saved with the
+  // profile, which may adjust that layout. A fallback layout loads as authored.
+  const uint8_t savedOrientation[] = {
+    settings[static_cast<uint8_t>(SettingKey::DeviceRotation)],
+    settings[static_cast<uint8_t>(SettingKey::LayoutRotation)],
+    settings[static_cast<uint8_t>(SettingKey::MirrorLeftRight)],
+    settings[static_cast<uint8_t>(SettingKey::MirrorUpDown)]
+  };
+  const bool restored = restoreGeometryReferenceForProfile(profileIndex);
+  if (restored) {
+    settings[static_cast<uint8_t>(SettingKey::DeviceRotation)] = savedOrientation[0];
+    settings[static_cast<uint8_t>(SettingKey::LayoutRotation)] = savedOrientation[1];
+    settings[static_cast<uint8_t>(SettingKey::MirrorLeftRight)] = savedOrientation[2];
+    settings[static_cast<uint8_t>(SettingKey::MirrorUpDown)] = savedOrientation[3];
+    deviceRotation = savedOrientation[0] % 4;
+    layoutRotation = savedOrientation[1] % 6;
+    mirrorLeftRight = savedOrientation[2] != 0;
+    mirrorUpDown = savedOrientation[3] != 0;
+    applyLayout();
+    applyDeviceDisplayRotation();
+  }
+  bool loaded = restored || loadDefaultGeometryRuntime();
   applyGeometryBundleDefaultColorMode = previousApplyDefaultColorMode;
   return loaded;
 }
@@ -1346,6 +1522,8 @@ bool applyUserGeometryRuntimeLayout(const GeometryObjectSlot& object) {
   userGeometryRuntime.active = true;
   userGeometryRuntime.deviceRotation = storedDeviceRotation;
   userGeometryRuntime.layoutCenterStepsFromC = static_cast<int16_t>(centerStepsFromC);
+  // A layout loads as authored: its rotations and mirrors replace any
+  // adjustment made to the previous layout.
   deviceRotation = storedDeviceRotation;
   layoutRotation = storedLayoutRotation;
   mirrorLeftRight = (mirrorFlags & 0x01u) != 0;

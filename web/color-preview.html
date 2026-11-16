@@ -1,0 +1,8 @@
+<!doctype html><html lang="en" data-theme="dark"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>LED color calibration preview</title></head><body><div id="root"></div><script type="module">
+import React from 'react';import {createRoot} from 'react-dom/client';
+import {ColorCalibration} from '/src/advanced/calibration/ColorCalibration.tsx';
+import '/src/styles.css';import '/src/advanced/calibration/calibration.css';
+let values=[1000,1000,1000,260,260,260,0,0,0,0,0,0],preview=false;
+async function execute(command){if(command.startsWith('led color set '))values=command.slice(14).split(' ').map(Number);if(command.startsWith('led color preview '))preview=true;if(command==='led color stop')preview=false;if(command==='led color save')return ['led,color,saved=1'];return [`led,color,version=1,gain=${values.slice(0,3).join(':')},gamma=${values.slice(3,6).join(':')},hue=${values.slice(6).join(':')},preview=${Number(preview)},rail=1,scale=65535`];}
+createRoot(document.getElementById('root')).render(React.createElement('main',{className:'calibrationWorkspace',style:{maxWidth:850,margin:'40px auto',padding:'0 20px'}},React.createElement('p',null,'Offline interface preview · no hardware connected'),React.createElement(ColorCalibration,{execute,available:true})));
+</script></body></html>

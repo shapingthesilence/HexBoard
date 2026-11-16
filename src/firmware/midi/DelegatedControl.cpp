@@ -6,6 +6,25 @@
 #include "../hardware/GridState.h"
 #include "../hardware/LedRender.h"
 #include "../storage/PresetSync.h"
+#include "../synth/SynthAudio.h"
+
+namespace {
+// All MIDI input and session transitions belong to core 0.
+uint32_t sessionToken = 0;
+constexpr byte sessionProtocolVersion = 2;
+
+uint32_t decodeSessionToken(const uint8_t* bytes) {
+  return (static_cast<uint32_t>(bytes[0]) << 21) | (static_cast<uint32_t>(bytes[1]) << 14)
+    | (static_cast<uint32_t>(bytes[2]) << 7) | bytes[3];
+}
+
+void sendSessionStatus(uint32_t token, byte status) {
+  byte message[] = {0x7D, SYSEX_DELEGATED_SESSION_STATUS, sessionProtocolVersion,
+    static_cast<byte>((token >> 21) & 127), static_cast<byte>((token >> 14) & 127),
+    static_cast<byte>((token >> 7) & 127), static_cast<byte>(token & 127), status};
+  withMIDI([&](auto& midi) { midi.sendSysEx(sizeof(message), message); });
+}
+}  // namespace
 
 bool reportDeviceIdentity(const uint8_t* data, const unsigned int len) {
   if (len == 6 && data[1] == 0x7E && data[3] == 0x06 && data[4] == 0x01) {
@@ -72,19 +91,25 @@ void releaseActiveDelegatedNotes() {
 }
 
 void enterDelegatedControl(const uint8_t* appNameData = nullptr, const unsigned int appNameLen = 0) {
+  const uint32_t previousToken = sessionToken;
+  sessionToken = 0;
+  if (previousToken != 0) sendSessionStatus(previousToken, 0);
   if (delegatedControlState.active) {
     releaseActiveDelegatedNotes();
   }
   setDelegatedAppName(appNameData, appNameLen);
-  for (auto& color : delegatedControlState.colors) {
+  for (auto& color : delegatedControlState.ledHsv) {
     color.store(0, std::memory_order_relaxed);
   }
   clearDelegatedNoteActivity();
   delegatedControlState.displayDirty = true;
   delegatedControlState.displayWakeRequested = true;
   delegatedControlState.returnToMenuRequested = false;
-  // Reset parser state when entering delegated mode.
-  setupMIDI();
+  // Mode changes reset parsers only. Reopening Serial1 tears down its live
+  // UART/FIFO; USB and serial endpoints belong to boot initialization.
+  resetMidiInputParser(usbMidiInput);
+  resetMidiInputParser(serialMidiInput);
+  delegatedControlState.displayRotation = 0xff;
   delegatedControlState.active.store(true, std::memory_order_release);
   sendToLog("delegated = 1");
 }
@@ -94,10 +119,39 @@ void exitDelegatedControl() {
     return;
   }
   releaseActiveDelegatedNotes();
+  const uint32_t previousToken = sessionToken;
+  sessionToken = 0;
+  resetMidiInputParser(usbMidiInput);
+  resetMidiInputParser(serialMidiInput);
+  delegatedControlState.displayRotation = 0xff;
+  if (previousToken != 0) sendSessionStatus(previousToken, 0);
   delegatedControlState.displayDirty = false;
   delegatedControlState.displayWakeRequested = false;
   delegatedControlState.returnToMenuRequested = true;
   sendToLog("delegated = 0");
+}
+
+void processSessionEnter(const uint8_t* data, unsigned int len) {
+  if (len < 5 || data[0] != sessionProtocolVersion) return;
+  const uint32_t token = decodeSessionToken(data + 1);
+  if (token == 0) return;
+  if (delegatedControlState.active) {
+    if (sessionToken == token) sendSessionStatus(token, 1);
+    else sendSessionStatus(token, 2);  // Busy: another host owns the surface.
+    return;
+  }
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    if (h[i].btnState & 1) {
+      sendSessionStatus(token, 2);  // Release held controls before changing owners.
+      return;
+    }
+  }
+  // A fresh session entry is processed in normal mode on core 0.
+  panicStopOutput();
+  resetDelegatedNoteMap();
+  enterDelegatedControl(data + 5, len - 5);
+  sessionToken = token;
+  sendSessionStatus(token, 1);
 }
 
 void RAM_FUNC(delegatedButtonEvent)(byte x, bool press) {
@@ -167,12 +221,9 @@ void processLedSysEx(const uint8_t* data, const unsigned int len) {
     byte hueData = data[idx + 2] & 0x7F;
     byte satData = data[idx + 3] & 0x7F;
     byte valData = data[idx + 4] & 0x7F;
-    colorDef c = {
-      static_cast<float>(hueData) * 360.0f / 127.0f,
-      static_cast<byte>(2 * satData + (satData > 63 ? 1 : 0)),
-      static_cast<byte>(2 * valData + (valData > 63 ? 1 : 0))
-    };
-    delegatedControlState.colors[led] = getLEDcode(c);
+    delegatedControlState.ledHsv[led].store(
+      (static_cast<uint32_t>(hueData) << 16) | (static_cast<uint32_t>(satData) << 8) | valData,
+      std::memory_order_relaxed);
   }
 }
 
@@ -181,6 +232,20 @@ void processDelegatedSysEx(const uint8_t* data, const unsigned int len) {
     return;
   }
   switch (data[0]) {
+    case SYSEX_DELEGATED_DISPLAY_ROTATION:
+      if (len == 6 && data[5] < 4 && sessionToken != 0 && decodeSessionToken(data + 1) == sessionToken) {
+        delegatedControlState.displayRotation.store(data[5], std::memory_order_relaxed);
+        delegatedControlState.displayDirty.store(true, std::memory_order_release);
+      }
+      break;
+    case SYSEX_DELEGATED_SESSION_ENTER:
+      processSessionEnter(data + 1, len - 1);
+      break;
+    case SYSEX_DELEGATED_SESSION_EXIT:
+      if (len == 5 && sessionToken != 0 && decodeSessionToken(data + 1) == sessionToken) {
+        exitDelegatedControl();
+      }
+      break;
     case SYSEX_DELEGATED_ENTER:
       enterDelegatedControl(&data[1], len - 1);
       break;
@@ -207,6 +272,10 @@ bool processIncomingSysEx(const uint8_t* data, const unsigned int len) {
     return true;
   }
   if (processPresetSyncSysEx(data, len)) {
+    return true;
+  }
+  if (len >= 9 && data[0] == 0xF0 && data[len - 1] == 0xF7 && data[1] == 0x7D && data[2] == SYSEX_DELEGATED_SESSION_ENTER) {
+    processSessionEnter(data + 3, len - 4);
     return true;
   }
   if ((len >= 4) && (data[0] == 0xF0) && (data[len - 1] == 0xF7) && (data[1] == 0x7D) && (data[2] == SYSEX_DELEGATED_ENTER)) {

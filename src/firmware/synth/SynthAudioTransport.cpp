@@ -15,7 +15,8 @@ byte headphoneVolumeCap = HEADPHONE_VOLUME_CAP_FULL;
 byte piezoVolumeCap = HEADPHONE_VOLUME_CAP_FULL;
 volatile byte headphoneVolumeGain = HEADPHONE_VOLUME_CAP_FULL;
 volatile byte piezoVolumeGain = HEADPHONE_VOLUME_CAP_FULL;
-extern const uint32_t AUDIO_DMA_BUFFER_MICROS =
+// Read by the renderer on every block, so it lives in RAM.
+extern const uint32_t __not_in_flash("audio_dma_buffer_micros") AUDIO_DMA_BUFFER_MICROS =
   (static_cast<uint64_t>(AUDIO_DMA_BUFFER_SAMPLE_COUNT) * 1000000ull) / AUDIO_SAMPLE_RATE_HZ;
 volatile uint16_t audioOutputMuteGainQ8 = AUDIO_OUTPUT_MUTE_GAIN_FULL_Q8;
 volatile uint16_t audioOutputMuteTargetQ8 = AUDIO_OUTPUT_MUTE_GAIN_FULL_Q8;
@@ -37,16 +38,24 @@ bool audioJackAvailable() {
   return Hardware_Version == HARDWARE_V1_2;
 }
 
+// The AudioDestination setting holds AUDIO_PIEZO (Buzzer on) or AUDIO_AJACK
+// (Buzzer off); 0 is the unset default. Hardware V1.2 plays through the jack
+// unless the piezo is chosen. V1.1 has no jack, so it plays through the piezo
+// unless the jack is chosen, which leaves the onboard synth silent.
 bool decodeStoredBuzzerEnabled(uint8_t storedValue) {
   if (!audioJackAvailable()) {
-    return true;
+    return (storedValue & AUDIO_PIEZO) != 0 || (storedValue & AUDIO_AJACK) == 0;
   }
   return (storedValue & AUDIO_PIEZO) != 0;
 }
 
+uint8_t encodeStoredBuzzerEnabled(bool buzzerEnabled) {
+  return buzzerEnabled ? AUDIO_PIEZO : AUDIO_AJACK;
+}
+
 byte runtimeAudioDestination(bool buzzerEnabled) {
   if (!audioJackAvailable()) {
-    return AUDIO_PIEZO;
+    return buzzerEnabled ? AUDIO_PIEZO : AUDIO_NONE;
   }
   return buzzerEnabled ? AUDIO_PIEZO : AUDIO_AJACK;
 }
@@ -222,6 +231,9 @@ volatile bool audioDmaBufferFree[2] = { true, true };
 volatile uint8_t audioDmaActiveBuffer = 0;
 volatile uint32_t audioDmaUnderrunCount = 0;
 volatile bool audioDmaPausedForFlashWrite = false;
+// A pending completion from the previous route must not restart DMA while the
+// stopped transport is being configured and primed for its new destination.
+volatile bool audioDmaReconfiguring = false;
 int audioDmaChannel = -1;
 byte audioDmaActiveDestination = AUDIO_NONE;
 uint8_t audioDmaActiveSlice = AJACK_SLICE;
@@ -314,8 +326,10 @@ void RAM_FUNC(audioDmaIrqHandler)() {
   if (audioDmaChannel < 0) {
     return;
   }
-  dma_hw->ints1 = 1u << audioDmaChannel;
-  if (audioDmaPausedForFlashWrite) {
+  const uint32_t completed = 1u << audioDmaChannel;
+  if (!(dma_hw->ints1 & completed)) return;
+  dma_hw->ints1 = completed;
+  if (audioDmaPausedForFlashWrite || audioDmaReconfiguring) {
     return;
   }
 
@@ -338,19 +352,26 @@ void fillAudioDmaSilenceBuffer(byte destination) {
   }
 }
 
-void RAM_FUNC(fillAudioDmaBuffer)(uint8_t bufferIndex, byte destination) {
-  uint32_t profileStart = isrProfilingEnabled ? timer_hw->timerawl : 0;
-  uint8_t maxVoices = 0;
-  uint8_t combinedFlags = 0;
-  uint32_t* buffer = audioDmaBuffers[bufferIndex];
+template<bool Sampler>
+__attribute__((always_inline)) inline void fillSynthSamples(uint32_t* buffer, byte destination,
+                                                           uint8_t& maxVoices, uint8_t& combinedFlags) {
   for (uint16_t sampleIndex = 0; sampleIndex < AUDIO_DMA_BUFFER_SAMPLE_COUNT; ++sampleIndex) {
-    AudioOutputLevels levels = renderAudioOutputLevels(destination);
+    AudioOutputLevels levels = (Sampler ? renderCompactSamplerOutputLevels(destination) : renderAudioOutputLevels(destination));
     if (levels.voices > maxVoices) {
       maxVoices = levels.voices;
     }
     combinedFlags |= levels.profileFlags;
     buffer[sampleIndex] = audioDmaEncodeLevel(audioDmaLevelForDestination(levels, destination));
   }
+}
+
+void RAM_FUNC(fillAudioDmaBuffer)(uint8_t bufferIndex, byte destination) {
+  uint32_t profileStart = isrProfilingEnabled ? timer_hw->timerawl : 0;
+  uint8_t maxVoices = 0;
+  uint8_t combinedFlags = 0;
+  uint32_t* buffer = audioDmaBuffers[bufferIndex];
+  if (compactSamplerActive()) fillSynthSamples<true>(buffer, destination, maxVoices, combinedFlags);
+  else fillSynthSamples<false>(buffer, destination, maxVoices, combinedFlags);
   if (profileStart) {
     recordAudioBufferProfileSample(profileStart, maxVoices, combinedFlags);
   }
@@ -394,6 +415,8 @@ void resumeAudioDmaAfterFlashWrite() {
 }
 
 void startAudioDmaForDestination(byte destination) {
+  audioDmaReconfiguring = true;
+  __dmb();
   stopAudioDma();
   audioDmaActiveDestination = destination;
   audioDmaActiveSlice = audioDmaSliceForDestination(destination);
@@ -402,6 +425,8 @@ void startAudioDmaForDestination(byte destination) {
   fillAudioDmaSilenceBuffer(destination);
 
   if (destination == AUDIO_NONE || audioDmaChannel < 0) {
+    __dmb();
+    audioDmaReconfiguring = false;
     return;
   }
 
@@ -414,9 +439,16 @@ void startAudioDmaForDestination(byte destination) {
   fillAudioDmaBuffer(0, destination);
   fillAudioDmaBuffer(1, destination);
   startAudioDmaTransfer(0);
+  __dmb();
+  audioDmaReconfiguring = false;
 }
 
-void serviceAudioDmaBuffers() {
+void RAM_FUNC(serviceAudioDmaBuffers)() {
+  if (synthWorkspacePauseRequested.load(std::memory_order_acquire)) {
+    synthWorkspacePauseAcknowledged.store(true, std::memory_order_release);
+    return;
+  }
+  synthWorkspacePauseAcknowledged.store(false, std::memory_order_release);
   if (audioDmaChannel < 0) {
     return;
   }

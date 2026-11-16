@@ -4,6 +4,7 @@
 #include "../app/RuntimeDefaults.h"
 #include "../hardware/GridState.h"
 #include "../hardware/LedRender.h"
+#include "../hardware/LedTiming.h"
 #include "../midi/MidiInput.h"
 #include "../midi/MidiRouting.h"
 #include "../midi/MidiTransport.h"
@@ -64,11 +65,11 @@ bool flashSaveScreenClosePending = false;
 uint64_t flashSaveSavedScreenTime = 0;
 uint64_t flashSaveScreenVisibleUntil = 0;
 constexpr uint64_t FLASH_SAVE_SCREEN_MAX_VISIBLE_MICROS = 700000ULL;
-bool missingWavetableNoticeVisible = false;
-bool missingWavetableNoticeWokeDisplayFromSleep = false;
-uint64_t missingWavetableNoticeSavedScreenTime = 0;
-uint64_t missingWavetableNoticeVisibleUntil = 0;
-constexpr uint64_t MISSING_WAVETABLE_NOTICE_MICROS = 2000000ULL;
+bool displayNoticeVisible = false;
+bool displayNoticeWokeDisplayFromSleep = false;
+uint64_t displayNoticeSavedScreenTime = 0;
+uint64_t displayNoticeVisibleUntil = 0;
+constexpr uint64_t DISPLAY_NOTICE_MICROS = 2000000ULL;
 
 constexpr uint8_t VIRTUAL_LIST_LAUNCHER_VISIBLE_CHARS = 19;
 constexpr uint64_t VIRTUAL_LIST_LAUNCHER_SCROLL_START_DELAY_MICROS = 1500000ULL;
@@ -139,10 +140,11 @@ void drawDelegatedControlScreen() {
     wakeDelegatedControlScreenForInput();
     delegatedControlState.displayWakeRequested = false;
   }
-  if (screenSaverOn || !delegatedControlState.displayDirty) {
+  if (screenSaverOn || !delegatedControlState.displayDirty.exchange(false, std::memory_order_acq_rel)) {
     return;
   }
 
+  applyDeviceDisplayRotation();
   dismissCommandWheelOverlay();
   noteOverlayVisible = false;
   noteBadgeVisible = false;
@@ -166,7 +168,6 @@ void drawDelegatedControlScreen() {
   drawCenteredDelegatedText("Hold encoder", 94);
   drawCenteredDelegatedText("5 sec to exit", MODAL_SCREEN_FOOTER_BASELINE);
   u8g2.sendBuffer();
-  delegatedControlState.displayDirty = false;
 }
 
 void restoreInteractiveMenuDisplay() {
@@ -183,6 +184,7 @@ void restoreMenuAfterDelegatedControl() {
     return;
   }
   delegatedControlState.returnToMenuRequested = false;
+  applyDeviceDisplayRotation();
   if (!screenSaverOn) {
     restoreInteractiveMenuDisplay();
   }
@@ -395,6 +397,25 @@ void showFlashSaveScreen() {
   flashSaveScreenVisible = true;
 }
 
+// Replaces the flash-save screen text with a counted task during long writes.
+void showFlashSaveProgress(const char* task, uint16_t done, uint16_t total) {
+  if (!flashSaveScreenVisible) {
+    showFlashSaveScreen();
+  }
+  flashSaveScreenVisibleUntil = readClock() + FLASH_SAVE_SCREEN_MAX_VISIBLE_MICROS;
+  char count[16] = {};
+  snprintf(count, sizeof(count), "%u / %u", static_cast<unsigned>(done), static_cast<unsigned>(total));
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_7x14B_tf);
+  const char* lines[] = {task, count, "Audio muted."};
+  const uint8_t y[] = {40, 62, 90};
+  for (uint8_t i = 0; i < 3; ++i) {
+    int16_t x = static_cast<int16_t>((128 - u8g2.getStrWidth(lines[i])) / 2);
+    u8g2.drawStr(x > 0 ? x : 0, y[i], lines[i]);
+  }
+  u8g2.sendBufferAndWait();
+}
+
 static void closeFlashSaveScreenNow() {
   if (!flashSaveScreenVisible) {
     return;
@@ -445,19 +466,34 @@ void serviceFlashSaveScreen() {
   }
 }
 
-void showMissingWavetableNotice(const char* wavetableName) {
+// Shows centered lines for two seconds, then restores the previous screen.
+void showDisplayNotice(const DisplayNoticeLine* lines, uint8_t lineCount) {
   dismissFlashSaveScreenForMenuInput();
   dismissCommandWheelOverlay();
-  missingWavetableNoticeWokeDisplayFromSleep = screenSaverOn;
-  missingWavetableNoticeSavedScreenTime = screenTime;
-  missingWavetableNoticeVisibleUntil = readClock() + MISSING_WAVETABLE_NOTICE_MICROS;
+  displayNoticeWokeDisplayFromSleep = screenSaverOn;
+  displayNoticeSavedScreenTime = screenTime;
+  displayNoticeVisibleUntil = readClock() + DISPLAY_NOTICE_MICROS;
   wakeDisplayFromScreensaver();
   noteOverlayVisible = false;
   noteBadgeVisible = false;
   noteOverlayTemporaryWake = false;
   noteOverlayWokeDisplayFromSleep = false;
 
-  const char* name = wavetableName && wavetableName[0] ? wavetableName : "Unknown";
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_6x13_tf);
+  for (uint8_t i = 0; i < lineCount; ++i) {
+    if (lines[i].text && lines[i].text[0]) {
+      drawCenteredDelegatedText(lines[i].text, lines[i].y);
+    }
+  }
+  u8g2.sendBuffer();
+  displayNoticeVisible = true;
+}
+
+namespace {
+// "Upload <kind>" / quoted name on one or two lines / where / fallback.
+void showMissingSoundSourceNotice(const char* heading, const char* missingName, const char* fallback) {
+  const char* name = missingName && missingName[0] ? missingName : "Unknown";
   size_t nameLength = strnlen(name, SYNTH_WAVETABLE_NAME_LENGTH - 1);
   char firstNameLine[22] = {};
   char secondNameLine[18] = {};
@@ -467,32 +503,49 @@ void showMissingWavetableNotice(const char* wavetableName) {
     snprintf(firstNameLine, sizeof(firstNameLine), "\"%.*s", 18, name);
     snprintf(secondNameLine, sizeof(secondNameLine), "%.*s\"", 13, name + 18);
   }
+  const DisplayNoticeLine lines[] = {
+    {heading, 17},
+    {firstNameLine, static_cast<uint8_t>(secondNameLine[0] ? 39 : 46)},
+    {secondNameLine, 56},
+    {"with HexBoard Sync", 80},
+    {fallback, 104},
+  };
+  showDisplayNotice(lines, 5);
+}
+}  // namespace
 
-  u8g2.clearBuffer();
-  u8g2.setFont(u8g2_font_6x13_tf);
-  drawCenteredDelegatedText("Upload wavetable", 17);
-  drawCenteredDelegatedText(firstNameLine, secondNameLine[0] ? 39 : 46);
-  if (secondNameLine[0]) {
-    drawCenteredDelegatedText(secondNameLine, 56);
-  }
-  drawCenteredDelegatedText("with HexBoard Sync", 80);
-  drawCenteredDelegatedText("Using Basic Shapes", 104);
-  u8g2.sendBuffer();
-  missingWavetableNoticeVisible = true;
+void showMissingWavetableNotice(const char* wavetableName) {
+  showMissingSoundSourceNotice("Upload wavetable", wavetableName, "Using Basic Shapes");
 }
 
-bool serviceMissingWavetableNotice() {
-  if (!missingWavetableNoticeVisible) {
+void showMissingSamplerInstrumentNotice(const char* instrumentName) {
+  showMissingSoundSourceNotice("Resend sound", instrumentName, "Using wavetable");
+}
+
+void showSynthPresetSaveRefusedNotice(const char* reason, const char* detail,
+                                      const char* advice, const char* adviceDetail) {
+  const DisplayNoticeLine lines[] = {
+    {"Sound not saved", 17},
+    {reason, 46},
+    {detail, 63},
+    {advice, 87},
+    {adviceDetail, 104},
+  };
+  showDisplayNotice(lines, 5);
+}
+
+bool serviceDisplayNotice() {
+  if (!displayNoticeVisible) {
     return false;
   }
-  if (readClock() < missingWavetableNoticeVisibleUntil) {
+  if (readClock() < displayNoticeVisibleUntil) {
     return true;
   }
 
-  missingWavetableNoticeVisible = false;
-  missingWavetableNoticeVisibleUntil = 0;
-  screenTime = missingWavetableNoticeSavedScreenTime;
-  if (missingWavetableNoticeWokeDisplayFromSleep || screenTime > screenSaverTimeout) {
+  displayNoticeVisible = false;
+  displayNoticeVisibleUntil = 0;
+  screenTime = displayNoticeSavedScreenTime;
+  if (displayNoticeWokeDisplayFromSleep || screenTime > screenSaverTimeout) {
     enterDisplayScreensaver();
   } else if (delegatedControlState.active) {
     delegatedControlState.displayDirty = true;
@@ -500,8 +553,8 @@ bool serviceMissingWavetableNotice() {
   } else {
     restoreInteractiveMenuDisplay();
   }
-  missingWavetableNoticeWokeDisplayFromSleep = false;
-  missingWavetableNoticeSavedScreenTime = 0;
+  displayNoticeWokeDisplayFromSleep = false;
+  displayNoticeSavedScreenTime = 0;
   return false;
 }
 
@@ -546,8 +599,8 @@ bool servicePresetSyncTransfer() {
 char mainTuningMenuLabel[40] = "Tuning";
 char mainLayoutMenuLabel[40] = "Layout";
 char mainScaleMenuLabel[40] = "Scale";
-char mainSynthPresetMenuLabel[48] = "Synth:Current";
-char synthPresetMenuLabel[48] = "Preset:Current";
+char mainSynthPresetMenuLabel[48] = "Sound:Current";
+char synthPresetMenuLabel[48] = "Sound:Current";
 
 GEMPage menuPageMain("HexBoard");
 GEMPage menuPageTuning("Tuning", menuPageMain);
@@ -558,9 +611,7 @@ GEMPage menuPageScales("Scales", menuPageMain);
 GEMItem menuGotoScales(mainScaleMenuLabel, menuPageScales);
 GEMPage menuPageColors("Lights & Colors", menuPageMain);
 GEMItem menuGotoColors("Lights & Colors", menuPageColors);
-GEMPage menuPageEditor("Editor", menuPageMain);
-GEMItem menuGotoEditor("Editor", menuPageEditor);
-GEMPage menuPageSynth("Synth", menuPageEditor);
+GEMPage menuPageSynth("Synth", menuPageMain);
 GEMItem menuGotoSynth("Synth", menuPageSynth);
 GEMPage menuPageSynthWavetableLoad("Wavetables", menuPageSynth);
 GEMItem menuGotoSynthWavetableLoad(currentSynthWavetableMenuLabel, menuPageSynthWavetableLoad);
@@ -572,11 +623,11 @@ GEMPage menuPageSynthFx1("FX Env 1", menuPageSynth);
 GEMItem menuGotoSynthFx1("FX Env 1", menuPageSynthFx1);
 GEMPage menuPageSynthFx2("FX Env 2", menuPageSynth);
 GEMItem menuGotoSynthFx2("FX Env 2", menuPageSynthFx2);
-GEMPage menuPageSynthPresetSave("Save Preset", menuPageSynth);
-GEMItem menuGotoSynthPresetSave("Save Preset", menuPageSynthPresetSave);
-GEMPage menuPageMainSynthPresetLoad("Load Preset", menuPageMain);
+GEMPage menuPageSynthPresetSave("Save Sound", menuPageSynth);
+GEMItem menuGotoSynthPresetSave("Save Sound", menuPageSynthPresetSave);
+GEMPage menuPageMainSynthPresetLoad("Sounds", menuPageMain);
 GEMItem menuGotoMainSynthPresetLoad(mainSynthPresetMenuLabel, menuPageMainSynthPresetLoad);
-GEMPage menuPageSynthPresetLoad("Load Preset", menuPageSynth);
+GEMPage menuPageSynthPresetLoad("Sounds", menuPageSynth);
 GEMItem menuGotoSynthPresetLoad(synthPresetMenuLabel, menuPageSynthPresetLoad);
 GEMPage menuPageOptions("Settings", menuPageMain);
 GEMItem menuGotoOptions("Settings", menuPageOptions);
@@ -674,7 +725,7 @@ void rebootToBootloader();
     These GEMItems are read-only display items.
     They do not change any variable or run any procedure.
   */
-GEMItem menuItemVersion("Firmware 2.0 beta 4");
+GEMItem menuItemVersion("Firmware 2.0");
 SelectOptionByte optionByteHardware[] = {
   { "V1.1", HARDWARE_UNKNOWN }, { "V1.1", HARDWARE_V1_1 }, { "V1.2", HARDWARE_V1_2 }
 };
@@ -689,9 +740,7 @@ GEMItem menuItemUSBBootloader("Update Firmware", rebootToBootloader);
 void syncSettingsToRuntime(bool redrawMenu);
 void refreshMenuChoicesForCurrentTuning();
 void rebuildRuntimeStateFromCurrentSelection();
-void updateEditorMenuVisibility();
 void updateMainMenuDynamicLabels();
-void tuningIntonationModeChanged();
 void updateSerialDebugMenuVisibility();
 void serialDebugRuntimeChanged(GEMCallbackData callbackData);
 
@@ -784,15 +833,6 @@ GEMItem menuItemMPEpitchBend("MPE Bend", MPEpitchBendSemis, selectMPEpitchBend, 
 
 SelectOptionByte optionByteYesOrNo[] = { { "No", 0 }, { "Yes", 1 } };
 GEMSelect selectYesOrNo(sizeof(optionByteYesOrNo) / sizeof(SelectOptionByte), optionByteYesOrNo);
-PersistentCallbackInfo callbackInfoScaleLock = {
-  static_cast<uint8_t>(SettingKey::ScaleLock),
-  reinterpret_cast<void*>(&scaleLock),
-  nullptr,
-  nullptr
-};
-GEMItem menuItemScaleLock("Scale Lock", scaleLock, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoScaleLock));
-GEMItem menuItemMainScaleLock("Scale Lock", scaleLock, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoScaleLock));
-
 PersistentCallbackInfo callbackInfoShiftColor = {
   static_cast<uint8_t>(SettingKey::PaletteCenterOnKey),
   reinterpret_cast<void*>(&paletteBeginsAtKeyCenter),
@@ -823,6 +863,7 @@ GEMItem menuItemAutoSave("Auto-Save", autoSave, universalSaveCallback, reinterpr
 // The persisted option reverses the detected hardware's normal direction.
 // The decoder consumes the resulting effective direction.
 bool rotaryInvert = false;
+bool commandEncoder = settingEnabled(SettingKey::CommandEncoder);
 bool rotaryInvertPreference = settingEnabled(SettingKey::RotaryInvert);
 
 void updateEffectiveRotaryInvert() {
@@ -836,6 +877,14 @@ PersistentCallbackInfo callbackInfoRotary = {
   updateEffectiveRotaryInvert
 };
 GEMItem menuItemRotary("Invert Encoder", rotaryInvertPreference, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoRotary));
+
+PersistentCallbackInfo callbackInfoCommandEncoder = {
+  static_cast<uint8_t>(SettingKey::CommandEncoder),
+  reinterpret_cast<void*>(&commandEncoder),
+  nullptr,
+  nullptr
+};
+GEMItem menuItemCommandEncoder("Button Encoder", commandEncoder, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoCommandEncoder));
 
 GEMItem menuItemSerialDebugEnabled("Enabled", serialDebugEnabled, serialDebugRuntimeChanged, static_cast<void*>(nullptr));
 GEMItem menuItemSerialDebugGeneral("General Log", serialDebugGeneralMessages, serialDebugRuntimeChanged, static_cast<void*>(nullptr));
@@ -910,9 +959,9 @@ byte normalizeSynthOutputVolumeCap(byte value) {
 }
 
 SettingKey activeSynthOutputVolumeSettingKey() {
-  return runtimeAudioDestination(synthBuzzerEnabled) == AUDIO_PIEZO
-           ? SettingKey::PiezoVolumeCap
-           : SettingKey::HeadphoneVolumeCap;
+  return runtimeAudioDestination(synthBuzzerEnabled) == AUDIO_AJACK
+           ? SettingKey::HeadphoneVolumeCap
+           : SettingKey::PiezoVolumeCap;
 }
 
 void syncActiveSynthOutputVolumeMenuValue() {
@@ -963,6 +1012,39 @@ void previewLedTest(GEMPreviewCallbackData previewData) {
   lightUpLEDs();
 }
 
+void updateLedDitherMenuVisibility();
+PersistentCallbackInfo callbackInfoColorDithering = {
+  static_cast<uint8_t>(SettingKey::ColorDithering),
+  reinterpret_cast<void*>(&colorDithering),
+  nullptr,
+  updateLedDitherMenuVisibility
+};
+GEMItem menuItemColorDithering("Color Dither", colorDithering, universalSaveCallback,
+                             reinterpret_cast<void*>(&callbackInfoColorDithering));
+
+void saveLedFramePeriod(GEMCallbackData /*callbackData*/) {
+  ledFramePeriodMicros = normalizeLedFramePeriod(ledFramePeriodMicros);
+  storeLedFramePeriodInSettings(ledFramePeriodMicros);
+  markSettingsDirty();
+}
+GEMSpinner spinnerLedFrameCoarse(
+  GEMSpinnerBoundariesInt{LED_FRAME_PERIOD_COARSE_STEP_US, LED_FRAME_PERIOD_MIN_US, LED_FRAME_PERIOD_MAX_US});
+GEMSpinner spinnerLedFrameFine(
+  GEMSpinnerBoundariesInt{LED_FRAME_PERIOD_STEP_US, LED_FRAME_PERIOD_MIN_US, LED_FRAME_PERIOD_MAX_US});
+GEMItem menuItemLedFrameCoarse("Frame Coarse us", ledFramePeriodMicros, spinnerLedFrameCoarse, saveLedFramePeriod);
+GEMItem menuItemLedFrameFine("Frame Fine us", ledFramePeriodMicros, spinnerLedFrameFine, saveLedFramePeriod);
+void previewLedFramePeriod(GEMPreviewCallbackData previewData) {
+  ledFramePeriodMicros = normalizeLedFramePeriod(previewData.previewValInt);
+  lightUpLEDs();
+}
+void updateLedDitherMenuVisibility() {
+  byte index = menuPageAdvanced.getCurrentMenuItemIndex();
+  menuItemLedFrameCoarse.hide(!colorDithering);
+  menuItemLedFrameFine.hide(!colorDithering);
+  byte count = menuPageAdvanced.getItemsCount();
+  if (count > 0) menuPageAdvanced.setCurrentMenuItemIndex(std::min(index, static_cast<byte>(count - 1)));
+}
+
 SelectOptionByte optionByteWheelType[] = { { "Springy", 0 }, { "Sticky", 1 } };
 GEMSelect selectWheelType(sizeof(optionByteWheelType) / sizeof(SelectOptionByte), optionByteWheelType);
 PersistentCallbackInfo callbackInfoPBSticky = {
@@ -993,7 +1075,8 @@ SelectOptionByte optionBytePlayback[] = {
   { "Off", SYNTH_OFF },
   { "MonoRtg", SYNTH_MONO_RETRIGGER },
   { "MonoLeg", SYNTH_MONO_LEGATO },
-  { "Arp'gio", SYNTH_ARPEGGIO },
+  { "MonoArp", SYNTH_ARPEGGIO },
+  { "PolyArp", SYNTH_POLY_ARPEGGIO },
   { "Poly", SYNTH_POLY }
 };
 GEMSelect selectPlayback(sizeof(optionBytePlayback) / sizeof(SelectOptionByte), optionBytePlayback);
@@ -1006,11 +1089,13 @@ PersistentCallbackInfo callbackInfoPlayback = {
 GEMItem menuItemPlayback("Synth Mode", playbackMode, selectPlayback, universalSaveCallback,
                          reinterpret_cast<void*>(&callbackInfoPlayback));
 
-// Hardware V1.2-only
+uint8_t encodeBuzzerSetting(void* variablePtr) {
+  return encodeStoredBuzzerEnabled(*reinterpret_cast<bool*>(variablePtr));
+}
 PersistentCallbackInfo callbackInfoAudioDest = {
   static_cast<uint8_t>(SettingKey::AudioDestination),
   reinterpret_cast<void*>(&synthBuzzerEnabled),
-  nullptr,
+  encodeBuzzerSetting,
   nullptr
 };
 void audioDestinationChanged(GEMCallbackData callbackData) {
@@ -1020,6 +1105,10 @@ void audioDestinationChanged(GEMCallbackData callbackData) {
 }
 GEMItem menuItemAudioD("Buzzer", synthBuzzerEnabled, audioDestinationChanged,
                        reinterpret_cast<void*>(&callbackInfoAudioDest));
+// The same toggle on the main menu, below Sound, on every hardware version.
+// On V1.1, where the piezo is the only output, off silences the onboard synth.
+GEMItem menuItemMainAudioD("Buzzer", synthBuzzerEnabled, audioDestinationChanged,
+                           reinterpret_cast<void*>(&callbackInfoAudioDest));
 
 void installHardwareSpecificMenuItems() {
   if (Hardware_Version == HARDWARE_V1_2) {
@@ -1033,9 +1122,7 @@ void installHardwareSpecificMenuItems() {
 ////////////////////////////////////////////////////////////////
 
 const GEMSpinnerBoundariesByte spinnerBoundariesBPM = { 1, 255, 1 };
-GEMSpinner spinnerJustIntonationBPM(spinnerBoundariesBPM, GEM_LOOP);
 GEMSpinner spinnerSynthBPM(spinnerBoundariesBPM, GEM_LOOP);
-GEMSpinner spinnerBPM_MultiplierOfJI(spinnerBoundariesBPM, GEM_LOOP);
 
 ///////////////////////////////////////////////////////////////////
 
@@ -1379,6 +1466,7 @@ void previewTranspose(GEMPreviewCallbackData previewData) {
   transposeSteps = previewData.previewValInt;
   current.transpose = transposeSteps;
   assignPitches();
+  applyScale();
   updateSynthWithNewFreqs();
 }
 
@@ -1472,109 +1560,6 @@ PersistentCallbackInfo callbackInfoCC74 = {
 GEMItem menuItemSelectCC74value("CC 74 Value", CC74value, spinnerCC74Value, universalSaveCallback,
                                 reinterpret_cast<void*>(&callbackInfoCC74));
 
-// Layout rotation selection
-SelectOptionByte optionByteLayoutRotation[] = { { "0 Deg", 0 }, { "60 Deg", 1 }, { "120 Deg", 2 }, { "180 Deg", 3 }, { "240 Deg", 4 }, { "300 Deg", 5 } };
-GEMSelect selectLayoutRotation(6, optionByteLayoutRotation);
-PersistentCallbackInfo callbackInfoLayoutRotation = {
-  static_cast<uint8_t>(SettingKey::LayoutRotation),
-  reinterpret_cast<void*>(&layoutRotation),
-  nullptr,
-  updateLayoutAndRotate
-};
-GEMItem menuItemSelectLayoutRotation("Layout Rot", layoutRotation, selectLayoutRotation, universalSaveCallback,
-                                     reinterpret_cast<void*>(&callbackInfoLayoutRotation));
-
-// Device/display rotation selection
-SelectOptionByte optionByteDeviceRotation[] = { { "0 Deg", 0 }, { "90 Deg", 1 }, { "180 Deg", 2 }, { "270 Deg", 3 } };
-GEMSelect selectDeviceRotation(sizeof(optionByteDeviceRotation) / sizeof(SelectOptionByte), optionByteDeviceRotation);
-PersistentCallbackInfo callbackInfoDeviceRotation = {
-  static_cast<uint8_t>(SettingKey::DeviceRotation),
-  reinterpret_cast<void*>(&deviceRotation),
-  nullptr,
-  applyDeviceDisplayRotation
-};
-GEMItem menuItemSelectDeviceRotation("Device Rot", deviceRotation, selectDeviceRotation, universalSaveCallback,
-                                     reinterpret_cast<void*>(&callbackInfoDeviceRotation));
-
-// Layout mirroring toggles
-PersistentCallbackInfo callbackInfoMirrorLR = {
-  static_cast<uint8_t>(SettingKey::MirrorLeftRight),
-  reinterpret_cast<void*>(&mirrorLeftRight),
-  nullptr,
-  updateLayoutAndRotate
-};
-GEMItem mirrorLeftRightGEMItem("Flip L/R", mirrorLeftRight, universalSaveCallback,
-                                reinterpret_cast<void*>(&callbackInfoMirrorLR));
-
-PersistentCallbackInfo callbackInfoMirrorUD = {
-  static_cast<uint8_t>(SettingKey::MirrorUpDown),
-  reinterpret_cast<void*>(&mirrorUpDown),
-  nullptr,
-  updateLayoutAndRotate
-};
-GEMItem mirrorUpDownGEMItem("Flip U/D", mirrorUpDown, universalSaveCallback,
-                             reinterpret_cast<void*>(&callbackInfoMirrorUD));
-
-// Dynamic just intonation toggles and parameters
-PersistentCallbackInfo callbackInfoJustIntonationBPMSync = {
-  static_cast<uint8_t>(SettingKey::JustIntonationBPMSync),
-  reinterpret_cast<void*>(&useJustIntonationBPM),
-  nullptr,
-  tuningIntonationModeChanged
-};
-GEMItem menuItemToggleJI_BPM("JI BPM Sync", useJustIntonationBPM, universalSaveCallback,
-                              reinterpret_cast<void*>(&callbackInfoJustIntonationBPMSync));
-
-PersistentCallbackInfo callbackInfoBeatBPM = {
-  static_cast<uint8_t>(SettingKey::BeatBPM),
-  reinterpret_cast<void*>(&justIntonationBPM),
-  nullptr,
-  refreshMidiRouting
-};
-GEMItem menuItemSetJI_BPM("Beat BPM", justIntonationBPM, spinnerJustIntonationBPM, universalSaveCallback,
-                          reinterpret_cast<void*>(&callbackInfoBeatBPM));
-
-PersistentCallbackInfo callbackInfoBPM_Mult = {
-  static_cast<uint8_t>(SettingKey::BPMMultiplier),
-  reinterpret_cast<void*>(&justIntonationBPM_Multiplier),
-  nullptr,
-  refreshMidiRouting
-};
-GEMItem menuItemSetJI_BPM_Multiplier("BPM Mult.", justIntonationBPM_Multiplier, spinnerBPM_MultiplierOfJI, universalSaveCallback,
-                                     reinterpret_cast<void*>(&callbackInfoBPM_Mult));
-
-PersistentCallbackInfo callbackInfoDynamicJI = {
-  static_cast<uint8_t>(SettingKey::DynamicJI),
-  reinterpret_cast<void*>(&useDynamicJustIntonation),
-  nullptr,
-  tuningIntonationModeChanged
-};
-GEMItem menuItemToggleDynamicJI("Dynamic JI", useDynamicJustIntonation, universalSaveCallback,
-                                reinterpret_cast<void*>(&callbackInfoDynamicJI));
-
-SelectOptionByte optionByteDynamicJIRatioTable[] = {
-  { "3Limit", DYNAMIC_JI_RATIO_TABLE_3_LIMIT },
-  { "5Limit", DYNAMIC_JI_RATIO_TABLE_5_LIMIT },
-  { "7Limit", DYNAMIC_JI_RATIO_TABLE_7_LIMIT },
-  { "11Limit", DYNAMIC_JI_RATIO_TABLE_11_LIMIT },
-  { "13Limit", DYNAMIC_JI_RATIO_TABLE_13_LIMIT },
-  { "17Limit", DYNAMIC_JI_RATIO_TABLE_17_LIMIT },
-  { "19Limit", DYNAMIC_JI_RATIO_TABLE_19_LIMIT },
-  { "23Limit", DYNAMIC_JI_RATIO_TABLE_23_LIMIT },
-  { "29Limit", DYNAMIC_JI_RATIO_TABLE_29_LIMIT },
-  { "31Limit", DYNAMIC_JI_RATIO_TABLE_31_LIMIT },
-  { "37Limit", DYNAMIC_JI_RATIO_TABLE_37_LIMIT },
-  { "41Limit", DYNAMIC_JI_RATIO_TABLE_41_LIMIT }
-};
-GEMSelect selectDynamicJIRatioTable(sizeof(optionByteDynamicJIRatioTable) / sizeof(SelectOptionByte), optionByteDynamicJIRatioTable);
-PersistentCallbackInfo callbackInfoDynamicJIRatioTable = {
-  static_cast<uint8_t>(SettingKey::DynamicJIRatioTable),
-  reinterpret_cast<void*>(&dynamicJIRatioTable),
-  nullptr,
-  refreshMidiRouting
-};
-GEMItem menuItemSelectDynamicJIRatioTable("JI Table", dynamicJIRatioTable, selectDynamicJIRatioTable, universalSaveCallback,
-                                          reinterpret_cast<void*>(&callbackInfoDynamicJIRatioTable));
 
 SelectOptionByte optionByteColor[] = { { "Rainbow", RAINBOW_MODE }, { "Diatonic", DIATONIC_COLOR_MODE }, { "Alt", ALTERNATE_COLOR_MODE }, { "Fifths", RAINBOW_OF_FIFTHS_MODE }, { "Piano", PIANO_COLOR_MODE }, { "Alt Piano", PIANO_ALT_COLOR_MODE }, { "Filament", PIANO_INCANDESCENT_COLOR_MODE }, { "Custom", CUSTOM_COLOR_MODE } };
 GEMSelect selectColor(sizeof(optionByteColor) / sizeof(SelectOptionByte), optionByteColor);
@@ -1661,7 +1646,7 @@ void previewDimLedLevel(GEMPreviewCallbackData previewData) {
   setLEDcolorCodes();
 }
 
-SelectOptionByte optionByteBright[] = { { "Off", BRIGHT_OFF }, { "Dimmer", BRIGHT_DIMMER }, { "Dim", BRIGHT_DIM }, { "Low", BRIGHT_LOW }, { "Normal", BRIGHT_MID }, { "High", BRIGHT_HIGH }, { "THE SUN", BRIGHT_MAX } };
+SelectOptionByte optionByteBright[] = { { "Off", BRIGHT_OFF }, { "Faint", BRIGHT_FAINTER }, { "Extra Dim", BRIGHT_EXTRA_DIM }, { "Dimmer", BRIGHT_DIMMER }, { "Dim", BRIGHT_DIM }, { "Low", BRIGHT_LOW }, { "Normal", BRIGHT_MID }, { "High", BRIGHT_HIGH }, { "THE SUN", BRIGHT_MAX } };
 GEMSelect selectBright(sizeof(optionByteBright) / sizeof(SelectOptionByte), optionByteBright);
 PersistentCallbackInfo callbackInfoBrightness = {
   static_cast<uint8_t>(SettingKey::GlobalBrightness),
@@ -1793,6 +1778,7 @@ void previewSynthDrive(GEMPreviewCallbackData previewData) {
 }
 
 SelectOptionByte optionByteSynthModTarget[] = {
+  { "Off", SYNTH_MOD_TARGET_OFF },
   { "Vibrato", SYNTH_MOD_TARGET_VIBRATO },
   { "Pitch", SYNTH_MOD_TARGET_PITCH },
   { "WT Pos", SYNTH_MOD_TARGET_WAVETABLE_POSITION },
@@ -1801,13 +1787,28 @@ SelectOptionByte optionByteSynthModTarget[] = {
   { "PolyWrp", SYNTH_MOD_TARGET_POLY_WARP }
 };
 GEMSelect selectSynthModTarget(sizeof(optionByteSynthModTarget) / sizeof(SelectOptionByte), optionByteSynthModTarget);
+SelectOptionByte optionByteSynthWheelTarget[] = {
+  { "Off", SYNTH_MOD_TARGET_OFF },
+  { "Vibrato", SYNTH_MOD_TARGET_VIBRATO },
+  { "Pitch", SYNTH_MOD_TARGET_PITCH },
+  { "WT Pos", SYNTH_MOD_TARGET_WAVETABLE_POSITION },
+  { "FoldWrp", SYNTH_MOD_TARGET_FOLD_WARP },
+  { "DutyWrp", SYNTH_MOD_TARGET_DUTY_WARP },
+  { "PolyWrp", SYNTH_MOD_TARGET_POLY_WARP },
+  { "Amp Atk", SYNTH_MOD_TARGET_AMP_ATTACK },
+  { "Amp Hold", SYNTH_MOD_TARGET_AMP_HOLD },
+  { "Amp Dec", SYNTH_MOD_TARGET_AMP_DECAY },
+  { "Amp Sus", SYNTH_MOD_TARGET_AMP_SUSTAIN },
+  { "Amp Rel", SYNTH_MOD_TARGET_AMP_RELEASE }
+};
+GEMSelect selectSynthWheelTarget(sizeof(optionByteSynthWheelTarget) / sizeof(SelectOptionByte), optionByteSynthWheelTarget);
 PersistentCallbackInfo callbackInfoSynthModTarget = {
   static_cast<uint8_t>(SettingKey::SynthModTarget),
   reinterpret_cast<void*>(&synthModTarget),
   nullptr,
   updateSynthModulationParams
 };
-GEMItem menuItemSynthModTarget("Wheel FX", synthModTarget, selectSynthModTarget, universalSaveCallback,
+GEMItem menuItemSynthModTarget("Wheel FX", synthModTarget, selectSynthWheelTarget, universalSaveCallback,
                                reinterpret_cast<void*>(&callbackInfoSynthModTarget));
 void previewSynthModTarget(GEMPreviewCallbackData previewData) {
   synthModTarget = previewData.previewValByte;
@@ -1815,6 +1816,19 @@ void previewSynthModTarget(GEMPreviewCallbackData previewData) {
 }
 
 SelectOptionByte optionByteSynthModAmount[] = {
+  { "-100%", 254 },
+  { "-91%", 243 },
+  { "-83%", 233 },
+  { "-75%", 222 },
+  { "-67%", 212 },
+  { "-58%", 201 },
+  { "-50%", 191 },
+  { "-42%", 180 },
+  { "-33%", 169 },
+  { "-25%", 159 },
+  { "-17%", 148 },
+  { "-10%", 140 },
+  { "-5%", 133 },
   { "Off", 0 },
   { "5%", 6 },
   { "10%", 13 },
@@ -2031,6 +2045,17 @@ void previewArpSpeed(GEMPreviewCallbackData previewData) {
   updateArpeggiatorTiming();
 }
 
+GEMSpinner spinnerArpNoteLength(GEMSpinnerBoundariesByte{1, 1, 100});
+PersistentCallbackInfo callbackInfoArpNoteLength = {
+  static_cast<uint8_t>(SettingKey::ArpeggiatorNoteLength),
+  reinterpret_cast<void*>(&arpeggiatorNoteLength), nullptr, nullptr
+};
+GEMItem menuItemArpNoteLength("Arp Length %", arpeggiatorNoteLength, spinnerArpNoteLength,
+  universalSaveCallback, reinterpret_cast<void*>(&callbackInfoArpNoteLength));
+void previewArpNoteLength(GEMPreviewCallbackData previewData) {
+  arpeggiatorNoteLength = previewData.previewValByte;
+}
+
 SelectOptionByte optionByteArpDirection[] = {
   { "Up", ARP_DIRECTION_UP },
   { "Down", ARP_DIRECTION_DOWN },
@@ -2056,6 +2081,7 @@ void previewArpDirection(GEMPreviewCallbackData previewData) {
 
 SelectOptionByte optionByteEnvelopeTimes[] = {
   { "0 ms", 0 },
+  { "3 ms", 20 },
   { "5 ms", 1 },
   { "10 ms", 2 },
   { "15 ms", 3 },
@@ -2089,7 +2115,14 @@ GEMSelect selectEnvelopeAttack(sizeof(optionByteEnvelopeTimes) / sizeof(SelectOp
 GEMSelect selectEnvelopeHold(sizeof(optionByteEnvelopeTimes) / sizeof(SelectOptionByte), optionByteEnvelopeTimes);
 GEMSelect selectEnvelopeDecay(sizeof(optionByteEnvelopeTimes) / sizeof(SelectOptionByte), optionByteEnvelopeTimes);
 GEMSelect selectEnvelopeRelease(sizeof(optionByteEnvelopeTimes) / sizeof(SelectOptionByte), optionByteEnvelopeTimes);
-GEMSelect selectPortamentoTime(sizeof(optionByteEnvelopeTimes) / sizeof(SelectOptionByte), optionByteEnvelopeTimes);
+SelectOptionByte optionBytePortamentoTimes[20];
+struct InitializePortamentoTimes {
+  InitializePortamentoTimes() {
+    optionBytePortamentoTimes[0] = optionByteEnvelopeTimes[0];
+    for (uint8_t i = 1; i < 20; ++i) optionBytePortamentoTimes[i] = optionByteEnvelopeTimes[i + 1];
+  }
+} initializePortamentoTimes;
+GEMSelect selectPortamentoTime(20, optionBytePortamentoTimes);
 GEMSelect selectEnvelopeSustain(sizeof(optionByteSustain) / sizeof(SelectOptionByte), optionByteSustain);
 
 PersistentCallbackInfo callbackInfoPortamentoTime = {
@@ -2427,38 +2460,119 @@ void previewPBSpeed(GEMPreviewCallbackData previewData) {
   pbWheelSpeed = previewData.previewValInt;
 }
 
+// --- Sampler presets -------------------------------------------------------
+// A sampler sound's samples are fixed, so their name is shown read-only. Each
+// amp envelope stage offers "Smpl" (each sample's own per-region value) before
+// the usual values; choosing a value replaces that stage for every region.
+char samplerInstrumentMenuLabel[40] = "Smpl:";
+void samplerInstrumentMenuAction() {}
+GEMItem menuItemSamplerInstrument(samplerInstrumentMenuLabel, samplerInstrumentMenuAction, true);
+GEMPage menuPageSamplerAmpEnv("Amp Env", menuPageSynth);
+GEMItem menuGotoSamplerAmpEnv("Amp Env", menuPageSamplerAmpEnv);
+
+constexpr uint8_t SAMPLER_ENVELOPE_INST = 255;
+constexpr uint8_t SAMPLER_ENVELOPE_STAGES = 5;
+constexpr uint8_t ENVELOPE_TIME_OPTION_COUNT = sizeof(optionByteEnvelopeTimes) / sizeof(SelectOptionByte);
+constexpr uint8_t SUSTAIN_OPTION_COUNT = sizeof(optionByteSustain) / sizeof(SelectOptionByte);
+SelectOptionByte optionByteSamplerEnvelopeTimes[ENVELOPE_TIME_OPTION_COUNT + 1];
+SelectOptionByte optionByteSamplerSustain[SUSTAIN_OPTION_COUNT + 1];
+struct InitializeSamplerEnvelopeOptions {
+  InitializeSamplerEnvelopeOptions() {
+    optionByteSamplerEnvelopeTimes[0] = { "Smpl", SAMPLER_ENVELOPE_INST };
+    for (uint8_t i = 0; i < ENVELOPE_TIME_OPTION_COUNT; ++i) optionByteSamplerEnvelopeTimes[i + 1] = optionByteEnvelopeTimes[i];
+    optionByteSamplerSustain[0] = { "Smpl", SAMPLER_ENVELOPE_INST };
+    for (uint8_t i = 0; i < SUSTAIN_OPTION_COUNT; ++i) optionByteSamplerSustain[i + 1] = optionByteSustain[i];
+  }
+} initializeSamplerEnvelopeOptions;
+GEMSelect selectSamplerEnvelopeTime(ENVELOPE_TIME_OPTION_COUNT + 1, optionByteSamplerEnvelopeTimes);
+GEMSelect selectSamplerSustain(SUSTAIN_OPTION_COUNT + 1, optionByteSamplerSustain);
+
+uint8_t samplerEnvelopeChoices[SAMPLER_ENVELOPE_STAGES] = {
+  SAMPLER_ENVELOPE_INST, SAMPLER_ENVELOPE_INST, SAMPLER_ENVELOPE_INST, SAMPLER_ENVELOPE_INST, SAMPLER_ENVELOPE_INST
+};
+struct SamplerEnvelopeStage {
+  uint8_t overrideBit;
+  SettingKey key;
+  uint8_t* runtimeValue;
+};
+const SamplerEnvelopeStage samplerEnvelopeStages[SAMPLER_ENVELOPE_STAGES] = {
+  { SAMPLER_ENVELOPE_OVERRIDE_ATTACK, SettingKey::EnvelopeAttackIndex, &envelopeAttackIndex },
+  { SAMPLER_ENVELOPE_OVERRIDE_HOLD, SettingKey::EnvelopeHoldIndex, &envelopeHoldIndex },
+  { SAMPLER_ENVELOPE_OVERRIDE_DECAY, SettingKey::EnvelopeDecayIndex, &envelopeDecayIndex },
+  { SAMPLER_ENVELOPE_OVERRIDE_SUSTAIN, SettingKey::EnvelopeSustainLevel, &envelopeSustainLevel },
+  { SAMPLER_ENVELOPE_OVERRIDE_RELEASE, SettingKey::EnvelopeReleaseIndex, &envelopeReleaseIndex },
+};
+
+void refreshSamplerEnvelopeChoices() {
+  const uint8_t mask = compactSamplerEnvelopeOverride();
+  for (uint8_t stage = 0; stage < SAMPLER_ENVELOPE_STAGES; ++stage) {
+    const SamplerEnvelopeStage& s = samplerEnvelopeStages[stage];
+    samplerEnvelopeChoices[stage] = (mask & s.overrideBit) ? *s.runtimeValue : SAMPLER_ENVELOPE_INST;
+  }
+}
+
+void saveSamplerEnvelopeChoice(GEMCallbackData data) {
+  const uint8_t stage = data.valByte;
+  if (stage >= SAMPLER_ENVELOPE_STAGES) {
+    return;
+  }
+  const SamplerEnvelopeStage& s = samplerEnvelopeStages[stage];
+  const uint8_t choice = samplerEnvelopeChoices[stage];
+  uint8_t mask = compactSamplerEnvelopeOverride();
+  if (choice == SAMPLER_ENVELOPE_INST) {
+    mask = static_cast<uint8_t>(mask & ~s.overrideBit);
+  } else {
+    mask = static_cast<uint8_t>(mask | s.overrideBit);
+    *s.runtimeValue = choice;
+    settings[static_cast<uint8_t>(s.key)] = choice;
+    updateEnvelopeParamsFromSettings();
+  }
+  setCompactSamplerEnvelopeOverride(mask);
+  markSettingsDirty();
+}
+
+GEMItem menuItemSamplerAttack("Attack", samplerEnvelopeChoices[0], selectSamplerEnvelopeTime, saveSamplerEnvelopeChoice, static_cast<byte>(0));
+GEMItem menuItemSamplerHold("Hold", samplerEnvelopeChoices[1], selectSamplerEnvelopeTime, saveSamplerEnvelopeChoice, static_cast<byte>(1));
+GEMItem menuItemSamplerDecay("Decay", samplerEnvelopeChoices[2], selectSamplerEnvelopeTime, saveSamplerEnvelopeChoice, static_cast<byte>(2));
+GEMItem menuItemSamplerSustain("Sustain", samplerEnvelopeChoices[3], selectSamplerSustain, saveSamplerEnvelopeChoice, static_cast<byte>(3));
+GEMItem menuItemSamplerRelease("Release", samplerEnvelopeChoices[4], selectSamplerEnvelopeTime, saveSamplerEnvelopeChoice, static_cast<byte>(4));
+
+bool synthMenuShowsSampler = false;
+
 void updateSynthMenuVisibility() {
   menuItemPortamentoTime.hide(!isMonoPlaybackMode(playbackMode));
-  bool arpSelected = playbackMode == SYNTH_ARPEGGIO;
+  bool arpSelected = isArpPlaybackMode(playbackMode);
+  menuItemArpNoteLength.hide(!arpSelected);
   menuItemArpSpeed.hide(!arpSelected);
   menuItemArpDirection.hide(!arpSelected);
+
+  // A sampler preset shows only the edits the sampler supports.
+  const bool sampler = compactSamplerRequestedName()[0] != '\0';
+  snprintf(samplerInstrumentMenuLabel, sizeof(samplerInstrumentMenuLabel), "Smpl: %s", compactSamplerRequestedName());
+  refreshSamplerEnvelopeChoices();
+  menuItemSamplerInstrument.hide(!sampler);
+  menuGotoSamplerAmpEnv.hide(!sampler);
+  menuGotoSynthAmpEnv.hide(sampler);
+  menuGotoSynthWavetableLoad.hide(sampler);
+  menuItemSynthWavetablePosition.hide(sampler);
+  menuGotoSynthFx1.hide(sampler);
+  menuGotoSynthFx2.hide(sampler);
+  menuGotoSynthLfo.hide(sampler);
+  menuItemSynthModTarget.hide(sampler);
+  if (sampler != synthMenuShowsSampler) {
+    synthMenuShowsSampler = sampler;
+    GEMPage* page = menu.getCurrentMenuPage();
+    if (!virtualListMenuIsActive()
+        && (page == &menuPageSynth || page == &menuPageSynthAmpEnv || page == &menuPageSamplerAmpEnv)) {
+      menuSynthOptionsHome();
+    }
+  }
 }
 
 void playbackModeChanged() {
   playbackMode = normalizeSynthPlaybackMode(playbackMode);
   resetSynthFreqs();
   updateSynthMenuVisibility();
-}
-
-void updateEditorMenuVisibility() {
-  byte currentIndex = menuPageEditor.getCurrentMenuItemIndex();
-
-  menuItemSelectDynamicJIRatioTable.hide(!useDynamicJustIntonation);
-  menuItemSetJI_BPM.hide(!useJustIntonationBPM);
-  menuItemSetJI_BPM_Multiplier.hide(!useJustIntonationBPM);
-
-  byte itemCount = menuPageEditor.getItemsCount();
-  if (itemCount > 0) {
-    if (currentIndex >= itemCount) {
-      currentIndex = itemCount - 1;
-    }
-    menuPageEditor.setCurrentMenuItemIndex(currentIndex);
-  }
-}
-
-void tuningIntonationModeChanged() {
-  updateEditorMenuVisibility();
-  refreshMidiRouting();
 }
 
 byte normalizeDynamicJIRatioTable(byte value) {
@@ -2492,6 +2606,7 @@ void applyGeometryRuntimeFromStorage() {
 }
 
 void syncSettingsToRuntime(bool redrawMenu) {
+  commandEncoder = settingEnabled(SettingKey::CommandEncoder);
   rotaryInvertPreference = settingEnabled(SettingKey::RotaryInvert);
   updateEffectiveRotaryInvert();
   autoSave = settingEnabled(SettingKey::AutoSave);
@@ -2561,17 +2676,17 @@ void syncSettingsToRuntime(bool redrawMenu) {
   ledRestBrightness = settingValue(SettingKey::RestLedBrightness);
   ledDimBrightness = settingValue(SettingKey::DimLedBrightness);
   globalBrightness = settingValue(SettingKey::GlobalBrightness);
+  syncLedSettingsToRuntime();
+  updateLedDitherMenuVisibility();
   ledCurrentLimitMode = settingValue(SettingKey::LedCurrentLimitMode);
   syncLedCurrentLimit();
   animationType = settingValue(SettingKey::AnimationType);
   programChange = settingValue(SettingKey::ProgramChange);
 
   useJustIntonationBPM = settingEnabled(SettingKey::JustIntonationBPMSync);
-  justIntonationBPM = settingValue(SettingKey::BeatBPM);
   justIntonationBPM_Multiplier = settingValue(SettingKey::BPMMultiplier);
   useDynamicJustIntonation = settingEnabled(SettingKey::DynamicJI);
   dynamicJIRatioTable = normalizeDynamicJIRatioTable(settingValue(SettingKey::DynamicJIRatioTable));
-  updateEditorMenuVisibility();
   bootAnimationEnabled = settingEnabled(SettingKey::BootAnimationEnabled);
   noteDisplayMode = normalizeNoteDisplayMode(settingValue(SettingKey::DisplayPlayedNotes));
   settings[static_cast<uint8_t>(SettingKey::DisplayPlayedNotes)] = noteDisplayMode;
@@ -2606,12 +2721,12 @@ void updateMainMenuDynamicLabels() {
            current.scale().name ? current.scale().name : "Current");
   snprintf(mainSynthPresetMenuLabel,
            sizeof(mainSynthPresetMenuLabel),
-           "Synth:%s%s",
+           "Sound:%s%s",
            currentSynthPresetRuntimeModified() ? "*" : "",
            currentSynthPresetDisplayName());
   snprintf(synthPresetMenuLabel,
            sizeof(synthPresetMenuLabel),
-           "Preset:%s%s",
+           "Sound:%s%s",
            currentSynthPresetRuntimeModified() ? "*" : "",
            currentSynthPresetDisplayName());
 }
@@ -2649,12 +2764,12 @@ bool virtualListLauncherLabelParts(GEMItem* item,
   } else if (item == &menuGotoMainSynthPresetLoad) {
     label = mainSynthPresetMenuLabel;
     labelLength = sizeof(mainSynthPresetMenuLabel);
-    prefix = currentSynthPresetRuntimeModified() ? "Synth:*" : "Synth:";
+    prefix = currentSynthPresetRuntimeModified() ? "Sound:*" : "Sound:";
     value = currentSynthPresetDisplayName();
   } else if (item == &menuGotoSynthPresetLoad) {
     label = synthPresetMenuLabel;
     labelLength = sizeof(synthPresetMenuLabel);
-    prefix = currentSynthPresetRuntimeModified() ? "Preset:*" : "Preset:";
+    prefix = currentSynthPresetRuntimeModified() ? "Sound:*" : "Sound:";
     value = currentSynthPresetDisplayName();
   } else if (item == &menuGotoSynthWavetableLoad) {
     label = currentSynthWavetableMenuLabel;
@@ -2740,15 +2855,29 @@ void redrawMenuAfterVirtualListLauncherScroll() {
   }
 }
 
+static bool virtualListLauncherPageHidden() {
+  return virtualListMenuIsActive()
+         || delegatedControlState.active
+         || presetSyncTransferActive
+         || flashSaveScreenVisible
+         || commandWheelOverlayActive()
+         || noteBadgeVisible
+         || noteOverlayVisible
+         || screenSaverOn;
+}
+
+// An audition ends one loop after its list closes, so the labels drawn on the
+// way out still name the auditioned item. Redraw them for the chosen one.
+void refreshVirtualListLauncherLabels() {
+  resetVirtualListLauncherScrollTracking(false);
+  restoreVirtualListLauncherLabels();
+  if (!virtualListLauncherPageHidden()) {
+    menu.drawMenu();
+  }
+}
+
 void serviceVirtualListLauncherLabelScroll() {
-  if (virtualListMenuIsActive()
-      || delegatedControlState.active
-      || presetSyncTransferActive
-      || flashSaveScreenVisible
-      || commandWheelOverlayActive()
-      || noteBadgeVisible
-      || noteOverlayVisible
-      || screenSaverOn) {
+  if (virtualListLauncherPageHidden()) {
     resetVirtualListLauncherScrollTracking(true);
     return;
   }
@@ -2937,7 +3066,7 @@ void drawBootloaderReadyScreen() {
 void rebootToBootloader() {
   dismissCommandWheelOverlay();
   drawBootloaderReadyScreen();
-  clearLEDs();
+  clearLEDsAndWait();
   rp2040.rebootToBootloader();
 }
 /*
@@ -3000,7 +3129,9 @@ void loadDeviceRotationFromCurrentLayout() {
 }
 
 void applyDeviceDisplayRotation() {
-  switch (displayRotationFromDeviceRotation(deviceRotation)) {
+  const byte hostRotation = delegatedControlState.displayRotation.load(std::memory_order_relaxed);
+  const byte effectiveRotation = delegatedControlState.active && hostRotation < 4 ? hostRotation : deviceRotation;
+  switch (displayRotationFromDeviceRotation(effectiveRotation)) {
     case 0:
       u8g2.setDisplayRotation(U8G2_R0);
       break;
@@ -3035,9 +3166,8 @@ void changeKey() {  // when you change the key via the menu
     This procedure was declared already and is being defined now.
     It's run when the transposition is changed via the menu.
     It sets the current transposition to the selected value.
-    The effect of transposition is to change the sounded
-    notes but not the layout or display.
-    The procedure to re-assign pitches is therefore called.
+    Transposition changes sounded notes, scale membership, and
+    palette-derived colors while keeping the physical layout in place.
     The menu doesn't change because the transpose is a spinner select.
   */
 void changeTranspose() {  // when you change the transpose via the menu
@@ -3047,6 +3177,7 @@ void changeTranspose() {  // when you change the transpose via the menu
   // 2) Apply it:
   current.transpose = transposeSteps;
   assignPitches();
+  applyScale();
   updateSynthWithNewFreqs();
 }
 
@@ -3054,8 +3185,7 @@ void previewKey(GEMPreviewCallbackData previewData);
 void createKeyMenuItems() {
   menuItemMainKey.setPreviewCallback(previewKey);
   menuItemMainKeyNumeric.setPreviewCallback(previewKey);
-  menuPageMain.addMenuItem(menuItemMainKey);
-  menuPageMain.addMenuItem(menuItemMainKeyNumeric);
+
   showOnlyValidKeyChoices();
 }
 void previewKey(GEMPreviewCallbackData previewData) {
@@ -3096,7 +3226,6 @@ void setupLayoutMenuPage() {
 
 void setupScalesMenuPage() {
   menuPageMain.addMenuItem(menuGotoScales);
-  menuPageMain.addMenuItem(menuItemMainScaleLock);
 }
 
 void setupColorsMenuPage() {
@@ -3109,33 +3238,30 @@ void setupColorsMenuPage() {
   addPreviewMenuItem(menuPageColors, menuItemDimLedLevel, previewDimLedLevel);
 }
 
-void setupEditorMenuPage() {
-  menuPageMain.addMenuItem(menuGotoEditor);
-  menuPageEditor.addMenuItem(menuGotoSynth);
-  menuPageEditor.addMenuItem(menuItemToggleDynamicJI);
-  menuPageEditor.addMenuItem(menuItemSelectDynamicJIRatioTable);
-  menuPageEditor.addMenuItem(menuItemToggleJI_BPM);
-  menuPageEditor.addMenuItem(menuItemSetJI_BPM);
-  menuPageEditor.addMenuItem(menuItemSetJI_BPM_Multiplier);
-  menuPageEditor.addMenuItem(menuItemSelectLayoutRotation);
-  menuPageEditor.addMenuItem(mirrorLeftRightGEMItem);
-  menuPageEditor.addMenuItem(mirrorUpDownGEMItem);
-  menuPageEditor.addMenuItem(menuItemSelectDeviceRotation);
-  updateEditorMenuVisibility();
+void setupSynthMenuLink() {
+  menuPageMain.addMenuItem(menuGotoSynth);
 }
 
 void setupSynthMenuPage() {
+  menuPageSynth.addMenuItem(menuItemSamplerInstrument);
   menuPageSynth.addMenuItem(menuItemPlayback);
   addPreviewMenuItem(menuPageSynth, menuItemSynthOutputVolume, previewSynthOutputVolume);
   // menuItemAudioD added here for hardware V1.2
   addPreviewMenuItem(menuPageSynth, menuItemArpSpeed, previewArpSpeed);
   addPreviewMenuItem(menuPageSynth, menuItemArpDirection, previewArpDirection);
+  addPreviewMenuItem(menuPageSynth, menuItemArpNoteLength, previewArpNoteLength);
   addPreviewMenuItem(menuPageSynth, menuItemPortamentoTime, previewPortamentoTime);
   updateCurrentSynthWavetableMenuLabel();
   menuPageSynth.addMenuItem(menuGotoSynthWavetableLoad);
   addPreviewMenuItem(menuPageSynth, menuItemSynthWavetablePosition, previewSynthWavetablePosition);
   addPreviewMenuItem(menuPageSynth, menuItemSynthDrive, previewSynthDrive);
   menuPageSynth.addMenuItem(menuGotoSynthAmpEnv);
+  menuPageSynth.addMenuItem(menuGotoSamplerAmpEnv);
+  menuPageSamplerAmpEnv.addMenuItem(menuItemSamplerAttack);
+  menuPageSamplerAmpEnv.addMenuItem(menuItemSamplerHold);
+  menuPageSamplerAmpEnv.addMenuItem(menuItemSamplerDecay);
+  menuPageSamplerAmpEnv.addMenuItem(menuItemSamplerSustain);
+  menuPageSamplerAmpEnv.addMenuItem(menuItemSamplerRelease);
   addPreviewMenuItem(menuPageSynthAmpEnv, menuItemEnvelopeAttack, previewEnvelopeAttack);
   addPreviewMenuItem(menuPageSynthAmpEnv, menuItemEnvelopeHold, previewEnvelopeHold);
   addPreviewMenuItem(menuPageSynthAmpEnv, menuItemEnvelopeDecay, previewEnvelopeDecay);
@@ -3262,6 +3388,7 @@ void setupAdvancedMenuPage() {
   menuPageAdvanced.addMenuItem(menuItemVersion);
   menuPageAdvanced.addMenuItem(menuItemHardware);
   menuPageAdvanced.addMenuItem(menuItemRotary);
+  menuPageAdvanced.addMenuItem(menuItemCommandEncoder);
   menuPageAdvanced.addMenuItem(menuItemBootAnimation);
   menuPageAdvanced.addMenuItem(menuGotoStorageStatus);
   // menuPageAdvanced.addMenuItem(menuItemWheelAlt); // not sure why we have this, so I'm hiding it for now
@@ -3269,10 +3396,15 @@ void setupAdvancedMenuPage() {
   menuPageAdvanced.addMenuItem(menuItemUSBBootloader);
   menuPageAdvanced.addMenuItem(menuGotoSerialDebug);
   addPreviewMenuItem(menuPageAdvanced, menuItemLedTest, previewLedTest);
+  menuPageAdvanced.addMenuItem(menuItemColorDithering);
+  addPreviewMenuItem(menuPageAdvanced, menuItemLedFrameCoarse, previewLedFramePeriod);
+  addPreviewMenuItem(menuPageAdvanced, menuItemLedFrameFine, previewLedFramePeriod);
+  updateLedDitherMenuVisibility();
 }
 
 void setupMainSynthPresetLoadMenuItem() {
   menuPageMain.addMenuItem(menuGotoMainSynthPresetLoad);
+  menuPageMain.addMenuItem(menuItemMainAudioD);
 }
 
 void setupOptionsMenuPage() {
@@ -3319,7 +3451,7 @@ void setupMenu() {
   setupMainSynthPresetLoadMenuItem();
   setupColorsMenuPage();
   setupTransposeMenuItem();
-  setupEditorMenuPage();
+  setupSynthMenuLink();
   setupMidiMenuPage();
   setupControlMenuPage();
   setupSerialDebugMenuPage();

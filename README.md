@@ -6,24 +6,22 @@ The firmware in this repository drives:
 - a `140`-button illuminated hex grid
 - USB and serial MIDI output
 - microtonal and isomorphic layouts
-- an onboard synth with mono retrigger, mono legato, polyphonic, and arpeggiated playback
+- an onboard wavetable synth with mono retrigger, mono legato, polyphonic, and arpeggiated playback
 - an OLED menu system for tuning, layout, color, MIDI, synth, and profile management
 
 You can [order a HexBoard](https://shapingthesilence.com/) if you are interested in the hardware.
 
 ## Documentation
 
-- [User Manual](docs/user-manual.md): playing, menu behavior, settings, firmware updates, and troubleshooting
-- [Sequencer Manual](docs/sequencer/manuals/sequencer_manual.txt): optional sequencer builds, playback, file management, and USB backup
-- [MPE Microtonal Setup Guide](docs/mpe-microtonal-setup.md): DAW, plugin, and synth setup for HexBoard's microtonal MIDI output
-- [Developer Guide](docs/developer-guide.md): current firmware architecture, edit patterns, settings wiring, risk areas, and verification
-- [Delegated Control Protocol](docs/delegated-control.md): external raw button/LED control SysEx behavior
-- [Preset Sync SysEx Draft](docs/preset-sync-sysex.md): preset-sync frames, object schemas, and implemented/draft object workflows
-- [Web App README](web/README.md): companion web app development, deployment, and current scope
+For playing and editing:
 
-`docs/code-analysis.md` is kept only as a compatibility pointer to the developer
-guide. Current implementation facts should live in the docs above, not in a
-separate analysis document.
+- [User manual](docs/user-manual.md): controls, menus, saving, updates, and recovery
+- [MPE setup](docs/mpe-microtonal-setup.md): external MIDI receiver setup
+- [Sequencer manual](docs/sequencer/manuals/sequencer_manual.txt): optional sequencer builds
+
+For development, start with the [developer guide](docs/developer-guide.md).
+The [documentation index](docs/README.md) links protocol references, web and
+factory development, sequencer contracts, and proposed designs.
 
 ## Repository Layout
 
@@ -40,9 +38,9 @@ Firmware implementation is grouped by owner under `src/firmware/`. The root
 sketch delegates to lifecycle functions there, and subsystem headers expose the
 cross-module APIs needed by other modules.
 
-## Current Firmware Highlights
+## Features
 
-The current code supports:
+HexBoard supports:
 
 - multiple tunings, including non-12-EDO systems
 - multiple isomorphic layouts with rotation and mirroring
@@ -56,7 +54,7 @@ The current code supports:
 - onboard synth waveform/wavetable banks, Serum/Vital and HexBoard wavetable import, mono portamento, AHDSR envelope, phase-warp/wavetable/LFO modulation, presets, and arpeggiator settings
 - an external-only delegated-control mode for host-driven buttons and LEDs
 - persistent settings with `9` profile slots stored in LittleFS
-- cached storage health available under `Advanced` without an extra boot scan
+- storage status and recovery information under `Advanced`
 - independently replaceable LittleFS files for up to `64` tuning bundles and
   `128` synth presets, with geometry divisions up to `1024`
 - an optional sequencer build, documented in the [Sequencer Manual](docs/sequencer/manuals/sequencer_manual.txt)
@@ -77,15 +75,16 @@ The current source targets:
 - `16 MB` flash with `8 MB` LittleFS
 - Pico SDK USB stack
 - USB manufacturer/product descriptor `HexBoard`
-- Generic SPI `/4` boot2
+- Single-line SPI `/6` boot2 (`boot2/`)
 
 The default `make` target builds the current `250 MHz` firmware as two files:
 
 - `build/HexBoard_Factory.uf2` contains firmware and a complete factory
   LittleFS image. Installing it erases the existing filesystem.
 - `build/HexBoard_Update.uf2` contains firmware only and preserves the
-  LittleFS filesystem. Settings whose schema differs from the running firmware
-  use defaults; current-format libraries remain available.
+  LittleFS filesystem. Supported settings from version 32 onward are migrated;
+  new options receive defaults. See [Updating firmware](docs/user-manual.md#updating-firmware)
+  for compatibility and recovery.
 
 The `Makefile` and firmware headers under `src/firmware/` are the most reliable
 build references for this repository.
@@ -96,10 +95,12 @@ You need:
 
 - [arduino-cli](https://arduino.github.io/arduino-cli/latest/)
 - the Earle Philhower RP2040 core
-- `Adafruit NeoPixel`
 - `U8g2`
 - `Adafruit GFX Library`
 - `GEM`
+
+See [Build dependencies](docs/developer-guide.md#build-dependencies) for the Pico
+package index and the GEM 1.8.1 correction required by GCC 16.
 
 The simplest local build is:
 
@@ -107,15 +108,10 @@ The simplest local build is:
 make
 ```
 
-The build validates the synth-preset and tuning-bundle `.json` files plus
-the `.hexwav` wavetables under `factory-library/`, compiles them into device
-catalog files, and uses
-`mklittlefs` from the installed RP2040 Arduino core to create an `8 MiB`
-factory filesystem image. It extracts and compares that image before merging
-every filesystem block into the factory UF2. The firmware payload is checked
-against the compiled binary, every touched flash sector is represented in full,
-the update UF2 is checked for filesystem addresses, and the final `4 KiB`
-EEPROM reservation is never written.
+The build validates [factory-library source](factory-library/README.md), compiles
+its catalog files, and uses `mklittlefs` from the installed RP2040 core to create
+the factory filesystem. Image validation and flash boundaries are described in
+the [developer guide](docs/developer-guide.md#build-and-tooling).
 
 The `Makefile` compiles the repository sketch directly with the project board
 options and writes flashable files under `build/`.
@@ -128,7 +124,7 @@ make PWM_BITS=9
 
 Supported values are `8`, `9`, and `10`; the default is `10`.
 
-The in-port sequencer is compiled out by default. To expose the `Sequencer`
+The optional sequencer is compiled out by default. To expose the `Sequencer`
 menu entry, build with:
 
 ```sh
@@ -169,4 +165,4 @@ Start with the [Developer Guide](docs/developer-guide.md) when editing firmware.
 It owns the current architecture map, settings recipes, refresh paths, risk
 areas, and verification checklist. Protocol-specific behavior stays in
 [Delegated Control Protocol](docs/delegated-control.md) and
-[Preset Sync SysEx Draft](docs/preset-sync-sysex.md).
+[Preset Sync SysEx Reference](docs/preset-sync-sysex.md).

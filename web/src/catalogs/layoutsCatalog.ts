@@ -521,10 +521,11 @@ export function decodeGeometryBundleFile(file: Uint8Array): DecodedGeometryBundl
   return { catalogOrder, objects };
 }
 
-export function encodeGeometryCatalogOrder(objectIds: Uint8Array[]): Uint8Array {
-  if (objectIds.length > GeometryBundleMaxCount
+export function encodeGeometryCatalogOrder(objectIds: Uint8Array[],advanced=false): Uint8Array {
+  const maximum=advanced?256:GeometryBundleMaxCount;
+  if (objectIds.length > maximum
       || objectIds.some((objectId) => objectId.length !== 16)) {
-    throw new RangeError(`geometry order must contain at most ${GeometryBundleMaxCount} 16-byte object ids`);
+    throw new RangeError(`geometry order must contain at most ${maximum} 16-byte object ids`);
   }
   const seen = new Set(objectIds.map(objectIdToHex));
   if (seen.size !== objectIds.length) {
@@ -532,7 +533,7 @@ export function encodeGeometryCatalogOrder(objectIds: Uint8Array[]): Uint8Array 
   }
   const body = concatBytes(objectIds);
   return concatBytes([
-    bytesFromNumbers(["H".charCodeAt(0), "G".charCodeAt(0), "O".charCodeAt(0), 1, objectIds.length, 0, 0, 0]),
+    bytesFromNumbers(["H".charCodeAt(0), "G".charCodeAt(0), "O".charCodeAt(0), advanced?2:1, objectIds.length&255, objectIds.length>>8, 0, 0]),
     u32LE(crc32(body)),
     body
   ]);
@@ -1216,27 +1217,34 @@ export function resolveTuningBundleButtonColor(input: {
 }
 
 export function createDefaultTuningBundle(): TuningBundle {
-  const objectId = deterministicObjectId("layout-bundle:19 EDO Wicki");
-  const layout = createDefaultLayout(19);
-  const scale = createAllNotesScale(19);
+  // First-run tuning: the HexBoard's own default, 12 EDO in Wicki-Hayden.
+  const objectId = deterministicObjectId("layout-bundle:12 EDO Wicki-Hayden");
+  const layout: TuningBundleLayout = {
+    ...createDefaultLayout(12),
+    name: "Wicki-Hayden",
+    centerButton: 64,
+    acrossSteps: 2,
+    upRightSteps: 7
+  };
+  const scale = createAllNotesScale(12);
   return {
     objectIdHex: objectIdToHex(objectId),
     folderPath: "/",
     tuning: {
       kind: "edo",
-      name: "19 EDO Wicki",
-      edoDivisions: 19,
+      name: "12 EDO Wicki-Hayden",
+      edoDivisions: 12,
       periodCents: 1200,
-      cycleLength: 19,
-      referenceDegree: 14,
+      cycleLength: 12,
+      referenceDegree: 9,
       defaultKeyDegree: 0,
       referenceMidiNote: 69,
       referenceHz: 440,
-      keyLabels: defaultKeyLabels(19)
+      keyLabels: defaultKeyLabels(12)
     },
     palette: {
       defaultColorMode: ColorMode.Custom,
-      degreeColors: createDefaultDegreeColors(19)
+      degreeColors: createDefaultDegreeColors(12)
     },
     layouts: [layout],
     activeLayoutIdHex: layout.objectIdHex,

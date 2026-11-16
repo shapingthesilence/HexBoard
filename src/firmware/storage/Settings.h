@@ -7,6 +7,7 @@ void setupFileSystem();
 void applyFactoryDefaultsToSettings();
 bool load_settings();
 void save_settings();
+bool saveCurrentSettingsForStartup();
 void restore_default_settings();
 void markSettingsDirty();
 void checkAndAutoSave();
@@ -20,3 +21,6 @@ extern bool settingsDirty;
 extern bool fileSystemExists;
 extern bool autoSave;
 extern const uint8_t factoryDefaults[NUM_SETTINGS];
+
+void syncLedSettingsToRuntime();
+void storeLedFramePeriodInSettings(int periodMicros);

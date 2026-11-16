@@ -396,12 +396,7 @@ Example scale
 
     const factory = createFactorySynthWavetables();
     expect(factory.map((wavetable) => wavetable.name)).toEqual([
-      "Classic",
-      "Vowels",
-      "HarshDigitalBois",
-      "RustyBlade",
-      "RoundThe808",
-      "GlassyBells"
+      "Classic", "GlassyBells", "HarshDigitalBois", "NotPiano", "RoundThe808", "RustyBlade", "Vowels"
     ]);
     expect(factory.every((wavetable) => wavetable.folderPath === "/")).toBe(true);
     expect(factory.every((wavetable) => wavetable.samples.length === SYNTH_WAVETABLE_MIP_SAMPLE_BYTES)).toBe(true);
@@ -761,7 +756,7 @@ Example scale
   it("falls back to the default bundle for an empty layout library", () => {
     const library = parseTuningBundleLibrary([]);
     expect(library).toHaveLength(1);
-    expect(library[0].tuning.name).toBe("19 EDO Wicki");
+    expect(library[0].tuning.name).toBe("12 EDO Wicki-Hayden");
   });
 
   it("resolves scale degree color before per-button overrides", () => {

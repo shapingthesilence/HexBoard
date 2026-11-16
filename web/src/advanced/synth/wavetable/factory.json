@@ -1,0 +1,95 @@
+[
+  {
+    "id": "factory:classic",
+    "name": "Classic",
+    "group": "HexBoard Classic",
+    "crc": 1611666623,
+    "file": "classic",
+    "source": "src/firmware/synth/BuiltinWavetables.cpp",
+    "sourceSha256": "cb1b690b2dc3f26af8fc98cf312532bcd1ef53dddc4e94b1d3b014d13e4eecba",
+    "sourcePrecision": "8-bit original anchor samples; blended before final quantization",
+    "sourceFrames": 2,
+    "sourceFrameSize": 512,
+    "options": {
+      "frameSize": 512
+    }
+  },
+  {
+    "id": "factory:glassybells",
+    "name": "GlassyBells",
+    "group": "HexBoard Classic",
+    "crc": 1081013218,
+    "file": "glassybells",
+    "source": "src/Default Wavetables/Matthew Parker Wavetables/GlassyBells/MP GlassyBells.wav",
+    "sourceSha256": "5017d6a6e0d9184c0d84d2a4d2f6c772f5054f82ec6196848f273d2818be6f52",
+    "sourcePrecision": "original WAV",
+    "sourceFrames": 16,
+    "sourceFrameSize": 2048,
+    "options": {}
+  },
+  {
+    "id": "factory:harshdigitalbois",
+    "name": "HarshDigitalBois",
+    "group": "HexBoard Classic",
+    "crc": 660524650,
+    "file": "harshdigitalbois",
+    "source": "src/Default Wavetables/Matthew Parker Wavetables/HarshDigitalBois/MP HarshDigitalBois.wav",
+    "sourceSha256": "7168f1c60583a2a6221615223788b1ccd83763fb0cfc246df43de80e89ed2677",
+    "sourcePrecision": "original WAV",
+    "sourceFrames": 16,
+    "sourceFrameSize": 2048,
+    "options": {}
+  },
+  {
+    "id": "factory:notpiano",
+    "name": "NotPiano",
+    "group": "HexBoard Classic",
+    "crc": 615040013,
+    "file": "notpiano",
+    "source": "src/Default Wavetables/NotPiano.wav",
+    "sourceSha256": "5d846786d468a65ea231c119fc1db6430c1b497f125eab77859cc67ad20bb1f8",
+    "sourcePrecision": "original WAV",
+    "sourceFrames": 128,
+    "sourceFrameSize": 2048,
+    "options": {}
+  },
+  {
+    "id": "factory:roundthe808",
+    "name": "RoundThe808",
+    "group": "HexBoard Classic",
+    "crc": 162719403,
+    "file": "roundthe808",
+    "source": "src/Default Wavetables/Matthew Parker Wavetables/RoundThe808/MP RoundThe808.wav",
+    "sourceSha256": "b859966cf50420ec92cbc0c2150bd78fb08d9c02f07616648c8bfe2fd79478ef",
+    "sourcePrecision": "original WAV",
+    "sourceFrames": 16,
+    "sourceFrameSize": 2048,
+    "options": {}
+  },
+  {
+    "id": "factory:rustyblade",
+    "name": "RustyBlade",
+    "group": "HexBoard Classic",
+    "crc": 1606648323,
+    "file": "rustyblade",
+    "source": "src/Default Wavetables/Matthew Parker Wavetables/RustyBlade/RustyBlade.wav",
+    "sourceSha256": "3acb60222853299132ed0a72ccafdf8c8b35a01d93179980d15b67cb75d804ab",
+    "sourcePrecision": "original WAV",
+    "sourceFrames": 16,
+    "sourceFrameSize": 2048,
+    "options": {}
+  },
+  {
+    "id": "factory:vowels",
+    "name": "Vowels",
+    "group": "HexBoard Classic",
+    "crc": 663899556,
+    "file": "vowels",
+    "source": "src/Default Wavetables/Vowels.wav",
+    "sourceSha256": "053a09400dc68580b38a618b0022c1a48fd0b64da983fd5d27b6b532fbda314d",
+    "sourcePrecision": "original WAV",
+    "sourceFrames": 28,
+    "sourceFrameSize": 2048,
+    "options": {}
+  }
+]

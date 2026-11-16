@@ -3,6 +3,7 @@
 #include "../FirmwareModule.h"
 #include "../storage/PersistentDataModels.h"
 #include "SynthDefaults.h"
+#include "CompactSampler.h"
 
 // Handle for non-key synth notes, currently used by Sequencer OB Synth output.
 struct SynthPreviewNoteHandle {
@@ -11,6 +12,7 @@ struct SynthPreviewNoteHandle {
 };
 
 void updateEnvelopeParamsFromSettings();
+void refreshVolumeEnvelopeModulation(bool force = false);
 void syncSynthSettingsToRuntime();
 void updateEffectEnvelopeParamsFromSettings();
 void updateEffectEnvelopeParamsFromSettings(uint8_t envelopeIndex);
@@ -25,6 +27,7 @@ void selectFallbackSynthWavetable();
 void selectSynthWavetableForWaveform(byte waveform, bool updatePosition);
 bool synthWavetableReferenceForWaveform(byte waveform, const char*& folderPath, const char*& name, uint8_t& position);
 bool decodeStoredBuzzerEnabled(uint8_t storedValue);
+uint8_t encodeStoredBuzzerEnabled(bool buzzerEnabled);
 byte runtimeAudioDestination(bool buzzerEnabled);
 void syncAudioDestinationToRuntime();
 void RAM_FUNC(setSynthMasterVolumeControl)(byte value);
@@ -58,12 +61,27 @@ bool RAM_FUNC(startSynthPreviewNote)(int16_t pitchSteps, float frequency, byte d
 void RAM_FUNC(stopSynthPreviewNote)(SynthPreviewNoteHandle& handle);
 void panicStopOutput();
 void setupSynthOutputs();
+// Core 0, explicit CDC performance test; no work unless started by the host.
+bool synthPerformanceTestActive();
+void startSynthPerformanceTest(bool piezo = false);
+void stopSynthPerformanceTest();
+void serviceSynthPerformanceTest();
 bool RAM_FUNC(metronomeBrightnessSelected)();
 bool RAM_FUNC(metronomeSideButtonsSelected)();
 bool RAM_FUNC(metronomeVisualFlashActive)();
 
-extern byte activeSynthWaveTable[SYNTH_WAVETABLE_FRAME_COUNT][SYNTH_WAVE_SAMPLE_COUNT];
-extern byte activeSynthWavetableMipExtraSamples[SYNTH_WAVETABLE_MIP_EXTRA_SAMPLE_BYTES];
+struct SynthWavetableSamples {
+  byte base[SYNTH_WAVETABLE_FRAME_COUNT][SYNTH_WAVE_SAMPLE_COUNT];
+  byte mips[SYNTH_WAVETABLE_MIP_EXTRA_SAMPLE_BYTES];
+};
+struct SynthPcmSamples {
+  int16_t frames[(SYNTH_WAVETABLE_SAMPLE_BYTES + SYNTH_WAVETABLE_MIP_EXTRA_SAMPLE_BYTES) / 2];
+};
+union SynthSampleWorkspace {
+  SynthWavetableSamples wavetable;
+  SynthPcmSamples sampler;
+};
+extern SynthSampleWorkspace synthSampleWorkspace;
 extern volatile bool synthWaveTableLoadInProgress;
 extern volatile uint8_t activeSynthWavetableMipLevelCount;
 extern byte loadedSynthWaveform;

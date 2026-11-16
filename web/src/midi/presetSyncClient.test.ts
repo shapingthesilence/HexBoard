@@ -11,6 +11,8 @@ import { createSynthPresetObject } from "../catalogs/synthPresets.ts";
 import { createSynthWavetableObject, SYNTH_WAVETABLE_SAMPLE_BYTES } from "../catalogs/synthWavetables.ts";
 import { crc32 } from "../protocol/crc32.ts";
 import {
+  CapabilityFlag,
+  encodeU14,encodeU21,pack8To7,decodeReadBeginPayload,
   MessageType,
   ObjectType,
   SynthWavetableSelector,
@@ -411,4 +413,30 @@ describe("PresetSyncClient", () => {
       vi.useRealTimers();
     }
   });
+});
+
+it('streams Advanced content batches with wide IDs while keeping legacy requests unchanged',async()=>{
+ const t=new MockMidiTransport(),c=new PresetSyncClient(t,CapabilityFlag.AdvancedContentLibrary),pages:number[][]=[];
+ const read=c.listGeometryObjects(ObjectType.UserTuning,8,undefined,rows=>pages.push(rows.map(r=>r.handle)));
+ let sent=decodePresetSyncFrame(t.sentMessages[0]);expect(sent.message).toBe(MessageType.AdvancedObjectListRequest);expect(sent.payload).toEqual([3,0,0,4,0]);
+ const row=(handle:number)=>[3,...encodeU21(handle),1,2,0,19,...pack8To7(new Uint8Array(16).fill(1)),0,1,65];
+ t.emit(encodeDefaultPresetSyncFrame(MessageType.AdvancedObjectListResponse,sent.transactionId,[3,0,0,0,2,2,...row(0),...row(32768)]));
+ await vi.waitFor(()=>expect(t.sentMessages).toHaveLength(2));expect(pages).toEqual([[0,32768]]);
+ sent=decodePresetSyncFrame(t.sentMessages[1]);t.emit(encodeDefaultPresetSyncFrame(MessageType.AdvancedObjectListResponse,sent.transactionId,[3,0,1,0,2,1,...row(65280)]));
+ expect((await read).map(r=>r.handle)).toEqual([0,32768,65280]);expect(pages.at(-1)).toEqual([0,32768,65280]);
+ const legacyT=new MockMidiTransport(),legacy=new PresetSyncClient(legacyT),pending=legacy.listGeometryObjects(3,4);
+ const old=decodePresetSyncFrame(legacyT.sentMessages[0]);expect(old.message).toBe(MessageType.ObjectListRequest);legacyT.emit(encodeDefaultPresetSyncFrame(MessageType.ObjectListResponse,old.transactionId,[3,0,0,0,1,0]));await pending;
+});
+it('reads and deletes a high Advanced handle without truncation',async()=>{
+ const t=new MockMidiTransport(),c=new PresetSyncClient(t,CapabilityFlag.AdvancedContentLibrary),raw=new Uint8Array([1,2,3]);
+ const reading=c.readGeometryBundle(65280),request=decodePresetSyncFrame(t.sentMessages[0]);expect(request.message).toBe(MessageType.AdvancedReadRequest);expect(request.payload).toEqual([12,...encodeU21(65280),0]);
+ const old=encodeWriteBeginPayload({objectType:12,handle:0,transferId:7,schemaMajor:1,schemaMinor:0,rawByteLength:raw.length,objectCrc32:crc32(raw),rawChunkSize:64,writeFlags:0});
+ const begin=[12,...encodeU21(65280),...old.slice(3)];expect(decodeReadBeginPayload(begin,true).handle).toBe(65280);
+ t.emit(encodeDefaultPresetSyncFrame(MessageType.AdvancedReadBegin,request.transactionId,begin));expect(decodeAckPayload(decodePresetSyncFrame(t.sentMessages.at(-1)!).payload).message).toBe(MessageType.AdvancedReadBegin);
+ t.emit(encodeDefaultPresetSyncFrame(MessageType.DataChunk,request.transactionId,encodeDataChunkPayload({transferId:7,chunkIndex:0,rawOffset:0,rawData:raw})));
+ t.emit(encodeDefaultPresetSyncFrame(MessageType.TransferEnd,request.transactionId,encodeTransferEndPayload(7,1)));await expect(reading).resolves.toEqual(raw);
+ const deleting=c.deleteGeometryObject(3,65280),remove=decodePresetSyncFrame(t.sentMessages.at(-1)!);expect(remove.message).toBe(MessageType.AdvancedDeleteRequest);expect(remove.payload).toEqual([3,...encodeU21(65280),0]);t.emit(encodeAckFrame(remove.transactionId,MessageType.AdvancedDeleteRequest));await deleting;
+});
+it('supports 256-entry Advanced order files while preserving the original limit',()=>{
+ const ids=Array.from({length:256},(_,i)=>deterministicObjectId(`Library ${i}`));const bytes=encodeGeometryCatalogOrder(ids,true);expect(Array.from(bytes.slice(0,8))).toEqual([72,71,79,2,0,1,0,0]);expect(bytes).toHaveLength(4108);expect(()=>encodeGeometryCatalogOrder(ids)).toThrow(/64/);expect(()=>encodeGeometryCatalogOrder([...ids,deterministicObjectId('overflow')],true)).toThrow(/256/);
 });

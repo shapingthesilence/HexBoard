@@ -13,6 +13,7 @@
 #include "Settings.h"
 #include "SynthPresetStorage.h"
 #include "SynthWavetableStorage.h"
+#include "../synth/CompactSamplerCodec.h"
 
 static File presetSyncWriteRawTempFile;
 static File presetSyncReadRawFile;
@@ -46,8 +47,13 @@ void presetSyncHandleHello(uint16_t transactionId, const uint8_t* payload, size_
                       | PRESET_SYNC_CAP_SYNTH_WAVETABLE
                       | PRESET_SYNC_CAP_LIVE_SYNTH_PARAM
                       | PRESET_SYNC_CAP_CENTS_TABLE_RUNTIME_TUNING
+                      | PRESET_SYNC_CAP_SCOPED_GEOMETRY_LIST
                       | PRESET_SYNC_CAP_GEOMETRY_BUNDLE_FILES
-                      | PRESET_SYNC_CAP_LIVE_SYNTH_WAVETABLE_SELECT);
+                      | PRESET_SYNC_CAP_LIVE_SYNTH_WAVETABLE_SELECT
+#if HEXBOARD_ENABLE_SAMPLER
+                      | PRESET_SYNC_CAP_COMPACT_SAMPLER
+#endif
+                      );
   presetSyncAppendU28(response, PRESET_SYNC_MAX_RAW_OBJECT_BYTES);
   response.push_back(CURRENT_SETTINGS_VERSION);
   response.push_back(SYNTH_PRESET_SCHEMA_VERSION);
@@ -83,10 +89,41 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
   uint16_t pageIndex = presetSyncDecodeU14(payload + 1);
   uint8_t requestedPageSize = payload[3];
   uint8_t folderLength = payload[4];
-  if (payloadLength != static_cast<size_t>(5 + folderLength)) {
+  const size_t baseLength = 5 + folderLength;
+  const bool scoped = payloadLength == baseLength + 2 || payloadLength == baseLength + 4;
+  const bool layoutScoped = payloadLength == baseLength + 4;
+  if (payloadLength != baseLength && !scoped) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_OBJECT_LIST_REQ, PRESET_SYNC_ERROR_BAD_LENGTH);
     return;
   }
+
+  const GeometryBundleIndexEntry* scopedBundle = nullptr;
+  GeometryObjectSlot scopeTuning, scopeLayout;
+  if (scoped) {
+    const uint16_t tuningHandle = presetSyncDecodeU14(payload + baseLength);
+    if (!isPresetSyncGeometryObjectType(objectType)
+        || !geometryObjectForHandle(tuningHandle, scopeTuning)
+        || scopeTuning.objectType != PRESET_SYNC_OBJECT_TYPE_USER_TUNING
+        || (!isBuiltinGeometryHandle(tuningHandle) && !geometryBundleForTuningHandle(tuningHandle, scopedBundle))) {
+      presetSyncSendNack(transactionId, PRESET_SYNC_MSG_OBJECT_LIST_REQ, PRESET_SYNC_ERROR_BAD_OBJECT_TYPE);
+      return;
+    }
+    if (layoutScoped && (objectType != PRESET_SYNC_OBJECT_TYPE_EXPLICIT_BUTTON_MAP
+        || !geometryObjectForHandle(presetSyncDecodeU14(payload + baseLength + 2), scopeLayout)
+        || scopeLayout.objectType != PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT
+        || !geometryObjectReferencesObjectId(scopeLayout, PRESET_SYNC_TLV_LAYOUT_TUNING_REF,
+             PRESET_SYNC_OBJECT_TYPE_USER_TUNING, scopeTuning.objectId))) {
+      presetSyncSendNack(transactionId, PRESET_SYNC_MSG_OBJECT_LIST_REQ, PRESET_SYNC_ERROR_BAD_OBJECT_TYPE);
+      return;
+    }
+  }
+  auto matchesLayout = [&](uint16_t handle) {
+    if (!layoutScoped) return true;
+    GeometryObjectSlot map;
+    return geometryObjectForHandle(handle, map)
+      && geometryObjectReferencesObjectId(map, PRESET_SYNC_TLV_BUTTON_MAP_LAYOUT_REF,
+           PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT, scopeLayout.objectId);
+  };
 
   char folderFilter[SYNTH_PRESET_FOLDER_LENGTH] = {};
   if (folderLength > 0) {
@@ -101,6 +138,7 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
   uint8_t pageSize = requestedPageSize == 0 ? 4 : std::min<uint8_t>(requestedPageSize, 4);
   size_t start = static_cast<size_t>(pageIndex) * pageSize;
   PresetSyncListHandle pageHandles[4] = {};
+  SynthPresetCatalogEntry pageSynthPresets[4];
   uint8_t pageHandleCount = 0;
   size_t matchedCount = 0;
   auto includeHandle = [&](uint8_t matchedObjectType, uint16_t handle) {
@@ -115,16 +153,23 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
       snprintf(normalizedFolderFilter, sizeof(normalizedFolderFilter), "%s", folderFilter);
       normalizeSynthPresetFolderPath(normalizedFolderFilter, sizeof(normalizedFolderFilter));
     }
-    for (size_t i = 0; i < synthPresets.size(); ++i) {
-      if (!synthPresets[i].valid) {
-        continue;
-      }
-      if (normalizedFolderFilter[0]
-          && strncmp(synthPresets[i].folderPath, normalizedFolderFilter, sizeof(synthPresets[i].folderPath)) != 0) {
-        continue;
-      }
-      includeHandle(PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET, static_cast<uint16_t>(i));
+    ensureSynthPresetCatalogIndexed(false);
+    const char* filter = normalizedFolderFilter[0] ? normalizedFolderFilter : nullptr;
+    // Counts come from the folder table, so a page reads only its own records.
+    const uint16_t total = synthPresetCatalogMatchCount(filter);
+    if (start < matchedCount + total && pageHandleCount < pageSize) {
+      const uint16_t skip = static_cast<uint16_t>(start > matchedCount ? start - matchedCount : 0);
+      auto visit = [&](const SynthPresetCatalogEntry& entry) {
+        pageSynthPresets[pageHandleCount] = entry;
+        pageHandles[pageHandleCount++] = { PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET, entry.handle };
+        return pageHandleCount < pageSize;
+      };
+      visitSynthPresetCatalogFrom(filter, skip,
+        [](void* context, const SynthPresetCatalogEntry& entry) {
+          return (*static_cast<decltype(visit)*>(context))(entry);
+        }, &visit);
     }
+    matchedCount += total;
   };
   auto includeSynthWavetable = [&]() {
     char normalizedFolderFilter[SYNTH_WAVETABLE_FOLDER_LENGTH] = {};
@@ -144,7 +189,7 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
     }
   };
   auto includeGeometryObjects = [&](uint8_t geometryType) {
-    if (geometryFallbackRequired()) {
+    if (geometryFallbackRequired() && (!scoped || !scopedBundle)) {
       for (size_t i = 0; i < builtinGeometryObjectCount(); ++i) {
         BuiltinGeometryMetadata metadata;
         if (!builtinGeometryMetadataByOrdinal(i, metadata) || metadata.objectType != geometryType) {
@@ -154,11 +199,11 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
             && strncmp(metadata.folderPath, folderFilter, GEOMETRY_OBJECT_FOLDER_LENGTH) != 0) {
           continue;
         }
-        includeHandle(geometryType, metadata.handle);
+        if (matchesLayout(metadata.handle)) includeHandle(geometryType, metadata.handle);
       }
     }
     GeometryCatalogReader reader;
-    if (beginGeometryCatalogRead(reader)) {
+    if (scoped ? (scopedBundle && beginGeometryBundleRead(*scopedBundle, reader)) : beginGeometryCatalogRead(reader)) {
       uint16_t handle = 0;
       GeometryObjectIndexEntry object;
       while (readNextGeometryObjectMetadata(reader, handle, object)) {
@@ -169,7 +214,7 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
             && strncmp(object.folderPath, folderFilter, sizeof(object.folderPath)) != 0) {
           continue;
         }
-        includeHandle(geometryType, handle);
+        if (matchesLayout(handle)) includeHandle(geometryType, handle);
       }
       endGeometryCatalogRead(reader);
     }
@@ -232,7 +277,7 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
       PresetSyncListHandle listHandle = pageHandles[listIndex];
       uint16_t handle = listHandle.handle;
       if (listHandle.objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET) {
-        SynthPresetIndexEntry& preset = synthPresets[handle];
+        const SynthPresetCatalogEntry& preset = pageSynthPresets[listIndex];
         appendRecord(PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET,
                      handle,
                      PRESET_SYNC_RECORD_VALID,
@@ -422,11 +467,22 @@ bool presetSyncReadTransferBytes(uint32_t offset, uint8_t* output, size_t length
     return false;
   }
   if (presetSyncReadTransfer.streamRawFile) {
+    // An optional prefix from rawData, then the file from rawFileOffset.
+    const size_t prefixLength = presetSyncReadTransfer.rawData.size();
+    size_t copied = 0;
+    if (offset < prefixLength) {
+      copied = std::min<size_t>(length, prefixLength - offset);
+      memcpy(output, presetSyncReadTransfer.rawData.data() + offset, copied);
+    }
+    if (copied == length) {
+      return true;
+    }
+    const uint32_t fileOffset = presetSyncReadTransfer.rawFileOffset + offset + copied - prefixLength;
     if (!presetSyncReadRawFile
-        || (presetSyncReadRawFile.position() != offset && !presetSyncReadRawFile.seek(offset))) {
+        || (presetSyncReadRawFile.position() != fileOffset && !presetSyncReadRawFile.seek(fileOffset))) {
       return false;
     }
-    return presetSyncReadRawFile.read(output, length) == length;
+    return presetSyncReadRawFile.read(output + copied, length - copied) == length - copied;
   }
   if (!presetSyncReadTransfer.streamSynthWavetableSamples) {
     if (offset + length > presetSyncReadTransfer.rawData.size()) {
@@ -541,7 +597,7 @@ void presetSyncSendNextReadChunk() {
   ++presetSyncReadTransfer.nextChunkIndex;
 }
 
-void presetSyncSendRawObject(uint16_t transactionId, uint8_t objectType, uint16_t handle, uint8_t schemaMajor, uint8_t schemaMinor, const std::vector<uint8_t>& raw) {
+void presetSyncSendRawObject(uint16_t transactionId, uint8_t objectType, uint16_t handle, uint8_t schemaMajor, uint8_t schemaMinor, std::vector<uint8_t> raw) {
   presetSyncCloseReadFile();
   presetSyncReadTransfer = PresetSyncReadTransfer{};
   presetSyncReadTransfer.active = true;
@@ -553,7 +609,7 @@ void presetSyncSendRawObject(uint16_t transactionId, uint8_t objectType, uint16_
   presetSyncReadTransfer.schemaMinor = schemaMinor;
   presetSyncReadTransfer.rawByteLength = raw.size();
   presetSyncReadTransfer.objectCrc32 = crc32(raw.data(), raw.size());
-  presetSyncReadTransfer.rawData = raw;
+  presetSyncReadTransfer.rawData = std::move(raw);
   presetSyncSendReadBegin();
 }
 
@@ -635,8 +691,54 @@ void presetSyncSendStreamedSynthWavetableObject(uint16_t transactionId,
            "%s",
            samplePath);
   presetSyncReadTransfer.streamSampleLength = sampleLength;
-  presetSyncReadTransfer.rawData = objectPrefix;
+  presetSyncReadTransfer.rawData = std::move(objectPrefix);
   presetSyncSendReadBegin();
+}
+
+// Sampler sound object: "HXS1", the synth preset object body's length (16-bit
+// little endian), the body, then the instrument streamed from the sound file.
+uint8_t presetSyncSendSamplerSound(uint16_t transactionId, uint16_t handle) {
+  SynthPresetCatalogEntry entry;
+  SynthPresetSlot preset = {};
+  char path[SYNTH_PRESET_STORAGE_PATH_LENGTH] = {};
+  uint32_t offset = 0;
+  uint32_t length = 0;
+  if (!readSynthPresetCatalogEntry(handle, entry) || !readSynthPresetFileByObjectId(entry.objectId, preset)
+      || !preset.samplerName[0] || !synthPresetInstrumentRange(entry.objectId, path, sizeof(path), offset, length)) {
+    return PRESET_SYNC_ERROR_OBJECT_MISSING;
+  }
+  const std::vector<uint8_t> body = buildSynthPresetObjectBody(preset);
+  std::vector<uint8_t> prefix{'H', 'X', 'S', '1', static_cast<uint8_t>(body.size()), static_cast<uint8_t>(body.size() >> 8)};
+  prefix.insert(prefix.end(), body.begin(), body.end());
+  File f = LittleFS.open(path, "r");
+  if (!f || !f.seek(offset)) {
+    return PRESET_SYNC_ERROR_OBJECT_MISSING;
+  }
+  uint32_t crc = presetSyncCrc32Update(0xFFFFFFFFu, prefix.data(), prefix.size());
+  uint8_t buffer[128];
+  for (uint32_t remaining = length; remaining;) {
+    const size_t n = f.read(buffer, std::min<uint32_t>(sizeof(buffer), remaining));
+    if (!n) {
+      return PRESET_SYNC_ERROR_VALIDATION_FAILED;
+    }
+    crc = presetSyncCrc32Update(crc, buffer, n);
+    remaining -= n;
+  }
+  presetSyncCloseReadFile();
+  presetSyncReadRawFile = f;
+  presetSyncReadTransfer = PresetSyncReadTransfer{};
+  presetSyncReadTransfer.active = presetSyncReadTransfer.streamRawFile = true;
+  presetSyncReadTransfer.objectType = PRESET_SYNC_OBJECT_TYPE_COMPACT_SAMPLER;
+  presetSyncReadTransfer.handle = handle;
+  presetSyncReadTransfer.transactionId = transactionId;
+  presetSyncReadTransfer.transferId = presetSyncAllocateTransferId();
+  presetSyncReadTransfer.schemaMajor = 1;
+  presetSyncReadTransfer.rawByteLength = static_cast<uint32_t>(prefix.size()) + length;
+  presetSyncReadTransfer.rawFileOffset = offset;
+  presetSyncReadTransfer.objectCrc32 = presetSyncCrc32Finish(crc);
+  presetSyncReadTransfer.rawData = std::move(prefix);
+  presetSyncSendReadBegin();
+  return 0;
 }
 
 void presetSyncHandleReadRequest(uint16_t transactionId, const uint8_t* payload, size_t payloadLength) {
@@ -650,11 +752,17 @@ void presetSyncHandleReadRequest(uint16_t transactionId, const uint8_t* payload,
   }
   uint8_t objectType = payload[0];
   if (!isPresetSyncSupportedObjectType(objectType)
+      && !(HEXBOARD_ENABLE_SAMPLER && objectType == PRESET_SYNC_OBJECT_TYPE_COMPACT_SAMPLER)
       && objectType != PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_BAD_OBJECT_TYPE);
     return;
   }
   uint16_t handle = presetSyncDecodeU14(payload + 1);
+  if (objectType == PRESET_SYNC_OBJECT_TYPE_COMPACT_SAMPLER) {
+    const uint8_t error = presetSyncSendSamplerSound(transactionId, handle);
+    if (error) presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, error);
+    return;
+  }
   if (objectType == PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE) {
     if (!presetSyncSendGeometryBundleFile(transactionId, handle)) {
       presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING);
@@ -672,7 +780,7 @@ void presetSyncHandleReadRequest(uint16_t transactionId, const uint8_t* payload,
                             handle,
                             object.schemaMajor,
                             object.schemaMinor,
-                            object.body);
+                            std::move(object.body));
     return;
   }
   if (objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE) {
@@ -690,10 +798,7 @@ void presetSyncHandleReadRequest(uint16_t transactionId, const uint8_t* payload,
     presetSyncSendRawObject(transactionId, PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET, handle, 1, 0, buildSynthPresetObjectBody(currentPreset));
     return;
   }
-  if (handle >= synthPresets.size() || !synthPresets[handle].valid) {
-    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING);
-    return;
-  }
+  ensureSynthPresetCatalogIndexed(false);
   SynthPresetSlot preset = {};
   if (!readSynthPresetFromCatalog(handle, preset)) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING);
@@ -776,6 +881,10 @@ void presetSyncHandleWriteBegin(uint16_t transactionId, const uint8_t* payload, 
 
   uint16_t handle = presetSyncDecodeU14(payload + 1);
   uint8_t writeFlags = payload[18];
+  if (objectType == PRESET_SYNC_OBJECT_TYPE_COMPACT_SAMPLER
+      && (!(writeFlags & PRESET_SYNC_WRITE_SAVE_TO_FLASH) || (writeFlags & PRESET_SYNC_WRITE_DRY_RUN) || !fileSystemExists)) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_BEGIN, PRESET_SYNC_ERROR_VALIDATION_FAILED); return;
+  }
   if ((objectType == PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE
        || objectType == PRESET_SYNC_OBJECT_TYPE_GEOMETRY_ORDER)
       && (handle != PRESET_SYNC_NEW_OBJECT_HANDLE
@@ -811,6 +920,7 @@ void presetSyncHandleWriteBegin(uint16_t transactionId, const uint8_t* payload, 
     presetSyncWriteTransfer.flashSafeMuteActive = true;
   }
   if (objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE
+      || objectType == PRESET_SYNC_OBJECT_TYPE_COMPACT_SAMPLER
       || objectType == PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE) {
     if (!presetSyncCreateWriteTempFile(presetSyncWriteTransfer)) {
       presetSyncCancelWriteTransfer();
@@ -924,6 +1034,15 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
     return;
   }
 
+  if (presetSyncWriteTransfer.objectType == PRESET_SYNC_OBJECT_TYPE_COMPACT_SAMPLER) {
+    const uint8_t error = presetSyncWriteTransfer.streamRawToFile
+      ? storeSamplerSoundObjectFile(presetSyncWriteTransfer.streamRawPath, presetSyncWriteTransfer.handle, commitFlags)
+      : PRESET_SYNC_ERROR_VALIDATION_FAILED;
+    presetSyncCancelWriteTransfer();
+    if (!error) presetSyncSendAck(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT);
+    else presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, error);
+    return;
+  }
   std::string parseError;
   if (presetSyncWriteTransfer.objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET) {
     SynthPresetSlot parsedPreset;
@@ -945,9 +1064,11 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
           presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_STORAGE_FULL);
           return;
         }
-        if (!writeSynthPresetToCatalogSlot(static_cast<uint16_t>(slotIndex), parsedPreset)) {
+        const SynthPresetStoreResult stored =
+          writeSynthPresetToCatalogSlot(static_cast<uint16_t>(slotIndex), parsedPreset);
+        if (stored != SynthPresetStoreResult::Stored) {
           presetSyncCancelWriteTransfer();
-          presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_STORAGE_FULL);
+          presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, presetSyncStoreError(stored));
           return;
         }
         requestSynthPresetMenuRebuild();
@@ -1034,7 +1155,7 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
     requestUserGeometryMenuRebuild();
   } else if (isPresetSyncGeometryObjectType(presetSyncWriteTransfer.objectType)) {
     GeometryObjectSlot parsedObject;
-    if (!parseGeometryObjectBody(presetSyncWriteTransfer.rawData, parsedObject, parseError)
+    if (!parseGeometryObjectBody(std::move(presetSyncWriteTransfer.rawData), parsedObject, parseError)
         || parsedObject.objectType != presetSyncWriteTransfer.objectType) {
       sendToLog("Preset sync rejected geometry object: " + parseError);
       presetSyncCancelWriteTransfer();
@@ -1097,7 +1218,9 @@ void presetSyncHandleDelete(uint16_t transactionId, const uint8_t* payload, size
   uint16_t handle = presetSyncDecodeU14(payload + 1);
   uint8_t deleteFlags = payload[3];
   if (objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET) {
-    if (handle >= synthPresets.size() || !synthPresets[handle].valid) {
+    ensureSynthPresetCatalogIndexed(false);
+    SynthPresetCatalogEntry existing;
+    if (!readSynthPresetCatalogEntry(handle, existing)) {
       presetSyncSendNack(transactionId, PRESET_SYNC_MSG_DELETE_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING);
       return;
     }
@@ -1177,6 +1300,11 @@ bool processPresetSyncSysEx(const uint8_t* data, const unsigned int len) {
   }
 
   switch (message) {
+#if HEXBOARD_ENABLE_SAMPLER
+    case 0x36:
+      handleCompactSamplerRequest(transactionId, payload, payloadLength);
+      break;
+#endif
     case PRESET_SYNC_MSG_HELLO_REQ:
       presetSyncHandleHello(transactionId, payload, payloadLength);
       break;

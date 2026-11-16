@@ -38,6 +38,8 @@ HEXBOARD_SETTING(GlobalBrightness, BRIGHT_DIM)
 HEXBOARD_SETTING(AnimationType, ANIMATE_BUTTON)
 HEXBOARD_SETTING(ProgramChange, 0)
 HEXBOARD_SETTING(JustIntonationBPMSync, 0)
+// Unused: JI BPM Sync follows the sound's Tempo. Kept so later keys keep
+// their stored positions.
 HEXBOARD_SETTING(BeatBPM, 60)
 HEXBOARD_SETTING(BPMMultiplier, 1)
 HEXBOARD_SETTING(DynamicJI, 0)
@@ -90,3 +92,8 @@ HEXBOARD_SETTING(SequencerSendClock, sequencer::kSendClockDefault)
 HEXBOARD_SETTING(SequencerSendTransport, sequencer::kSendTransportDefault)
 HEXBOARD_SETTING(PiezoVolumeCap, HEADPHONE_VOLUME_CAP_FULL)
 HEXBOARD_SETTING(CurrentKeyStepsFromAHigh, 255)  // high byte of signed -9
+HEXBOARD_SETTING(CommandEncoder, 0)
+HEXBOARD_SETTING(ColorDithering, 0)
+HEXBOARD_SETTING(LedFramePeriodLow, 232)  // 4328us, little-endian low byte
+HEXBOARD_SETTING(LedFramePeriodHigh, 16)
+HEXBOARD_SETTING(ArpeggiatorNoteLength, 100)

@@ -5,7 +5,9 @@
 enum class VirtualListMenuRowType : uint8_t {
   Button,
   Link,
-  Label
+  Label,
+  Checkbox,
+  Value
 };
 
 struct VirtualListMenuProvider {
@@ -14,13 +16,28 @@ struct VirtualListMenuProvider {
   uint16_t (*getCount)(void* context) = nullptr;
   bool (*getLabel)(void* context, uint16_t index, char* output, size_t outputLength) = nullptr;
   VirtualListMenuRowType (*getRowType)(void* context, uint16_t index) = nullptr;
+  bool (*isChecked)(void* context, uint16_t index) = nullptr;
   bool (*isCurrent)(void* context, uint16_t index) = nullptr;
   bool (*getInitialSelection)(void* context, uint16_t* index) = nullptr;
   void (*select)(void* context, uint16_t index) = nullptr;
   bool (*back)(void* context) = nullptr;
   void (*close)(void* context) = nullptr;
   const char* emptyLabel = "";
+  bool (*getValue)(void*, uint16_t, char*, size_t) = nullptr;
+  // Optional 6x8 XBM sprite drawn at the left of a Button row. No list uses
+  // one at present; the chosen and audition markers sit at the right edge.
+  const unsigned char* (*getIcon)(void* context, uint16_t index) = nullptr;
+  // The row being auditioned (playing, not chosen) shows auditionIcon where
+  // the current-row diamond would go.
+  bool (*isAuditioning)(void* context, uint16_t index) = nullptr;
+  const unsigned char* auditionIcon = nullptr;
+  void (*adjust)(void*, uint16_t, int) = nullptr;
 };
+
+// 6x8 audition markers: headphones for a sound being heard, a hollow diamond
+// for a tuning, layout or scale being tried.
+extern const unsigned char virtualListHeadphonesBits[];
+extern const unsigned char virtualListTryingDiamondBits[];
 
 void openVirtualListMenu(const VirtualListMenuProvider& provider);
 bool virtualListMenuIsActive();
@@ -29,3 +46,8 @@ void redrawVirtualListMenu();
 void resetVirtualListMenuSelection();
 void closeVirtualListMenu();
 void deactivateVirtualListMenu();
+// The highlighted provider row of the open list, when that list was opened
+// with getCount; VIRTUAL_LIST_MENU_NO_ROW for its Back row or an empty list.
+// False when no list, or a different list, is open.
+constexpr uint16_t VIRTUAL_LIST_MENU_NO_ROW = 0xFFFFu;
+bool virtualListMenuHighlightedRow(uint16_t (*getCount)(void* context), uint16_t& providerIndex);

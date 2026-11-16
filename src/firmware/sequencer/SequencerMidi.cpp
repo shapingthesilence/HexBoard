@@ -91,7 +91,7 @@ bool startMidiNote(int16_t pitchSteps, byte velocity, SequencerMidiNoteHandle& h
   }
 
   if (MPEpitchBendsNeeded != 1) {
-    withMIDI([&](auto& M) { M.sendPitchBend(pitchBend, midiChannel); });
+    withMIDI([&](auto& M) { M.sendPerNotePitchBend(pitchBend, midiChannel); });
     if (extraMPE) {
       withMIDI([&](auto& M) {
         M.sendAfterTouch(velWheel.curValue, midiChannel);

@@ -8,7 +8,9 @@ They are documentation only.
 - They are not used by the firmware.
 - They are meant to help remember current layouts and interaction design.
 - Update them when a screen layout or menu structure changes in a meaningful way.
-- Keyboard layout references live in `docs/keyboard/layouts/`.
+- User instructions belong in `../manuals/`; implementation belongs in the
+  firmware developer guide. Keep sketches only for meaningful interaction and
+  layout constraints.
 
 Current files:
 

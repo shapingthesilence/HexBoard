@@ -1,4 +1,4 @@
-export type MidiMessageListener = (bytes: Uint8Array) => void;
+export type MidiMessageListener = (bytes: Uint8Array, receivedAt?: number) => void;
 
 export interface MidiTransport {
   readonly label: string;
@@ -16,6 +16,7 @@ export interface MidiPortSummary {
 
 export interface WebMidiMessageEvent {
   data: Uint8Array;
+  timeStamp?: number;
 }
 
 export interface WebMidiInput {
@@ -25,6 +26,8 @@ export interface WebMidiInput {
   type: "input";
   state?: string;
   onmidimessage: ((event: WebMidiMessageEvent) => void) | null;
+  addEventListener?: (type: "midimessage", listener: (event: WebMidiMessageEvent) => void) => void;
+  removeEventListener?: (type: "midimessage", listener: (event: WebMidiMessageEvent) => void) => void;
   open?: () => Promise<WebMidiInput>;
 }
 
@@ -43,6 +46,9 @@ export interface WebMidiPortMap<T> {
 }
 
 export interface WebMidiAccess {
+  addEventListener?: (type: "statechange", listener: () => void) => void;
+  removeEventListener?: (type: "statechange", listener: () => void) => void;
+  onstatechange?: ((event: unknown) => void) | null;
   inputs: WebMidiPortMap<WebMidiInput>;
   outputs: WebMidiPortMap<WebMidiOutput>;
 }

@@ -1,4 +1,5 @@
 #include "SynthAudioInternal.h"
+#include "ModWheelAmount.h"
 
 uint8_t synthFxModScaleByDepth[128][128] = {};
 uint32_t synthPitchModPositiveQ16ByQ4[SYNTH_PITCH_MOD_RATIO_Q4_COUNT] = {};
@@ -38,11 +39,11 @@ uint8_t RAM_FUNC(smoothedSynthModValue)(uint8_t elapsedTicks = 1) {
 }
 
 void updateSynthModulationParams() {
-  if (synthModTarget > SYNTH_MOD_TARGET_MAX) {
+  if (synthModTarget > SYNTH_WHEEL_TARGET_MAX) {
     synthModTarget = SYNTH_MOD_TARGET_FOLD_WARP;
   }
-  if (synthModAmount > SYNTH_MOD_AMOUNT_FULL) {
-    synthModAmount = SYNTH_MOD_AMOUNT_FULL;
+  if (synthModAmount > SYNTH_MOD_AMOUNT_MAX) {
+    synthModAmount = 0;
   }
   for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
     if (effectEnvelopeTarget[envelopeIndex] > SYNTH_MOD_TARGET_MAX) {
@@ -81,11 +82,8 @@ void updateSynthPortamentoSettings() {
   synthPortamentoTicks = ticksFromMicros(envelopeTimeMicrosOptions[synthPortamentoTimeIndex]);
 }
 
-uint8_t RAM_FUNC(scaleSynthModAmount)(uint8_t modValue) {
-  if (synthModAmount >= SYNTH_MOD_AMOUNT_FULL) {
-    return modValue;
-  }
-  return static_cast<uint8_t>((static_cast<uint16_t>(modValue) * static_cast<uint16_t>(synthModAmount) + 64u) >> 7);
+int16_t RAM_FUNC(scaleSynthModAmount)(uint8_t modValue) {
+  return scaleSynthWheelDepth(modValue, synthModAmount);
 }
 
 uint8_t RAM_FUNC(scaleSynthFxModDepth)(uint8_t depth, uint8_t value) {
@@ -539,15 +537,16 @@ void RAM_FUNC(retargetSynthAmpEnvelopeRenderCache)(SynthVoiceRenderCache& cache,
   cache.ampEnvelopeRampSamples = elapsedTicks;
 }
 
+// A switch here compiles to a lookup table in flash; the renderer must not
+// wait on flash reads, so the table is placed in RAM explicitly.
+static const uint16_t __not_in_flash("synth_mip_limits") synthWavetableMipHarmonicLimits[] = {
+  SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_0, SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_1,
+  SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_2, SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_3,
+  SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_4, SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_5
+};
+
 uint16_t RAM_FUNC(synthWavetableMipHarmonicLimit)(uint8_t level) {
-  switch (level) {
-    case 0: return SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_0;
-    case 1: return SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_1;
-    case 2: return SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_2;
-    case 3: return SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_3;
-    case 4: return SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_4;
-    default: return SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_5;
-  }
+  return synthWavetableMipHarmonicLimits[level < 5 ? level : 5];
 }
 
 uint32_t RAM_FUNC(synthAdjustedSafeHarmonicQ8ForPhaseIncrement)(uint32_t phaseIncrement) {
@@ -934,7 +933,7 @@ bool RAM_FUNC(synthControlTickDue)() {
 
 void RAM_FUNC(refreshSynthBaseModulationCache)(uint8_t elapsedTicks) {
   synthBaseModulationCache = {};
-  const uint8_t synthModValue = scaleSynthModAmount(smoothedSynthModValue(elapsedTicks));
+  const int16_t synthModValue = scaleSynthModAmount(smoothedSynthModValue(elapsedTicks));
   if (synthModTarget == SYNTH_MOD_TARGET_PITCH) {
     int16_t pitchAmountQ4 = static_cast<int16_t>(synthModValue * SYNTH_PITCH_MOD_Q4_SCALE);
     addSynthPitchTargetAmountQ4(pitchAmountQ4, synthBaseModulationCache.pitch);
@@ -1081,7 +1080,7 @@ void RAM_FUNC(refreshSynthVoiceRenderCache)(uint8_t voiceIndex,
     cache.wavetableContext =
       wavetableReadContextFromFramePosition(framePosition, activeWaveFrameCount, selectedMipLevel);
   } else if (!activeWavetableHasFrames) {
-    cache.wavetableContext = { activeSynthWaveTable[0], nullptr, 0 };
+    cache.wavetableContext = { synthSampleWorkspace.wavetable.base[0], nullptr, 0 };
     cache.wavetableMipLevel = 0;
   }
   synthVoiceRenderCacheValid[voiceIndex] = true;

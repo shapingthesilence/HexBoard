@@ -1,7 +1,9 @@
 import { ObjectType } from "../protocol/constants.ts";
 import {
   createCommonRecords,
+  decodeObjectBody,
   encodeObjectBody,
+  textFromBytes,
   tlv,
   tlvText,
   tlvU8,
@@ -15,8 +17,19 @@ export const SynthPresetTlv = {
   Favorite: 0x23,
   LastModifiedUnixTime: 0x24,
   WavetableName: 0x26,
-  WavetableFolderPath: 0x27
+  WavetableFolderPath: 0x27,
+  SamplerName: 0x28,
+  SamplerEnvelopeOverride: 0x29
 } as const;
+
+/** A Classic sampler preset names its instrument; the mask's set bits replace
+ *  the instrument's own amp envelope stages (attack, hold, decay, sustain, release). */
+export interface SynthPresetSampler {
+  name: string;
+  envelopeOverride: number;
+}
+
+export const SAMPLER_ENVELOPE_OVERRIDE_ALL = 0x1f;
 
 export const SynthSettingKey = {
   PlaybackMode: 26,
@@ -52,7 +65,8 @@ export const SynthSettingKey = {
   SynthLfoTarget: 75,
   SynthLfoAmount: 76,
   SynthLfoWave: 77,
-  SynthLfoSpeed: 78
+  SynthLfoSpeed: 78,
+  ArpeggiatorNoteLength: 94
 } as const;
 
 export type SynthSettingName = keyof typeof SynthSettingKey;
@@ -68,6 +82,7 @@ export interface SynthPresetInput {
   };
   values: SynthPresetValues;
   favorite?: boolean;
+  sampler?: SynthPresetSampler;
   tags?: string[];
 }
 
@@ -91,7 +106,7 @@ export function createSynthPresetObject(input: SynthPresetInput): EncodedCatalog
       folderPath: input.folderPath,
       tags: input.tags
     }),
-    tlvU8(SynthPresetTlv.SynthPresetSchemaVersion, 7),
+    tlvU8(SynthPresetTlv.SynthPresetSchemaVersion, 9),
     tlv(SynthPresetTlv.SynthValues, encodeSynthValues(input.values))
   ];
 
@@ -102,6 +117,11 @@ export function createSynthPresetObject(input: SynthPresetInput): EncodedCatalog
 
   if (input.favorite !== undefined) {
     records.push(tlvU8(SynthPresetTlv.Favorite, input.favorite ? 1 : 0));
+  }
+
+  if (input.sampler?.name) {
+    records.push(tlvText(SynthPresetTlv.SamplerName, input.sampler.name));
+    records.push(tlvU8(SynthPresetTlv.SamplerEnvelopeOverride, input.sampler.envelopeOverride & SAMPLER_ENVELOPE_OVERRIDE_ALL));
   }
 
   const body = encodeObjectBody({

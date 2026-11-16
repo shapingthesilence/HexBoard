@@ -1,0 +1,152 @@
+import {decodeMotion} from "./motion.mjs";
+import { crc32 } from "./prepare.mjs";
+import { decodePerformance, defaults, defaultPerformance } from "./encode.mjs";
+export function readBank(bytes, options = {}) {
+  const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength),
+    u16 = (p) => v.getUint16(p, true),
+    u32 = (p) => v.getUint32(p, true),
+    midi = (x) => (x / 2 ** 24 - Math.log2(440)) * 12 + 69;
+  if (
+    bytes.length < 128 ||
+    u32(0) !== 0x32534248 ||
+    u16(4) !== 3 ||
+    u16(6) !== 128 ||
+    u32(8) !== 44100 ||
+    u32(20) !== bytes.length
+  )
+    throw Error("Choose a current HBS sound file.");
+  const header = bytes.slice(0, 128);
+  header.fill(0, 36, 40);
+  if (crc32(header) !== u32(36))
+    throw Error("Sound header checksum failed.");
+  // 114-119 hold signed envelope bends; -32768 is out of range. 120-127 are reserved.
+  if(bytes[106]>=16||bytes[107]>4||bytes.subarray(120,128).some(x=>x)||[114,116,118].some(at=>u16(at)===0x8000))throw Error("Invalid sound voice reservations.");
+  const a = u16(12),
+    l = u16(14),
+    z = u16(16),
+    flags = u16(18),
+    meta = u32(24),
+    pages = u32(40),
+    end = 128 + a * 48 + l * 16 + z * 48 + pages * 4;
+  if (
+    !a ||
+    a > 128 ||
+    !l ||
+    l > 1536 ||
+    !z ||
+    z > 256 ||
+    flags & ~7 ||
+    end + (flags & 2 ? 184 : 0)+(flags&4?(z+1)*64:0) > meta ||
+    meta > bytes.length ||
+    crc32(bytes.subarray(128, meta)) !== u32(28) ||
+    crc32(bytes.subarray(meta)) !== u32(32)
+  )
+    throw Error("Sound bounds or checksum failed.");
+  const assets = Array.from({ length: a }, (_, i) => {
+    const p = 128 + i * 48,
+      frames = u32(p),
+      level = u16(p + 20),
+      channels = bytes[p + 24],
+      mode = bytes[p + 25],
+      r = 128 + a * 48 + level * 16,
+      offset = u32(r);
+    if (
+      level >= l ||
+      ![1, 2].includes(channels) ||
+      mode > 3 ||
+      frames < 4 ||
+      offset < meta ||
+      offset + frames * channels * 2 > bytes.length ||
+      u32(r + 4) !== frames ||
+      crc32(bytes.subarray(offset, offset + frames * channels * 2)) !==
+        u32(r + 8)
+    )
+      throw Error("Invalid recording bounds or checksum.");
+    const loopStart=u32(p+8), loopEnd=u32(p+12), looping=mode===1||mode===3;
+    if(looping&&(loopStart>=loopEnd||loopEnd>frames))throw Error("Invalid recording loop bounds.");
+    const first=options.loopWindows&&looping?loopStart:0, last=options.loopWindows&&looping?loopEnd:frames;
+    const decodeChannels=()=>Array.from({length:channels},(_,c)=>Float32Array.from({length:last-first},(_,n)=>v.getInt16(offset+((first+n)*channels+c)*2,true)/32768));
+    const recording={name:`Recording ${i+1}`,channels:[],rate:44100,rootMidi:midi(v.getInt32(p+4,true)),mode,
+      loopStart:options.loopWindows&&looping?0:loopStart,loopEnd:options.loopWindows&&looping?last-first:loopEnd};
+    // Verification keeps metadata but decodes only one sustain window at a time.
+    // Normal authoring retains eager, stable channel-array identity for React.
+    if(options.loopWindows)Object.defineProperty(recording,"channels",{enumerable:true,get:decodeChannels});
+    else recording.channels=decodeChannels();
+    return recording;
+  });
+  const zones = Array.from({ length: z }, (_, i) => {
+    const p = 128 + a * 48 + l * 16 + i * 48,
+      key = u16(p + 10);
+    if (u16(p + 8) >= a) throw Error("Invalid region recording.");
+    if(bytes[p+44]>127||bytes[p+45]>128||bytes[p+46]||bytes[p+47])throw Error("Invalid fixed region controls.");
+    return {
+      asset: u16(p + 8),
+      lowMidi: midi(v.getInt32(p, true)),
+      highMidi: midi(v.getInt32(p + 4, true) + 1),
+      key: key === 65535 ? undefined : key,
+      velocityLow: bytes[p + 12],
+      velocityHigh: bytes[p + 13],
+      choke: bytes[p + 14],
+      roundRobin: bytes[p + 15],
+      gain: u16(p + 16) / 32768,
+      pan: v.getInt16(p + 18, true) / 32767,
+      fixed: !!bytes[p + 20],
+      color: bytes[p + 24]
+        ? "#" +
+          Array.from(bytes.subarray(p + 21, p + 24), (x) =>
+            x.toString(16).padStart(2, "0"),
+          ).join("")
+        : undefined,
+      attack: u16(p + 25),
+      release: u16(p + 27),
+      cutoff: u16(p + 29),
+      velocityCurve: bytes[p + 31],
+      decay: u16(p + 32) === 65535 ? undefined : u16(p + 32),
+      sustain: u16(p + 32) === 65535 ? undefined : u16(p + 34) / 65535,
+      delay: u16(p + 36),
+      hold: u16(p + 38),
+      keyTrack: u16(p + 40) / 100,
+      resonance:u16(p+42)? .5+(u16(p+42)-1)/65534*3.5:undefined,
+      fixedVelocity:bytes[p+44]||undefined,
+      fixedNote:bytes[p+45]?bytes[p+45]-1:undefined,
+    };
+  });
+  const performance =
+    flags & 2
+      ? decodePerformance(bytes.subarray(end, end + 184))
+      : { velocityEngine: 0, performance: defaultPerformance() };
+  let motion;
+  if(flags&4){let at=end+(flags&2?184:0);motion=decodeMotion(bytes.subarray(at,at+64));for(const zone of zones){at+=64;zone.motion=decodeMotion(bytes.subarray(at,at+64));}}
+  const roomDecay=u16(108)||1600;if(roomDecay<200||roomDecay>8000)throw Error("Invalid reverb decay");
+  return {
+    motion,
+    name: new TextDecoder()
+      .decode(bytes.subarray(64, 96))
+      .replace(/\0.*$/s, ""),
+    assets,
+    zones,
+    playback:{voices:16-bytes[106],tails:4-bytes[107]},
+    settings: {
+      ...defaults,
+      attack: u16(48),
+      decay: u16(50),
+      sustain: u16(52) / 65535,
+      release: u16(54),
+      cutoff: u16(56),
+      resonance: 0.5 + (u16(58) / 65535) * 3.5,
+      pressure: u16(60) / 65535,
+      space: u16(62) / 65535,
+      roomDecay,roomTone:u16(110)?(u16(110)-1)/65534:defaults.roomTone,roomWidth:u16(112)?(u16(112)-1)/65534:1,
+      fastRelease: u16(96),
+      releaseResponse: u16(98) / 65535,
+      releaseCurve: 0.25 + (u16(100) / 65535) * 3.75,
+      pedalRelease: u16(102),
+      pressureGain: u16(104) / 65535,
+      attackShape: ((u16(114) << 16) >> 16) / 32767,
+      decayShape: ((u16(116) << 16) >> 16) / 32767,
+      releaseShape: ((u16(118) << 16) >> 16) / 32767,
+    },
+    ...performance,
+    preparedSource: bytes,
+  };
+}

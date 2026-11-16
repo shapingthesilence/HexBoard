@@ -1,6 +1,10 @@
 #include "../FirmwareModule.h"
 #include "DiagnosticsTiming.h"
 #include "PlatformCommon.h"
+#include "SerialDebugCommand.h"
+#include "../menu/MenuAndDisplay.h"
+#include "../sequencer/SequencerUsbBackup.h"
+#include "../synth/SynthAudio.h"
 
 // @diagnostics
 /*
@@ -22,6 +26,7 @@ bool serialDebugPeriodicSuppressed = false;
 uint32_t serialDebugMinFreeHeap = 0;
 uint64_t serialDebugLastReportMicros = 0;
 uint32_t serialDebugWorstAudioCpuTenths = 0;
+SerialDebugCommandParser serialDebugCommandParser;
 }  // namespace
 
 void captureAndResetISRProfile(bool resumeProfiling);
@@ -44,9 +49,8 @@ void resetSerialDebugMinFreeHeap() {
 
 void resetSerialDebugAudioStats() {
   serialDebugWorstAudioCpuTenths = 0;
-  if (serialDebugEnabled && serialDebugAudioMessages) {
-    captureAndResetISRProfile(true);
-  }
+  // Disabling diagnostics must also remove the audio profiling overhead.
+  captureAndResetISRProfile(serialDebugEnabled && serialDebugAudioMessages);
 }
 
 void updateSerialDebugRuntime() {
@@ -66,7 +70,53 @@ void setSerialDebugPeriodicSuppressed(bool suppressed) {
   serialDebugPeriodicSuppressed = suppressed;
 }
 
+namespace {
+void serviceSerialDebugCommands() {
+  // USB Backup owns CDC while active; never consume its commands or file bytes.
+  if (sequencer::isUsbBackupActive()) {
+    serialDebugCommandParser.reset();
+    return;
+  }
+  for (unsigned int count = 0; count < 64 && Serial.available() > 0; ++count) {
+    const int command = serialDebugCommandParser.consume(static_cast<uint8_t>(Serial.read()));
+    if (command == SerialDebugCommandParser::NoCommand) continue;
+    if (command == SerialDebugCommandParser::AudioTestStart || command == SerialDebugCommandParser::AudioTestPiezo) {
+      startSynthPerformanceTest(command == SerialDebugCommandParser::AudioTestPiezo);
+      continue;
+    }
+    if (command == SerialDebugCommandParser::AudioTestStop) {
+      stopSynthPerformanceTest();
+      continue;
+    }
+    if (command >= 0) {
+      if (synthPerformanceTestActive()) stopSynthPerformanceTest();
+      serialDebugEnabled = command & 1;
+      serialDebugGeneralMessages = command & 2;
+      serialDebugHeapMessages = command & 4;
+      serialDebugAudioMessages = command & 8;
+      resetSerialDebugMinFreeHeap();
+      resetSerialDebugAudioStats();
+      updateSerialDebugRuntime();
+      updateSerialDebugMenuVisibility();
+    }
+    const unsigned int flags = (serialDebugEnabled ? 1 : 0)
+      | (serialDebugGeneralMessages ? 2 : 0) | (serialDebugHeapMessages ? 4 : 0)
+      | (serialDebugAudioMessages ? 8 : 0);
+    char response[24];
+    snprintf(response, sizeof(response), "HBDBG flags: %u", flags);
+    Serial.println(response);
+    // The detected board revision decides the audio routing and menus.
+    snprintf(response, sizeof(response), "HBDBG hardware: %u", static_cast<unsigned int>(Hardware_Version));
+    Serial.println(response);
+  }
+}
+}  // namespace
+
 void serviceSerialDebugMessages() {
+  serviceSerialDebugCommands();
+  serviceSynthPerformanceTest();
+  // The test owns the profiling window until its phase result is captured.
+  if (synthPerformanceTestActive()) return;
   if (!serialDebugEnabled) {
     return;
   }

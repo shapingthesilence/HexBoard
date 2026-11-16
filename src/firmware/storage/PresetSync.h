@@ -2,7 +2,12 @@
 
 #include "../FirmwareModule.h"
 #include "PersistentDataModels.h"
+#include "PresetSyncPacking.h"
+#include "SynthPresetCatalog.h"
 #include "../synth/SynthDefaults.h"
+
+constexpr uint8_t PRESET_SYNC_OBJECT_TYPE_COMPACT_SAMPLER = 0x0E;
+constexpr uint32_t PRESET_SYNC_CAP_COMPACT_SAMPLER = 1u << 24;
 
 constexpr uint8_t PRESET_SYNC_FAMILY = 0x10;
 constexpr uint8_t PRESET_SYNC_MAJOR = 1;
@@ -60,6 +65,10 @@ constexpr uint8_t PRESET_SYNC_TLV_SYNTH_VALUES = 0x21;
 constexpr uint8_t PRESET_SYNC_TLV_FAVORITE = 0x23;
 constexpr uint8_t PRESET_SYNC_TLV_SYNTH_WAVETABLE_NAME = 0x26;
 constexpr uint8_t PRESET_SYNC_TLV_SYNTH_WAVETABLE_FOLDER_PATH = 0x27;
+// Present only on sampler presets: the Classic sampler instrument name, and
+// which amp envelope stages replace the instrument's own (SAMPLER_ENVELOPE_*).
+constexpr uint8_t PRESET_SYNC_TLV_SYNTH_SAMPLER_NAME = 0x28;
+constexpr uint8_t PRESET_SYNC_TLV_SYNTH_SAMPLER_ENVELOPE_OVERRIDE = 0x29;
 constexpr uint8_t PRESET_SYNC_TLV_WAVETABLE_FRAME_COUNT = 0x30;
 constexpr uint8_t PRESET_SYNC_TLV_WAVETABLE_SAMPLE_COUNT = 0x31;
 constexpr uint8_t PRESET_SYNC_TLV_WAVETABLE_SAMPLES = 0x32;
@@ -144,6 +153,7 @@ constexpr uint32_t PRESET_SYNC_CAP_SYNTH_WAVETABLE = 1u << 11;
 constexpr uint32_t PRESET_SYNC_CAP_LIVE_SYNTH_PARAM = 1u << 12;
 constexpr uint32_t PRESET_SYNC_CAP_CENTS_TABLE_RUNTIME_TUNING = 1u << 13;
 constexpr uint32_t PRESET_SYNC_CAP_GEOMETRY_BUNDLE_FILES = 1u << 14;
+constexpr uint32_t PRESET_SYNC_CAP_SCOPED_GEOMETRY_LIST = 1u << 16;
 constexpr uint32_t PRESET_SYNC_CAP_LIVE_SYNTH_WAVETABLE_SELECT = 1u << 15;
 
 constexpr uint8_t PRESET_SYNC_ERROR_UNSUPPORTED_PROTOCOL = 0x01;
@@ -198,6 +208,8 @@ struct PresetSyncReadTransfer {
   uint32_t nextChunkIndex = 0;
   char streamSamplePath[SYNTH_WAVETABLE_SAMPLE_PATH_LENGTH] = {};
   size_t streamSampleLength = 0;
+  // With streamRawFile: rawData is sent first, then the file from rawFileOffset.
+  uint32_t rawFileOffset = 0;
   std::vector<uint8_t> rawData;
 };
 
@@ -240,8 +252,6 @@ void presetSyncCancelWriteTransfer();
 void presetSyncCloseReadFile();
 void presetSyncCloseWriteTempFile();
 uint8_t presetSyncChunkChecksum(const uint8_t* data, size_t length);
-void presetSyncPack8To7(const uint8_t* raw, size_t rawLength, std::vector<uint8_t>& packed);
-bool presetSyncUnpack8To7(const uint8_t* packed, size_t packedLength, size_t rawLength, std::vector<uint8_t>& raw);
 void presetSyncAppendTlv(std::vector<uint8_t>& body, uint8_t tag, const uint8_t* value, uint16_t length);
 void presetSyncAppendTextTlv(std::vector<uint8_t>& body, uint8_t tag, const char* text, size_t maxLength);
 void copyPresetSyncText(char* destination, size_t destinationLength, const uint8_t* source, size_t sourceLength);
@@ -286,7 +296,8 @@ bool deleteGeometryObjectFromCatalog(uint16_t handle);
 size_t geometryBundleCount();
 bool isPresetSyncGeometryObjectType(uint8_t objectType);
 bool isPresetSyncSupportedObjectType(uint8_t objectType);
-bool parseGeometryObjectBody(const std::vector<uint8_t>& body, GeometryObjectSlot& object, std::string& error);
+// Takes ownership of the body; callers with disposable staging buffers move them.
+bool parseGeometryObjectBody(std::vector<uint8_t> body, GeometryObjectSlot& object, std::string& error);
 bool geometryObjectForHandle(uint16_t handle, GeometryObjectSlot& object);
 void clearUserGeometryRuntimeSelection();
 bool applyGeometryObjectToRuntime(const GeometryObjectSlot& object);
@@ -298,6 +309,23 @@ bool geometryFallbackRequired();
 bool loadDefaultGeometryRuntime();
 bool loadGeometryRuntimeForProfile(uint8_t profileIndex);
 void rememberCurrentGeometryReferenceForProfile(uint8_t profileIndex);
+// Geometry auditions play a tuning, layout or scale without choosing it.
+// Begin before loading, mark after; while unchanged, saves record the
+// selection from before the audition.
+void beginGeometryAudition();
+void markGeometryAuditionPlayed();
+// Choosing an item makes the playing selection the chosen one.
+void commitGeometryAudition();
+bool geometryAuditionUnchanged();
+// The chosen selection while an audition plays, else null.
+const GeometryProfileReference* geometryAuditionCommittedReference();
+// Re-applies the chosen selection's objects, settings and orientation, or
+// commits a changed audition (false). The caller refreshes layout and display.
+bool restoreGeometryAuditionCommitted();
+// Around packing settings for a save, and for copies into other profiles.
+void beginSavingCommittedGeometrySettings();
+void endSavingCommittedGeometrySettings();
+void applyCommittedGeometryAuditionSettings(uint8_t* profileSettings);
 bool loadUserGeometryBundleFromTuningSlot(uint16_t tuningIndex);
 std::vector<uint8_t> buildSynthPresetObjectBody(const SynthPresetSlot& preset);
 bool parseSynthPresetObjectBody(const std::vector<uint8_t>& body, SynthPresetSlot& preset, std::string& error);
@@ -306,10 +334,7 @@ bool parseSynthWavetableObjectFile(const char* bodyPath,
                                    ParsedSynthWavetableObject& wavetable,
                                    const char* sampleOutputPath,
                                    std::string& error);
-bool readSynthWavetableSampleFile(const SynthWavetableSlot& wavetable, std::vector<uint8_t>& samples);
-std::vector<uint8_t> buildSynthWavetableObjectPrefix(const SynthWavetableSlot& wavetable);
 std::vector<uint8_t> buildSynthWavetableObjectPrefix(const SynthWavetableSlot& wavetable, size_t sampleLength);
-std::vector<uint8_t> buildSynthWavetableObjectBody(const SynthWavetableSlot& wavetable, const uint8_t* samples, size_t sampleLength);
 void applyParsedSynthWavetableToRuntime(const SynthWavetableSlot& wavetable, const uint8_t* samples, size_t sampleLength);
 bool applyParsedSynthWavetableFileToRuntime(const SynthWavetableSlot& wavetable, const char* samplePath, size_t sampleLength);
 bool saveParsedSynthWavetable(const ParsedSynthWavetableObject& wavetable);
@@ -318,6 +343,11 @@ bool updateSynthWavetableMetadata(uint16_t handle, const ParsedSynthWavetableObj
 size_t presetSyncMaxRawObjectBytesForType(uint8_t objectType);
 int chooseSynthPresetWriteSlot(uint16_t handle, const SynthPresetSlot& preset);
 void applySynthPresetRuntimeOnly(const SynthPresetSlot& preset);
+// Stores an uploaded sampler sound object; returns 0 or a PRESET_SYNC_ERROR.
+uint8_t storeSamplerSoundObjectFile(const char* path, uint16_t handle, uint8_t writeFlags);
+uint8_t presetSyncStoreError(SynthPresetStoreResult result);
 void presetSyncHandleSynthParamSet(uint16_t transactionId, const uint8_t* payload, size_t payloadLength);
 void presetSyncHandleSynthWavetableSelect(uint16_t transactionId, const uint8_t* payload, size_t payloadLength);
 bool processPresetSyncSysEx(const uint8_t* data, const unsigned int len);
+
+void presetSyncAppendAscii(std::vector<uint8_t>& output, const char* text, size_t maxLength);

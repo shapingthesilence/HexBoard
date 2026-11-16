@@ -21,7 +21,7 @@ bool g_midiMonitorLateLatched = false;
 bool g_midiMonitorDropLatched = false;
 
 void sampleMidiInputMonitorStats() {
-  uint32_t usbPending = static_cast<uint32_t>(MidiUSB.available());
+  uint32_t usbPending = pendingUsbMidiBytes();
   uint32_t serialPending = static_cast<uint32_t>(Serial1.available());
   uint32_t totalPending = usbPending + serialPending;
 
@@ -188,8 +188,9 @@ bool processIncomingMidiByte(MidiInputParser& parser, uint8_t value, bool delega
 bool processIncomingUsbMidi(bool delegatedMode) {
   bool processed = false;
   uint16_t drainedBytes = 0;
-  while (MidiUSB.available() > 0 && drainedBytes < MIDI_INPUT_DRAIN_BYTE_LIMIT) {
-    int value = MidiUSB.read();
+  while (delegatedControlState.active.load(std::memory_order_acquire) == delegatedMode
+         && drainedBytes < MIDI_INPUT_DRAIN_BYTE_LIMIT) {
+    int value = readUsbMidiByte();
     if (value < 0) {
       break;
     }
@@ -202,7 +203,8 @@ bool processIncomingUsbMidi(bool delegatedMode) {
 bool processIncomingSerialMidi(bool delegatedMode) {
   bool processed = false;
   uint16_t drainedBytes = 0;
-  while (Serial1.available() > 0 && drainedBytes < MIDI_INPUT_DRAIN_BYTE_LIMIT) {
+  while (delegatedControlState.active.load(std::memory_order_acquire) == delegatedMode
+         && Serial1.available() > 0 && drainedBytes < MIDI_INPUT_DRAIN_BYTE_LIMIT) {
     int value = Serial1.read();
     if (value < 0) {
       break;
@@ -213,29 +215,17 @@ bool processIncomingSerialMidi(bool delegatedMode) {
   return processed || drainedBytes > 0;
 }
 
-bool processIncomingMIDIDelegated() {
-  sampleMidiInputMonitorStats();
-  bool processed = false;
-  if (midiD & MIDID_USB) {
-    processed = processIncomingUsbMidi(true) || processed;
-  }
-  if (midiD & MIDID_SER) {
-    processed = processIncomingSerialMidi(true) || processed;
-  }
-  return processed;
-}
-
+// Core 0 is the sole reader in both modes. Entry/exit never hand live USB,
+// UART, or parser state to the audio core.
 bool RAM_FUNC(processIncomingMIDI)() {
-  if (delegatedControlState.active) {
-    return false;
-  }
   sampleMidiInputMonitorStats();
+  const bool delegated = delegatedControlState.active.load(std::memory_order_acquire);
   bool processed = false;
   if (midiD & MIDID_USB) {
-    processed = processIncomingUsbMidi(false) || processed;
+    processed = processIncomingUsbMidi(delegated) || processed;
   }
   if (midiD & MIDID_SER) {
-    processed = processIncomingSerialMidi(false) || processed;
+    processed = processIncomingSerialMidi(delegated) || processed;
   }
   return processed;
 }

@@ -4,7 +4,6 @@
 #include "RuntimeDefaults.h"
 #include "../hardware/GridScanRotary.h"
 #include "../hardware/GridState.h"
-#include "../hardware/LedAnimations.h"
 #include "../hardware/LedRender.h"
 #include "../menu/CommandWheelOverlay.h"
 #include "../menu/GeometryMenu.h"
@@ -46,7 +45,6 @@
 namespace {
 std::atomic<bool> normalRuntimeReady = false;
 std::atomic<bool> bootLedAnimationReady = false;
-std::atomic<bool> bootLedSplashComplete = false;
 std::atomic<bool> normalLedFrameReady = false;
 std::atomic<bool> bootLedAnimationComplete = false;
 constexpr uint64_t AUDIO_STARTUP_TIMEOUT_MICROS = 3000000ULL;
@@ -68,11 +66,6 @@ void waitForBootLedAnimation() {
   }
 }
 
-void waitForBootLedSplash() {
-  while (!bootLedSplashComplete.load(std::memory_order_acquire)) {
-    tight_loop_contents();
-  }
-}
 }  // namespace
 
 void hexboardSetup() {
@@ -94,6 +87,7 @@ void hexboardSetup() {
   globalBrightness = settingValue(SettingKey::GlobalBrightness);
   ledCurrentLimitMode = settingValue(SettingKey::LedCurrentLimitMode);
   syncLedCurrentLimit();
+  syncLedSettingsToRuntime();
   setupLEDs();
   bootLedAnimationReady.store(true, std::memory_order_release);
   load_synth_presets();
@@ -105,10 +99,9 @@ void hexboardSetup() {
   setupMenu();
   setupHardware();
   initializeSynthWaveTables();
-  // Keep the OLED blank until every startup task has completed and the menu
-  // can accept input. Core 1 may animate the LEDs once their runtime colors
-  // and current limit are final.
-  waitForBootLedSplash();
+  // Core 1 is still playing the LED splash, which reads only the LED limits
+  // set above and fixed hardware positions. Apply the saved state now so the
+  // board is ready when the splash ends. The OLED stays blank until then.
   syncSettingsToRuntime(false);
   recomputePitchBendFactor();
   synthRuntimeReady.store(true, std::memory_order_release);
@@ -125,14 +118,17 @@ void hexboardSetup() {
 }
 void hexboardLoop() {        // run on first core
   timeTracker();     // Time tracking functions
+  serviceUsbMidiOutput();
+  servicePendingMPEChannelReleases();
   u8g2.serviceTransfer();
   serviceSerialDebugMessages();
   bool presetSyncOwnsUi = servicePresetSyncTransfer();
-  bool missingWavetableNoticeOwnsUi =
-    !presetSyncOwnsUi && serviceMissingWavetableNotice();
+  bool displayNoticeOwnsUi =
+    !presetSyncOwnsUi && serviceDisplayNotice();
+  refreshVolumeEnvelopeModulation();
   processEnvelopeReleases();
   retryPendingReleases();
-  if (!presetSyncOwnsUi && !missingWavetableNoticeOwnsUi) {
+  if (!presetSyncOwnsUi && !displayNoticeOwnsUi) {
     screenSaver();     // Reduces wear-and-tear on OLED panel
   }
   readHexes();       // Read and store the digital button states of the scanning matrix
@@ -143,19 +139,18 @@ void hexboardLoop() {        // run on first core
   }
   serviceSequencerMode();
   arpeggiate();      // arpeggiate if synth mode allows it
-  runMetronome();    // metronome beep/flash modes share the synth tempo
+  runMetronome();
   updateWheels();    // deal with the pitch/mod wheel
   processIncomingMIDI();  // respond to external MIDI input
   u8g2.serviceTransfer();
   if (servicePresetSyncTransfer()) {
     return;
   }
-  animateLEDs();     // deal with animations
   if (!shouldDeferMidiInLedRefresh()) {
     lightUpLEDs();   // refresh LEDs
   }
   u8g2.serviceTransfer();
-  if (!missingWavetableNoticeOwnsUi) {
+  if (!displayNoticeOwnsUi) {
     dealWithRotary();  // deal with menu
   }
   if (delegatedControlState.active) {
@@ -165,19 +160,21 @@ void hexboardLoop() {        // run on first core
     return;
   }
   serviceSynthPresetMenuRebuild();
+  serviceSynthPresetMenuAudition();
   serviceSynthWavetableMenuRebuild();
   serviceUserGeometryMenuRebuild();
+  serviceUserGeometryMenuAudition();
   restoreMenuAfterDelegatedControl();
   serviceVirtualListLauncherLabelScroll();
   serviceFlashSaveScreen();
-  missingWavetableNoticeOwnsUi = serviceMissingWavetableNotice();
-  if (!flashSaveScreenVisible && !missingWavetableNoticeOwnsUi && sequencerModeActive()) {
+  displayNoticeOwnsUi = serviceDisplayNotice();
+  if (!flashSaveScreenVisible && !displayNoticeOwnsUi && sequencerModeActive()) {
     drawSequencerModeDisplay();
   }
-  if (!flashSaveScreenVisible && !missingWavetableNoticeOwnsUi) {
+  if (!flashSaveScreenVisible && !displayNoticeOwnsUi) {
     drawCommandWheelOverlay();
   }
-  if (!missingWavetableNoticeOwnsUi) {
+  if (!displayNoticeOwnsUi) {
     drawPlayedNotesOverlay(); // shows the notes of keys pressed on the screen
   }
   u8g2.serviceTransfer();
@@ -189,7 +186,6 @@ void hexboardSetup1() {  // set up on second core
     tight_loop_contents();
   }
   runBootLedSelfCheckSplash();
-  bootLedSplashComplete.store(true, std::memory_order_release);
   while (!normalLedFrameReady.load(std::memory_order_acquire)) {
     tight_loop_contents();
   }
@@ -200,13 +196,13 @@ void hexboardSetup1() {  // set up on second core
   }
   setupAudioDma();
 }
-void hexboardLoop1() {  // run on second core
-  serviceAudioDmaBuffers();
-  if (!normalRuntimeReady.load(std::memory_order_acquire)) {
-    return;
+// Runs on the second core and never returns: the Arduino loop that would call
+// it again lives in flash, and the audio renderer must not wait on flash reads.
+void RAM_FUNC(hexboardLoop1)() {
+  while (true) {
+    serviceAudioDmaBuffers();
+    if (normalRuntimeReady.load(std::memory_order_acquire)) {
+      readKnob();
+    }
   }
-  if (delegatedControlState.active) {
-    processIncomingMIDIDelegated();
-  }
-  readKnob();
 }

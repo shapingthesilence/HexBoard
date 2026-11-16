@@ -1,8 +1,15 @@
 # HexBoard Web App
 
-This is the browser-first companion app scaffold for HexBoard preset sync. It is
-kept inside this firmware repository so the web protocol, future firmware
-implementation, and documentation can evolve together.
+HexBoard Sync is the React/TypeScript companion app for preset sync. Firmware
+and app share the [protocol contract](../docs/preset-sync-sysex.md).
+For connection and editing workflows, use the
+[HexBoard Sync user guide](../docs/web-app-guide.md).
+
+The key-map preview shows palette colors. Device brightness, current limiting,
+and temporal LED dithering/frame-period adjustments are evaluated on the board; the browser does not
+simulate those effects. Palette and protocol color encodings are unchanged by
+the firmware's RGB16 renderer. See [Lights & Colors](../docs/user-manual.md#lights--colors)
+and [LED internals](../docs/developer-guide.md#leds).
 
 The app is intentionally isolated under `web/`; there are no root-level Node
 files.
@@ -64,144 +71,244 @@ https://<your-github-username>.github.io/HexBoard/development/
 
 Web MIDI SysEx requires a browser that supports Web MIDI, usually Chrome or
 Edge, and a secure context such as `localhost` or HTTPS.
-Choose both the HexBoard output and input ports on the Device page. Live
-parameter sends only need the output port, but device library reads need the
-input port that receives HexBoard SysEx responses. The app explicitly opens the
-selected ports when connecting and warns before a device-library refresh if no
-input port is attached. Device preset reads ACK `READ_BEGIN`, each `DATA_CHUNK`,
+Use `Connect HexBoard` in the header. Discovery pairs compatible input and
+output ports; if several boards are found, choose one from the device selector.
+The app opens both selected ports and keeps device actions unavailable offline.
+Device preset reads ACK `READ_BEGIN`, each `DATA_CHUNK`,
 and `TRANSFER_END` so firmware can pace object transfers.
 
-## Current Scope
+## Navigation
 
-- A shared responsive header keeps device connection, light/dark appearance,
-  and the top-level `Tunings & Layouts` and `Synth Editor` views in
-  a consistent location. `Tunings & Layouts` opens by default.
-- Protocol helpers for the draft preset-sync SysEx frame.
-- CRC32 and 8-to-7 packing utilities matching the firmware draft.
-- TLV object encoding for user tunings, layouts, scale color maps, explicit
-  button maps, and named/foldered synth presets.
-- Atomic `HGB` encoding for complete tuning bundles. Saving a tuning transfers
-  one staged file, while live preview continues to send only the active
-  tuning/layout/scale/color/map objects without writing flash. Tuning divisions
-  and scale cycles are limited to the firmware's `1..1024` range; each tuning
-  can contain up to 32 layouts and 32 scales. Layouts and scales can be reordered
-  in a drag-and-drop dialog; the first item is the device-menu default when the
-  tuning is loaded. All Notes remains protected from editing and deletion but
-  can be reordered with the other scales.
-- Generated note labels and default degree colors are omitted from encoded
-  objects. Custom labels and color overrides remain packed records, so large
-  tunings do not pay a per-division transfer or runtime cost for defaults.
-- Color-mode defaults are stored with each tuning; the supplied 12 EDO tuning
-  uses Rainbow. Computer and HexBoard library rows can be reordered by
-  dragging. Device reorders update the UI immediately, wait for a 2-second
-  quiet period, then write only the compact geometry-order file; unchanged
-  order bytes do not cause another flash write.
-- A tuning editor organized as a four-step `Library`, `Tuning`,
-  `Layout`, and `Scale & color` workflow. The library gets a full-width transfer
-  and folder-management view. Folder filters consistently begin with `All` and
-  `Root`; empty computer folders can be created and deleted, while device
-  folders appear only when a saved item uses them. Editing keeps tuning sync
-  actions and the visual HexBoard preview in consistent locations. Device
-  rotation is four-way and separate from musical layout transforms. A layout
-  toolbar directly below the color tools provides step transposition, two-way
-  60-degree rotation, device-relative horizontal/vertical mirrors, and
-  undo/redo. Layout transforms and each continuous color-paint stroke share
-  this history. One selected key or all selected keys transforms the generated
-  layout around the gold primary key; any other multi-selection creates
-  per-key overrides. Overrides that rotate beyond the physical board remain in
-  the saved tuning bundle so later transforms can bring them back. The selected-key
-  inspector separates key state, optional pitch overrides, inherited or per-key
-  color, and advanced pitch details; color editing uses a compact visual
-  picker. Shift/Ctrl/Command selection enables
-  bulk transposition and reset. Green selection rings, a gold primary-key ring,
-  and a live selection count in the layout toolbar remain visible independently
-  of key colors. `Deselect All` clears the transform selection and disables
-  transform actions until another key is selected. A
-  collapsed advanced-output section supports
-  fixed MIDI note/channel output and reusable four-tone chord shapes without
-  adding controls to the ordinary tuned-note workflow. Read-only pitch and
-  scale values are presented as facts rather than form fields, and all overrides
-  can be reset together. Raw encoded-object details are collapsed until needed.
-  The editor also supports scale-degree palette editing, direct degree-order
-  note labels, a grouped pitch anchor with explicit degree, frequency, and MIDI
-  key selection, and a separate default-key degree that is applied when a tuning
-  first loads. A paint mode applies per-button color overrides or scale-degree
-  palette colors directly on the preview. Painting a scale degree clears
-  matching color overrides in the active layout so the palette color takes
-  effect immediately, and a confirmed reset returns all keys in the active
-  layout to scale-degree colors.
-  EDO pitch generation preserves the exact period/division ratio rather than
-  treating the rounded decimal step display as authoritative. Sync writes
-  each authoritative tuning value once as firmware-native binary32, and the
-  editor preview uses the same binary32 rounding as firmware. EDO step size,
-  equal-step period, and cents-list period are derived rather than stored as
-  duplicate values.
-  Scala `.scl`
-  import reads trailing interval labels, exposes the 1/1 reference key
-  and Hz reference, and enables cents-table live send when the connected
-  firmware advertises runtime support. Live send serializes only the active
-  runtime records. `Save to HexBoard` writes the whole tuning bundle, preserves
-  tuning and color object IDs for tunings opened from the device, then reapplies the
-  active records so the hardware preview and on-device menus agree.
-  Opening, copying, or exporting a HexBoard tuning streams its complete stored
-  `.hgb` bundle once and shows byte progress in the app. The compiled rescue
-  tuning is not presented as an editable library item; the library shows a
-  fallback notice when the device reports that rescue state.
-  Browser Library edits are saved automatically. `Copy to HexBoard` and
-  `Copy to Browser` copy between libraries; `Export File` writes a portable
-  `hexboard.tuningBundle.v2` JSON file. Version 1 tuning bundles and legacy
-  `hexboard.layoutBundle.v5` files remain importable; legacy layout bundles use
-  their former device-facing bundle name as the tuning name. `Rename / Move`
-  updates the selected browser or device bundle without creating a duplicate
-  and gives an explicit replacement warning when the destination is occupied.
-  Multi-select actions copy several bundles between libraries or export one
-  `hexboard.tuningBundleLibrary.v1` JSON file; multi-file import accepts those
-  library files alongside individual tuning-bundle files.
-- A synth preset editor with name and folder selection, folder creation, main
-  synth parameter controls, mono retrigger/legato, mono portamento,
-  arpeggiator speed/direction/tempo, Drive/AHDSR sliders, apply-only live sends,
-  and an explicit save sync action over the active MIDI transport. A dormant
-  browser AudioWorklet audition implementation remains in the source behind a
-  disabled visibility gate for later offline preset design work. Opened presets
-  are temporary editor drafts; saving an existing library preset preserves its
-  object identity while updating its name, folder, and sound. Saving a new
-  destination asks before replacing an occupied folder/name. Saves to real
-  devices wait for ACK/NACK responses through the flash commit before the app
-  refreshes device storage.
-- Synth preset library areas named `Browser Library` for browser-saved/imported
-  presets and `HexBoard Library` for device-side presets loaded through SysEx,
-  with independently collapsible library panels,
-  including persistent browser folders with explicit create/delete controls,
-  an `All presets` filter, searchable compact preset rows, per-row overflow
-  actions, identity-preserving `Rename / Move`, drag-and-drop folder moves,
-  library copy actions, device refresh, JSON import, JSON export, open, and
-  confirmed delete controls. The batch toolbar appears after a selection.
-  Multi-select can copy a
-  batch between libraries or export one `hexboard.synthPresetLibrary.v1` JSON
-  file, and multi-file import accepts individual and library files together.
-  Device preset listing uses
-  small one-record pages to stay within conservative MIDI SysEx buffer limits
-  and refreshes automatically when the synth preset view opens with a real MIDI
-  transport.
-- Synth wavetable library areas named `Browser Wavetables` and
-  `HexBoard Wavetables`, using the same folder controls as presets. Imported
-  wavetables default to `Root`. The firmware-resident Basic Shapes fallback is
-  also presented in `Root`; its special storage path is never shown as a folder.
-  Imports upload to HexBoard immediately for hardware audition and refresh the
-  device-authoritative HexBoard wavetable list after the flash commit. Short
-  HexBoard `.hexwav` imports are interpolated to the device's 16-frame table.
-  The preset editor separates on-device and computer-only wavetables. Selecting
-  a computer-only wavetable offers to upload it before applying the selection;
-  preset saves repeat the availability check as a safety net and require either
-  uploading the same-name dependency or choosing an alternate. Wavetable names
-  are globally unique; folders are organization only and preset dependencies
-  match by name. With Live send enabled, selecting an existing device wavetable
-  uses a single runtime-select control frame rather than transferring the open
-  synth preset.
-- A mock MIDI transport for UI and protocol work before firmware support exists.
-- Basic React views for device connection, tuning/layout editing, and synth
-  preset organization.
+`src/navigation.ts` owns hash routes for the main modes and Learn sections:
+`#/layouts`, `#/synth`, `#/learn/practice`, `#/learn/courses`,
+and `#/learn/progress`. Learn's section, stable course ID, and stable lesson ID are
+saved as JSON in localStorage, separately from the URL. Course and lesson
+changes update that saved location without adding browser history. Explicit
+section links take priority over the saved section while retaining the saved
+course and lesson; `#/learn` restores the last Learn section and the base address
+restores the last-used mode. Back/Forward switches modes or sections and stops
+active lesson work. Imported course validation waits for IndexedDB hydration.
+Storage failures leave mode and section navigation available.
 
-Firmware currently implements synth preset, wavetable, and geometry preset-sync
-paths used by the app. Mock mode still covers UI work when no compatible device
-is connected.
+Hash routing keeps mode and section links working under both GitHub Pages base paths
+without a 404 fallback. Dialogs and course-editor previews do not change the URL.
+
+## Source Ownership
+
+| Path under `src/` | Responsibility |
+| --- | --- |
+| `App.tsx`, `views/DeviceConnect.tsx` | Top-level views, shared device connection state, and header/lesson connection controls |
+| `views/TuningLayoutEditor.tsx` | Tuning, layout, scale/color editing and tuning libraries |
+| `views/SynthPresetLibrary.tsx` | Synth editor, preset libraries, and wavetable libraries |
+| `editor/drafts.ts` | Browser draft values, discard baselines, and persistence |
+| `editor/autosave.ts`, `editor/useAutosave.ts` | Coalesced draft writes, lifecycle flushing, and unchanged-value suppression |
+| `catalogs/` | Musical models, import/export, object IDs, validation, and device encoding |
+| `midi/presetSyncClient.ts`, `midi/webMidi.ts` | Request/transfer lifecycle and real MIDI ports |
+| `midi/mockTransport.ts` | Internal offline transport and protocol test support |
+| `protocol/` | Constants, SysEx framing, TLV, CRC32, and 8-to-7 packing |
+| `components/` | Shared library actions, folders, and organization dialogs |
+| `audio/` | Browser synth audition worklet and audio lifecycle |
+| `animation.ts` | Visible animation scheduling, capped at 60 updates per second, with hidden/offscreen suspension |
+| `views/Learn.tsx`, `learn/` | Tuning-aware scale practice, lazy device library, beat grading, delegated sessions, and LED hints |
+| `advanced/` | Unreleased work, shown only to hardware that identifies itself as supporting it |
+| `catalogs/layoutKey.ts` | Shared generated/manual layout pitch resolution |
+
+## Learning and Course Authoring
+
+User courses and recoverable drafts use separate IndexedDB stores and self-contained v4 JSON export (v2/v3 imports remain supported).
+The editor is under Manage courses, with live HexBoard phrase recording,
+per-layout key/hand/finger cues, a tuning/layout selection dialog, and a canonical
+piano roll with direct note creation, independent holds, time signatures, and
+preview playback. Board and hand panels share the selected roll note. Lessons
+retain goal/practice tempo. Lesson changes retain the
+delegated session and gate physical held keys until release. The
+[course format reference](../docs/course-format.md) owns the schema, matching,
+scoring, storage, and recording contracts. No device library writes are needed.
+
+The Learn tab defaults to a major scale on factory 12-EDO, with three starter
+layouts. It also supports device tuning/layout/scale selection and JSON import
+for EDO, equal-step, and cents-table tunings.
+See [operation](../docs/web-app-guide.md#learning-your-first-scale),
+[session protocol](../docs/delegated-control.md#acknowledged-sessions-and-manual-recovery),
+and [the staged plan](../docs/learning-program-plan.md). Session teardown must
+stop browser audio, discard held input, cancel timers, and send token-scoped exit.
+No lesson action writes persistent device settings or catalog objects.
+`learn/lessonColors.ts` uses the selected color mode, tuning period, root, and
+custom palette with brighter target and held states for screen and device. LED writes use batches of up to 16 keys
+with 10 ms between batches. Function keys stay in hardware indexing but are
+omitted from the lesson SVG. A scoped display command temporarily matches the
+OLED orientation to the selected layout.
+
+`learn/scalePractice.ts` owns scale patterns and fixed-grid beat grading;
+`learn/practiceMetronome.ts` schedules Web Audio clicks. Web MIDI receive
+timestamps reach the evaluator in the performance clock domain. A note gets
+credit only within its assigned half-beat window. Timing credit decreases
+linearly from 1 at the beat to 0 at the window edge. The score is
+`round(100 × total credit / (target count + extra attempts))`; missed notes
+contribute zero. Grade bands are 90/75/50 (Excellent/Steady/Building), then
+Keep practicing. Count-in attacks are ungraded. Overlapping notes are accepted; holding a key
+does not count as another attack. Sounding keys carry across automatic runs.
+
+`learn/deviceLibrary.ts` caches and serializes individual reads per transport.
+Opening Learn lists tuning names only. Tuning selection reads its definition,
+palette, and scoped layout/scale metadata. Layout selection reads its definition
+and matching explicit map; scale selection reads its definition. There are no
+`GeometryBundle` reads. Refresh replaces the cache. Generation guards discard
+results after unmount, disconnect, or a newer selection.
+
+`catalogs/deviceGeometry.ts` owns the decoder shared with the tuning editor.
+`learn/tuningPractice.ts` maps degrees through the firmware reference-relative
+pitch formula. Canonical fractional MIDI pitches (1e-8 semitone precision)
+identify equivalent answers and feed the existing non-quantizing audio worklet.
+Targets cover one selected scale period; imported MIDI assignments keep their
+explicit semitone pitch. Live transpose and dynamic JI are outside this mode.
+
+Run `npm test` for patterns, pitch/overlap rules, timing boundaries, scoring,
+session entry/exit/re-entry, and LED batching. Version-2 sessions have no
+heartbeat or timeout after entry; abandoned browsers require encoder hold.
+
+## Integration Contracts
+
+- Firmware implements synth presets, wavetables, geometry preview, complete
+  geometry bundle storage and geometry ordering. Negotiate capabilities;
+  reserved profile/snapshot/backup object types are not implemented.
+- Individual geometry objects are runtime previews. Persist a complete `HGB`
+  bundle, then apply its active records. Opening or exporting a device tuning
+  reads the complete stored bundle once. Rescue geometry is not an editable
+  library item.
+- Use firmware-native binary32 rounding for pitch previews and encoded values.
+  Store each authoritative tuning quantity once; derive EDO step size,
+  equal-step period, and cents-list period. Omit generated labels and colors
+  from transfer bodies. See the protocol for field definitions and limits.
+- Wavetable names are globally unique and preset dependencies match by name.
+  Check device availability before preview/save; upload the dependency or
+  require an alternate selection. Existing-device live selection uses its
+  control frame rather than a complete preset transfer.
+- Device writes finish only after the commit ACK. Reads ACK `READ_BEGIN`, every
+  `DATA_CHUNK`, and `TRANSFER_END`. Re-list compact handles after catalog changes.
+- Geometry reordering waits for two seconds of quiet before writing the compact
+  ordering file. Identical ordering does not trigger another flash write.
+- Drafts and saved browser records are separate. Draft entries retain both value
+  and discard baseline; synth draft keys include the source library. Library
+  copy/export uses saved records; editor export uses its draft. Track device-save
+  fingerprints only after acknowledged writes or device reads in that connection.
+- Connecting refreshes libraries without replacing the open synth draft. Offline
+  edits never imply a device save; device preview/write controls require a real
+  connection. Browser audio audition works with locally available wavetable data.
+- Import compatibility is implemented in `catalogs/`: tuning bundle v2, tuning
+  library v1, synth preset/library files, and wavetable files; tuning bundle v1
+  and layout bundle v5 remain importable. Keep compatibility conversion at import.
+
+## Verification
+
+Run `npm test` and `npm run build` for app code changes. Run the
+[factory generator](../factory-library/README.md) when factory content, encoding,
+validation, or factory-derived browser assets change. Tests are colocated with
+protocol, catalog, MIDI, draft, and view helpers.
+
+For changes to device operations, exercise list/read/write/apply/delete/abort,
+ACK/NACK failures, disconnects, dependency checks, and draft preservation on real
+hardware as relevant. Mock transport coverage does not establish hardware timing
+or flash behavior. See [architecture proposals](../docs/architecture-proposals.md)
+for proposed editor and operation-service boundaries.
+
+### Browser synth audition
+
+The preset editor's Synth preview panel starts collapsed. Enable/Disable, Stop,
+and the expansion toggle stay visible. Controller settings remain mounted but
+hidden when collapsed; collapsing releases only local keyboard/chord notes and
+keeps MIDI subscriptions active. A connected HexBoard is the default input, so
+preview can be enabled without expanding the panel. Preview volume defaults to 80%. `audio/synthPreview.ts`
+loads `audio/synth-preview-worklet.js` on the first note or MIDI-enable gesture.
+The worklet is imported as a Vite URL asset, so production builds emit a
+content-hashed filename under the configured base path. Keep it in the build
+asset graph so the app and its audio-message handling update together.
+`components/SynthMidiPreview.tsx` owns controller selection, ordinary Web MIDI
+access (without SysEx), audio unlocking, and subscriptions. Connected HexBoard
+input uses the existing transport subscription; other inputs use event listeners
+that coexist with preset sync. Hotplug updates the input list. Teardown cancels
+pending startup and releases held, sustained, and releasing MIDI voices without
+closing MIDI ports shared with preset sync. Focus loss/hidden pages clear notes
+and gate incoming messages until focus returns.
+
+`audio/midiSynthPreview.ts` owns channel/note identities, velocity, per-channel
+bend and RPN 0 bend sensitivity, CC1 modulation, CC64 sustain, and channel-mode
+CC120/121/123 handling. Default bend range is ±2 semitones for ordinary controllers
+and ±48 for HexBoard; the UI can override it, then received RPN messages override
+it per channel. Identifiers remain distinct from numeric typing/lesson pitches.
+The worklet retains each held note's velocity and bend through mono fallback and
+arpeggio ordering. Poly/channel pressure, CC74, and MPE master-zone expression
+are not modeled.
+
+The worklet follows
+firmware's 16-frame wavetable format, AHDSR timing, signed modulation targets,
+phase warps, linear portamento, drive curve, and envelope-weighted polyphonic
+attenuation. Actual sample bytes (including available mip levels) come from the
+selected library record; generated Basic Shapes samples share the firmware's
+factory generator. The browser bundle includes every editable `.hexwav` record
+in `factory-library/wavetables/`, including authored tables and subfolders.
+Library upgrades add missing defaults once without replacing same-name user
+entries. Unavailable user wavetable data cannot be auditioned.
+
+This is a sound approximation: browser sample rate, floating point processing,
+mip selection, and voice transitions differ from firmware. It does not model
+the piezo, analog output, or control scheduling. Typing/onscreen notes use 12 EDO;
+hardware MIDI retains the controller's note and per-channel pitch bend.
+Worklet tests render samples without an audio device and check pitch, modulation,
+envelopes, table loading, and note lifecycle.
+
+Course authoring helpers: `beatGrid.ts` owns straight/triplet divisions, `courseStructure.ts` owns outline moves, compatibility and embedded layout transposition, and `CourseMarkdown.tsx` renders safe course prose. Completion policies and content pages are defined in the [course format](../docs/course-format.md).
+
+Shared styling lives in `src/styles.css`. Library dialogs must support Escape
+dismissal and restore focus. Board previews must account for device rotation
+and remain usable in small windows; source owns panel placement and scrolling.
+
+## Built-in curriculum
+
+`src/learn/curriculumCourses.ts` owns the ordered built-in registry: First Steps,
+Isomorphic Movement, Rhythm Fundamentals, and Major Scale and Scale-Degree
+Fluency. Courses use the same portable v4
+format as user content. `curriculumKeys.ts` resolves manual-derived compact
+scale/interval templates to physical buttons on each embedded starter layout,
+including translated roots and duplicate positions. Built-in selector values
+are namespaced separately from imported course IDs.
+
+The [curriculum reference](../docs/curriculum.md) owns the current inventory,
+planned courses, authoring guidance, manual interpretation, and acceptance.
+`builtinCourses.test.ts` checks portable round-trips, every exercise on all
+three layouts, timed runs, duplicates, translated physical geometry, and
+rehearsal/performance pairs. Major-scale groups use scale degrees; variable
+half-step sizes distinguish diatonic windows from literal shape translations.
+
+The learner sidebar uses `CourseJourney.tsx` / `courseJourney.ts` for section
+navigation and layout-specific exercise progress. Demonstrations return to ready
+before assessment. `AchievementFeedback.tsx` / `achievementFeedback.ts` render
+first-completion and independence rewards with optional, separately owned audio;
+all reward voices stop with the Learn lifecycle. Built-in melody excerpts and
+adaptations are documented in [Course repertoire](../docs/course-repertoire.md).
+
+
+## Synth editor
+
+The HexBoard Classic editor (`src/views/classicSynth/`) owns Classic's option
+tables and value conversions in `classicSynthModel.ts`. Its drive curve and
+Wave folding / Pulse width / Poly warp phase bends mirror the Classic firmware
+(`applySynthDrive` in `SynthAudioTransport.cpp` and the phase-warp functions in
+`SynthModulationCache.cpp`); `classicSynthModel.test.ts` checks them against
+fixed-point transcriptions, so update all three together. Its pictures draw the
+selected wavetable's own samples on `CanvasPlot` and have no clock of their own.
+While the browser preview sounds, its worklet reports the newest voice's table
+position and phase-warp amounts about 30 times a second (`voiceShape`, one final
+`active: false` when silent); the editor redraws only when those settle to a new
+value.
+
+Keep React and React DOM on matching versions, at least 19.3.1. Development
+performance tracks must release emitted timing records rather than accumulating
+them for the lifetime of an animated editor tab.
+
+Browser autosaves coalesce edits after 400 ms of quiet,
+with at most one write in flight and one latest pending edit per writer. Pending
+work flushes when the editor unmounts or the page becomes hidden. Local-storage
+writes compare with the stored value; navigation, preferences and libraries skip
+identical writes. Explicit saves, imports and earned lesson progress persist
+immediately. Animation and unchanged telemetry never schedule draft saves.

@@ -8,7 +8,7 @@ class PressedKeySet {
   bool add(byte key);
   bool remove(byte key);
   void clear();
-  bool contains(byte key) const;
+  bool contains(byte key) const { return key < BTN_COUNT && active[key]; }
   uint8_t size() const;
   byte operator[](uint8_t ordinal) const;
 
@@ -26,5 +26,6 @@ class PressedKeySet {
 extern PressedKeySet pressedKeyIDs;
 
 void syncDynamicJIRatioCandidates();
+int16_t pitchBendForMidiPitch(float midiPitch, byte midiNote);
 int16_t justIntonationRetune(byte x);
 void prepareActiveMidiPitch(byte x);

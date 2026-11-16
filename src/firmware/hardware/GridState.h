@@ -2,6 +2,7 @@
 
 #include "../FirmwareModule.h"
 #include "HardwareConfig.h"
+#include "LedColor.h"
 #include "../model/ScalePalettePreset.h"
 
 constexpr byte BTN_STATE_OFF = 0;
@@ -12,17 +13,38 @@ constexpr byte BTN_STATE_HELD = 3;
 class buttonDef {
 public:
   byte btnState = BTN_STATE_OFF;  // binary 00 = off, 01 = just pressed, 10 = just released, 11 = held
-  void RAM_FUNC(interpBtnPress)(bool isPress) {
-    btnState = (((btnState << 1) + isPress) & 3);
+  uint32_t releaseCandidateAt = 0;
+  bool releasePending = false;
+  // A down edge is immediate. Only an up edge must remain stable, so a
+  // contact bounce cannot emit a spurious note-off/retrigger pair.
+  void RAM_FUNC(interpBtnPress)(bool isPress, uint32_t now) {
+    constexpr uint32_t RELEASE_DEBOUNCE_MICROS = 3000;
+    if (isPress) {
+      releasePending = false;
+      btnState = (btnState == BTN_STATE_OFF || btnState == BTN_STATE_RELEASED)
+          ? BTN_STATE_NEWPRESS : BTN_STATE_HELD;
+    } else if (btnState == BTN_STATE_OFF || btnState == BTN_STATE_RELEASED) {
+      releasePending = false;
+      btnState = BTN_STATE_OFF;
+    } else if (!releasePending) {
+      releaseCandidateAt = now;
+      releasePending = true;
+      btnState = BTN_STATE_HELD;
+    } else if (static_cast<uint32_t>(now - releaseCandidateAt) >= RELEASE_DEBOUNCE_MICROS) {
+      releasePending = false;
+      btnState = BTN_STATE_RELEASED;
+    } else {
+      btnState = BTN_STATE_HELD;
+    }
   }
   int8_t coordRow = 0;       // hex coordinates
   int8_t coordCol = 0;       // hex coordinates
   uint64_t timePressed = 0;  // timecode of last press
-  uint32_t LEDcodeAnim = 0;  // calculate it once and store value, to make LED playback snappier
-  uint32_t LEDcodePlay = 0;  // calculate it once and store value, to make LED playback snappier
-  uint32_t LEDcodeRest = 0;  // calculate it once and store value, to make LED playback snappier
-  uint32_t LEDcodeOff = 0;   // calculate it once and store value, to make LED playback snappier
-  uint32_t LEDcodeDim = 0;   // calculate it once and store value, to make LED playback snappier
+  LedColor LEDcodeAnim = 0;  // calculate it once and store value, to make LED playback snappier
+  LedColor LEDcodePlay = 0;  // calculate it once and store value, to make LED playback snappier
+  LedColor LEDcodeRest = 0;  // calculate it once and store value, to make LED playback snappier
+  LedColor LEDcodeOff = 0;   // calculate it once and store value, to make LED playback snappier
+  LedColor LEDcodeDim = 0;   // calculate it once and store value, to make LED playback snappier
   bool animate = false;      // true when this hex participates in the current animation frame
   int16_t stepsFromC = 0;    // number of steps from C4 (semitones in 12EDO; microtones if >12EDO)
   bool isCmd = false;        // true if this slot acts as a command instead of a playable note
@@ -164,9 +186,12 @@ extern bool toggleWheel;
 constexpr byte DELEGATED_APP_NAME_MAX = 20;
 struct DelegatedControlState {
   std::atomic<bool> active{false};
-  std::array<std::atomic<uint32_t>, LED_COUNT> colors = {};
+  // Core 1 publishes packed 7-bit HSV inputs; core 0 expands them to RGB16.
+  std::array<std::atomic<uint32_t>, LED_COUNT> ledHsv = {};
   std::array<std::atomic<char>, DELEGATED_APP_NAME_MAX + 1> appName = {};
   std::atomic<bool> displayDirty{false};
+  // Transient host orientation; 0xff follows the saved instrument rotation.
+  std::atomic<byte> displayRotation{0xff};
   std::atomic<bool> displayWakeRequested{false};
   std::atomic<bool> returnToMenuRequested{false};
   std::array<std::atomic<byte>, LED_COUNT> noteMapChannel = {};
@@ -181,6 +206,11 @@ constexpr byte SYSEX_DELEGATED_EXIT = 2;
 constexpr byte SYSEX_LED = 3;
 constexpr byte SYSEX_DELEGATED_NOTE_MAP = 4;
 constexpr byte SYSEX_DELEGATED_NOTE_MAP_RESET = 5;
+constexpr byte SYSEX_DELEGATED_SESSION_ENTER = 7;
+// Command 8 is retired; sessions do not use heartbeats.
+constexpr byte SYSEX_DELEGATED_SESSION_STATUS = 9;
+constexpr byte SYSEX_DELEGATED_SESSION_EXIT = 10;
+constexpr byte SYSEX_DELEGATED_DISPLAY_ROTATION = 11;
 constexpr byte SYSEX_DELEGATED_ENCODER_EVENT = 6;
 constexpr byte DELEGATED_ENCODER_UP = 1;
 constexpr byte DELEGATED_ENCODER_DOWN = 2;

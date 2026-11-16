@@ -24,6 +24,11 @@ export function pack8To7(raw: Uint8Array): number[] {
 }
 
 export function unpack8To7(packed: ArrayLike<number>, rawLength?: number): Uint8Array {
+  if (rawLength !== undefined &&
+      (!Number.isSafeInteger(rawLength) || rawLength < 0 ||
+       rawLength + Math.ceil(rawLength / 7) !== packed.length)) {
+    throw new Error("packed length does not match raw length");
+  }
   const raw: number[] = [];
   let offset = 0;
 

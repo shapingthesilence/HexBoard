@@ -14,6 +14,24 @@ extern "C" uint8_t hexboardDisplayByteCallback(u8x8_t* u8x8,
   return activeDisplay->handleByteMessage(u8x8, message, argument, data);
 }
 
+// The OLED has no reset line, so U8g2's reset pulse and settle delays (300 ms)
+// only hold up startup. Every other delay in the init sequence is kept.
+extern "C" uint8_t hexboardDisplayGpioAndDelayCallback(u8x8_t* u8x8,
+                                                        uint8_t message,
+                                                        uint8_t argument,
+                                                        void* data) {
+  static bool afterReset = false;
+  if (message == U8X8_MSG_GPIO_RESET) {
+    afterReset = u8x8->pins[U8X8_PIN_RESET] == U8X8_PIN_NONE;
+  } else if (message == U8X8_MSG_DELAY_MILLI && afterReset) {
+    afterReset = false;
+    return 1;
+  } else {
+    afterReset = false;
+  }
+  return u8x8_gpio_and_delay_arduino(u8x8, message, argument, data);
+}
+
 HexBoardDisplay::HexBoardDisplay(const u8g2_cb_t* rotation,
                                  uint8_t reset,
                                  uint8_t clock,
@@ -23,7 +41,7 @@ HexBoardDisplay::HexBoardDisplay(const u8g2_cb_t* rotation,
   u8g2_Setup_sh1107_i2c_seeed_128x128_f(&u8g2,
                                          rotation,
                                          hexboardDisplayByteCallback,
-                                         u8x8_gpio_and_delay_arduino);
+                                         hexboardDisplayGpioAndDelayCallback);
   u8x8_SetPin_HW_I2C(getU8x8(), reset, clock, data);
 }
 

@@ -33,9 +33,10 @@ export function FolderControls({
   }, [folderToDelete, folders]);
 
   return (
-    <div className="folderControls" aria-label={`${itemLabel} folder controls`}>
+    <details className="overflowMenu folderPopover">
+      <summary title={`Create or delete ${itemLabel} folders`}>Folders</summary>
+      <div className="folderPopoverBody" aria-label={`${itemLabel} folder controls`}>
       <form
-        className="fieldControlRow folderCreateControl"
         onSubmit={(event) => {
           event.preventDefault();
           onCreate();
@@ -51,7 +52,7 @@ export function FolderControls({
         <button disabled={!newFolder.trim()} type="submit">Create</button>
       </form>
 
-      <div className="fieldControlRow folderDeleteControl">
+      <div>
         <select
           aria-label={`Delete ${itemLabel} folder`}
           value={folderToDelete}
@@ -80,6 +81,7 @@ export function FolderControls({
           Delete
         </button>
       </div>
-    </div>
+      </div>
+    </details>
   );
 }

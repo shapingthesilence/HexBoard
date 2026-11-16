@@ -17,18 +17,16 @@ The requirements files describe what the system shall do.
 
 How to use these files
 
-- Use them as a current source of truth for intended Sequencer behavior.
+- Check these contracts against code; code is authoritative when they disagree.
 - Update them when Sequencer behavior changes in a meaningful way.
 - Keep them written in terms of current behavior, not old behavior.
 - Prefer updating an existing requirement instead of creating a duplicate.
 - Do not reuse old IDs for new meanings.
 
-Recommended status values
+Status
 
-- Active
-- Planned
-- Removed
-- Deferred
+Use Active for implemented behavior. Keep unimplemented proposals separate from
+current contracts. Delete obsolete requirements without reusing their IDs.
 
 Recommended file roles
 
@@ -65,11 +63,5 @@ Guidelines
 
 - If a requirement changes but is still the same concept, keep the same ID and
   update its text.
-- If a requirement is removed, mark it Removed or delete it, but do not reuse
-  that ID for a different concept later.
+- Delete removed requirements; do not reuse their IDs for different concepts.
 - If a requirement is brand new, give it a new ID.
-
-Scope note
-
-This is a first structured pass based on the current sequencer implementation
-and current documentation. It is intended to be refined over time.

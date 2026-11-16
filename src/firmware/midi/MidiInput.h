@@ -10,5 +10,4 @@ struct MidiInputMonitorStats {
 
 void resetMidiInputMonitorStats();
 MidiInputMonitorStats midiInputMonitorStats();
-bool processIncomingMIDIDelegated();
 bool RAM_FUNC(processIncomingMIDI)();

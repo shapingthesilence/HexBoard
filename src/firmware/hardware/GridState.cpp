@@ -133,11 +133,20 @@ void detectHardwareVersion() {
   constexpr byte hardwareFlagIndex = FIRST_FLAG_BUTTON_INDEX;
   const byte targetRow = hardwareFlagIndex / 10;
   const byte targetColumn = hardwareFlagIndex % 10;
-  byte columnPin = cPin[targetColumn];
-  sio_hw->gpio_clr = multiplexerMask;
-  sio_hw->gpio_set = rowSelectMask[targetRow];
-  delayMicroseconds(14);
-  bool flagPressed = (digitalRead(columnPin) == LOW);
+  bool flagPressed = false;
+  // The logical rows above the visible 14-row keybed include the boot-time
+  // hardware flag. Exercise the complete mux range here; runtime scanning can
+  // then stay on the physical rows without losing hardware identification.
+  for (byte row = 0; row < ROWCOUNT; ++row) {
+    sio_hw->gpio_clr = multiplexerMask;
+    sio_hw->gpio_set = rowSelectMask[row];
+    busy_wait_us_32(14);
+    uint32_t firstSample = sio_hw->gpio_in;
+    uint32_t stableSample = firstSample & sio_hw->gpio_in;
+    if (row == targetRow) {
+      flagPressed = (stableSample & columnMasks[targetColumn]) == 0;
+    }
+  }
   Hardware_Version = flagPressed ? HARDWARE_V1_2 : HARDWARE_V1_1;
   sendToLog("Hardware detection: revision " + std::to_string(Hardware_Version));
 }

@@ -1,0 +1,448 @@
+import {AssetStorageSelector} from "./AssetStorageSelector.tsx";
+import {springBase,springNames,springRouteWord,springWord,springSourceNames,springSourceWords} from './pitchSpring.ts';
+import {isPhysicalPreset,presetDraftKey} from './presetLibrary.ts';
+import {PresetLibrary} from './PresetLibrary.tsx';
+import {useAutosave} from '../../editor/useAutosave.ts';
+import {writeStoredText} from '../../editor/autosave.ts';
+import {storedPreset} from './presetLibrary.ts';
+import {synthErrorMessage} from "./requestError.ts";
+import {MonoControls} from './MonoControls.tsx';
+import {type MonoConfig} from './mono.ts';
+import {ModulationBudget} from "./ModulationBudget.tsx";
+import {dspUsage,dspAllows,dspRouteAllows,dspSourceContribution,dspCapacity,routePatch,parameterPatch} from "./dspBudget.ts";
+import {useEditHistory} from "./useEditHistory.ts";
+import {samePhysicalSound} from "./physicalHistory.ts";
+import {canAssignTarget} from "./targetModulation.ts";
+import {usePerformance,usePerformanceTempo,S as PerformanceSetting} from './performanceSchema.ts';
+import {ControllerControls} from "./ControllerControls.tsx";
+import {routeDepth} from "./modulationBudget.ts";
+import {PerformanceRow} from './PerformanceRow.tsx';
+import {validVoiceBudget,presetFingerprint} from "./voiceBudget.ts";
+import {VoiceBudgetEditor} from "./VoiceBudgetEditor.tsx";
+import {SynthProgress} from './SynthProgress.tsx';
+import type {SynthProgress as Progress} from './progress.ts';
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
+import type { MidiTransport } from "../../midi/types.ts";
+import { PhysicalSynthClient, type PhysicalState } from "./client.ts";
+import {PhysicalPreview} from "./enginePreview.ts";
+import {PreviewContext, PreviewValues, PreviewSource, PreviewExpression} from "./SynthVisualPreview.tsx";
+import {startVisibleAnimation} from "../../animation.ts";
+import { StringAnimation } from "./StringAnimation.tsx";
+import { StringResponseView, driveGlyphs } from "./StringResponseView.tsx";
+import { SampleEditor } from "./SampleEditor.tsx";
+import { ModSourceEditor, modSourceHelp } from "./ModSourceEditor.tsx";
+import { modulationRouteCount, modulationSeconds, modulationRate, type FxRack, type SampleExciter,  initialPreset, physicalParameters, physicalSources, physicalPresetFromUnknown, type PhysicalPreset } from "./schema.ts";
+import "./PhysicalSynthEditor.css";
+import "./SynthIdentity.css";
+import {targetingEscape, sourceClickTool} from "./modulationTargeting.ts";
+import {RouteChip,RouteMenu,dropDepth,useSourceDrag} from "./modulationGestures.tsx";
+import {Knob,ModSourceButton,sourceColors,sourceShortNames,modulationCursor} from "./SynthControls.tsx";
+import {FxRackEditor} from "./FxRackEditor.tsx";
+
+const previewParameterIds = physicalParameters.map((_, id) => id);
+const draftKey = "hexboard.physical.draft.v1";
+function readDraft(): PhysicalPreset | undefined {
+  try { const raw = window.localStorage.getItem(draftKey); return raw ? physicalPresetFromUnknown(JSON.parse(raw)) : undefined; } catch { return undefined; }
+}
+function PadLabels({corners,x,y}:{corners:[string,string,string,string];x:string;y:string}){
+ return <><span className="pad-corner top-left">{corners[0]}</span><span className="pad-corner top-right">{corners[1]}</span><span className="pad-corner bottom-left">{corners[2]}</span><span className="pad-corner bottom-right">{corners[3]}</span><span className="pad-axis-x">{x}</span><span className="pad-axis-y">{y}</span></>;
+}
+export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoaded }: { transport?: MidiTransport;advanced?:boolean;onDeviceEngineLoaded?:(engine:2|4|5|7)=>void }) {
+  const performance=usePerformance(),performanceTempo=usePerformanceTempo();
+  const [client, setClient] = useState<PhysicalSynthClient>();
+  const [connectionAttempt, setConnectionAttempt] = useState(0);
+  const retainedDraft = useRef(false);
+  const {value:preset,set:setPreset,reset:resetPreset,replace:replacePreset,undo,redo,canUndo,canRedo,begin:beginEdit,end:endEdit} = useEditHistory<PhysicalPreset>(() => {const draft=readDraft();retainedDraft.current=!!draft;return draft??physicalPresetFromUnknown(initialPreset);},samePhysicalSound);
+  const root = useRef<HTMLElement>(null);
+  const [visual] = useState(() => new PhysicalPreview(preset));
+  const name=preset.name;
+  const namedPreset=useMemo(()=>({...preset,name}),[preset,name]);
+  const [progress,setProgress]=useState<Progress>(),[operationLabel,setOperationLabel]=useState("Updating synth…");
+  const progressRef=useRef<Progress|undefined>(undefined);
+  const [device, setDevice] = useState<PhysicalState>(), [ready, setReady] = useState(false), [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState(""), [failed, setFailed] = useState(false);
+  const [bend, setBend] = useState(0), [source, setSource] = useState(1);
+  const [fxPreview,setFxPreview]=useState<FxRack>();
+  const [budgetTarget,setBudgetTarget]=useState<number>();
+  const [budgetFocus,setBudgetFocus]=useState<number>();
+  const [budgetSource,setBudgetSource]=useState<number>();
+  const [blockedTip,setBlockedTip]=useState<{x:number;y:number}>();
+  const [sourceEditor,setSourceEditor]=useState<number>();
+  const pinDrag=useRef<{y:number;pressure:number}|undefined>(undefined);
+  const [motionReplay,setMotionReplay]=useState(0),[motionEnabled,setMotionEnabled]=useState(true);
+  const [tool, setTool] = useState<"value" | "modulate">("value"), [locked, setLocked] = useState(false);
+  const [routeMenu, setRouteMenu] = useState<{target:number;source:number;x:number;y:number}>();
+  const [previewPressure, setPreviewPressure] = useState(0);
+  const edits = useRef(new Map<string, () => Promise<PhysicalState>>()), flushing = useRef(false), alive = useRef(true);
+  const [sampleEditor,setSampleEditor]=useState(false);
+  const [fxWaiting,setFxWaiting]=useState(false);
+  const fxTimer=useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(()=>{clearTimeout(fxTimer.current);setFxWaiting(false);return ()=>clearTimeout(fxTimer.current);},[client]);
+  useEffect(()=>{
+    if(tool==="value"||sampleEditor)return;
+    return targetingEscape(document,()=>{setTool("value");setLocked(false);setSourceEditor(undefined);setBlockedTip(undefined);});
+  },[tool,sampleEditor]);
+  useEffect(() => visual.configure(preset, !!client && ready, previewPressure), [visual, preset, client, ready, previewPressure]);
+  useEffect(() => startVisibleAnimation(root.current!, visual.advance), [visual]);
+  const fail = (error: unknown) => {
+    const message = synthErrorMessage(error);
+    if (alive.current && message !== undefined) { setFailed(true); setMessage(message); }
+  };
+  useAutosave(() => { try { writeStoredText(window.localStorage, draftKey, JSON.stringify({ ...preset, name: name.trim() || "Untitled" })); } catch { /* Save reports storage errors. */ } }, [preset, name]);
+  useEffect(() => {
+    let disposed = false, polling = false, statusPolling = true;
+    let lastState: PhysicalState["state"] | undefined;
+    // Each effect setup owns a fresh client: StrictMode cleans up and starts
+    // effects again, and a closed client must never be reused after reconnect.
+    const client = transport ? new PhysicalSynthClient(transport,value=>{if(!disposed){progressRef.current=value;setProgress(value);if(value)setFailed(false);}},advanced) : undefined;
+    setClient(client);progressRef.current=undefined;setProgress(undefined);
+    alive.current = true; setReady(false); visual.setExpression(); visual.setController(); edits.current.clear(); flushing.current = false;
+    if (!client) return () => { alive.current = false; };
+    void client.read().then(state => {
+      if (disposed) return;
+      lastState = state.state; setDevice(state); if (!retainedDraft.current){const next={...state.preset,name};resetPreset(next.voiceBudget?{...next,voiceBudget:{...next.voiceBudget,fingerprint:presetFingerprint(next)}}:next);}
+      setBend(state.bend); setReady(true); setFailed(false);
+      setMessage(retainedDraft.current ? "Draft retained. Preview draft to hear it, or load Pressure Sweep for the new pressure mapping." : "Connected. Play a key to see pressure move the pickup.");
+    }).catch(error => { if (!disposed) fail(error); }).finally(() => { statusPolling = false; });
+    const poll = setInterval(() => { if(disposed||statusPolling||document.hidden||progressRef.current||flushing.current)return;statusPolling=true;void client.read().then(state => {
+      if (disposed) return;
+      setDevice(state); setReady(true);
+      if (lastState !== state.state) {
+        setFailed(false);
+        setMessage(state.state === "playing" ? "Synth running. Play the keys." : state.state === "loading" ? "Preparing the instrument…" : "Synth stopped. Choose Start synth to play.");
+      }
+      lastState = state.state;
+    }).catch(error => { if (!disposed) fail(error); }).finally(() => { statusPolling = false; }); }, 2000);
+    const expression = setInterval(() => {
+      if (polling || disposed || document.hidden || progressRef.current) return; polling = true;
+      void client.expression().then(value => { if (!disposed) visual.setExpression(value); }).catch(error => { if (!disposed) fail(error); }).finally(() => { polling = false; });
+    }, 50);
+    const flush = setInterval(() => {
+      if (flushing.current || !edits.current.size) return; flushing.current = true;
+      void (async () => {
+        try {
+          while (edits.current.size && !disposed) {
+            const [key, update] = edits.current.entries().next().value!; edits.current.delete(key);
+            const state = await update();
+            if (!disposed) { setDevice(state); setFailed(false); setMessage("Sound updated in instrument RAM."); }
+          }
+        } catch (error) { if (!disposed) { edits.current.clear(); fail(error); } }
+        finally { if (!disposed) flushing.current = false; }
+      })();
+    }, 100);
+    return () => { disposed = true; alive.current = false; clearInterval(poll); clearInterval(expression); clearInterval(flush); edits.current.clear(); client.close(); };
+  }, [transport, connectionAttempt]);
+  const queue = (key: string, update: () => Promise<PhysicalState>) => { if (client && ready) edits.current.set(key, update); };
+  const operation = async (run: () => Promise<PhysicalState>,label="Updating synth…") => {
+    setOperationLabel(label);setFailed(false);setLoading(true);
+    try { const state = await run(); if (alive.current) { setDevice(state); setFailed(false); setMessage(state.state === "loading" ? "Preparing the instrument…" : "Sound updated in instrument RAM."); } }
+    catch (error) { fail(error); } finally { if (alive.current) setLoading(false); }
+  };
+  const apply = async (value: PhysicalPreset) => {
+    retainedDraft.current = true; edits.current.clear(); clearTimeout(fxTimer.current);setFxWaiting(false); setRouteMenu(undefined);
+    while(flushing.current&&alive.current)await new Promise(r=>setTimeout(r,10));
+    resetPreset(storedPreset(value) as PhysicalPreset);
+    if (client && ready) await operation(() => client.load(value));
+  };
+  const restoreHistory=(direction:"undo"|"redo")=>{
+    if(busy||sampleEditor)return;
+    const next=direction==="undo"?undo():redo();if(!next)return;
+    retainedDraft.current=true;edits.current.clear();clearTimeout(fxTimer.current);setFxWaiting(false);
+    setTool("value");setLocked(false);setRouteMenu(undefined);setSourceEditor(undefined);setBlockedTip(undefined);
+    if(client&&ready)void operation(async()=>{
+      // Let an already-issued edit finish before restoring the entire RAM draft.
+      while(flushing.current&&alive.current)await new Promise(resolve=>setTimeout(resolve,20));
+      if(!alive.current)throw Error("Synth editor closed.");
+      await client.apply({...next,name:next.name.trim()||"Untitled"});
+      return client.read();
+    },direction==="undo"?"Undoing sound edit…":"Redoing sound edit…");
+  };
+  useEffect(()=>{
+    const finish=()=>endEdit();
+    window.addEventListener("pointerup",finish);window.addEventListener("pointercancel",finish);
+    window.addEventListener("keyup",finish);window.addEventListener("blur",finish);
+    return()=>{window.removeEventListener("pointerup",finish);window.removeEventListener("pointercancel",finish);window.removeEventListener("keyup",finish);window.removeEventListener("blur",finish);};
+  },[endEdit]);
+  const admit=(next:PhysicalPreset)=>{if(dspAllows(preset,next))return true;setMessage("DSP budget full · reduce an effect, Drive, Pin or modulation first.");setFailed(true);return false;};
+  const setMono=(mono:MonoConfig)=>{
+    const next={...preset,mono};if(!admit(next))return;
+    if((mono.flags&3)!==((preset.mono?.flags??0)&3)){void apply(next);return;}
+    retainedDraft.current=true;setPreset(p=>({...p,mono}));queue('mono',()=>client!.monoSettings(mono).then(()=>client!.status()));
+  };
+  const setEffects=(effects:FxRack)=>{
+    if(!admit({...preset,effects}))return;
+    retainedDraft.current=true;setPreset(p=>({...p,effects}));
+    clearTimeout(fxTimer.current);edits.current.delete("fx");
+    setFxWaiting(Boolean(client&&ready));
+    fxTimer.current=setTimeout(()=>{setFxWaiting(false);queue("fx",()=>client!.effects(effects));},1000);
+  };
+  const setRackControls=(effects:FxRack)=>{
+    if(!admit({...preset,effects}))return;
+    retainedDraft.current=true;setPreset(p=>({...p,effects}));
+    if(fxWaiting)setEffects(effects);else queue("fx",()=>client!.effects(effects));
+  };
+  const applySample=async(sample:SampleExciter,preview=false)=>{
+    sample={...sample,direct:preset.parameters[32]};
+    if(!admit({...parameterPatch(preset,21,0),sample}))throw Error("DSP budget full. Reduce the rack or string processing before loading this sample.");
+    retainedDraft.current=true;edits.current.delete("p21");setOperationLabel("Loading sample…");setFailed(false);setLoading(true);
+    setPreset(p=>({...p,sample:{...sample,direct:p.parameters[32]},parameters:p.parameters.map((v,i)=>i===21?0:v)}));
+    try{if(client&&ready){if(preview){await client.parameter(21,0);await client.setSample(sample);await client.previewSample();}else{edits.current.clear();clearTimeout(fxTimer.current);setFxWaiting(false);await client.load({...preset,sample,parameters:preset.parameters.map((v,i)=>i===21?0:v)});}setDevice(await client.read());setFailed(false);}else if(preview)throw Error("Connect Advanced to preview through the string.");}
+    catch(error){fail(error);throw error;}finally{setLoading(false);}
+  };
+  const chooseExciter=(mode:number)=>{
+    if(mode===2&&!preset.sample.frames.length){setSampleEditor(true);return;}
+    const candidate={...parameterPatch(preset,21,mode===1?65535:0),sample:{...preset.sample,enabled:mode===2}};if(!admit(candidate))return;
+    retainedDraft.current=true;const sample={...preset.sample,enabled:mode===2};setPreset(p=>({...p,sample,parameters:p.parameters.map((v,i)=>i===21?(mode===1?65535:0):v)}));
+    queue("p21",()=>client!.parameter(21,mode===1?65535:0));
+    queue("sample",()=>client!.setSample(sample));
+  };
+  const setBody=(index:number,value:number)=>{
+    const values=preset.effects.values.map(row=>[...row]);values[4][index]=Math.round(value);
+    const effects={...preset.effects,values};if(!admit({...preset,effects}))return;retainedDraft.current=true;setPreset(p=>({...p,effects}));
+    // Share the rack transaction, keeping a pending order change and its cooldown.
+    if(fxWaiting)setEffects(effects);else queue("fx",()=>client!.effects(effects));
+  };
+  const setParameter = (id: number, value: number) => {
+    if(id>=33){setModSetting(id===33?19:20,value);return;}
+    if(!admit(parameterPatch(preset,id,value)))return;
+    retainedDraft.current = true;
+    setPreset(p => ({ ...p, sample:id===32?{...p.sample,direct:value}:p.sample, parameters: p.parameters.map((v, i) => i === id ? value : v) }));
+    queue(`p${id}`, () => client!.parameter(id, value));
+  };
+  const setRoute = (id: number, which: number, value: number) => {
+    if(id>=33){if(canAssignTarget(preset,id,which)&&dspRouteAllows(preset,id,which,value))setModSetting(springRouteWord(id,which),springWord(value));return;}
+    if(value!==0 && !canAssignTarget(preset,id,which))return;
+    if(value!==0&&!dspRouteAllows(preset,id,which,value))return;
+    retainedDraft.current = true;
+    if(which>=7){setPreset(p=>({...p,controllerRoutes:(p.controllerRoutes??Array(66).fill(0)).map((v,i)=>i===id*2+which-7?value:v)}));queue(`c${id}:${which}`,()=>client!.controllerRoute(id,which-7,value));}
+    else if(which>=5){setPreset(p=>({...p,modulation:{...p.modulation,routes:p.modulation.routes.map((v,i)=>i===id*2+which-5?value:v)}}));queue(`m${id}:${which}`,()=>client!.modRoute(id,which-5,value));}
+    else if(which>=3){setPreset(p=>({...p,tiltRoutes:p.tiltRoutes.map((v,i)=>i===id*2+which-3?value:v)}));queue(`t${id}:${which}`,()=>client!.tiltRoute(id,which-3,value));}
+    else {setPreset(p => ({ ...p, routes: p.routes.map((v, i) => i === id * 3 + which ? value : v) }));queue(`r${id}:${which}`, () => client!.route(id, which, value));}
+  };
+
+  const setModSetting=(id:number,value:number)=>{
+    const next={...preset,modulation:{...preset.modulation,settings:preset.modulation.settings.map((v,i)=>i===id?value:v)}};if(!admit(next))return;
+    retainedDraft.current=true;setPreset(p=>({...p,modulation:{...p.modulation,settings:p.modulation.settings.map((v,i)=>i===id?value:v)}}));
+    queue(`ms${id}`,()=>client!.modSetting(id,value));
+  };
+  const changeBend = (value: number) => { setBend(value); queue("bend", () => client!.bend(value)); };
+  const activity=failed?undefined:progress??(loading?{label:operationLabel}:device?.state==="loading"?{label:"Starting synth…"}:undefined);
+  const busy = loading || (!failed&&device?.state === "loading") || Boolean(progress);
+  const stringGradient = `string-gradient-${useId().replace(/:/g, "")}`;
+  const bowMode=preset.parameters[21]>32767;
+  const showBowPad=bowMode;
+  const marbleMode = Math.round(preset.parameters[8]*4/65535)===4;
+  const position = (id: number) => 30 + (0.05 + 0.9 * preset.parameters[id] / 65535) * 540;
+  const dragPosition = (event: React.PointerEvent<SVGGElement>, id: number) => {
+    if (busy) return;
+    const svg = event.currentTarget.ownerSVGElement!;
+    const transform = svg.getScreenCTM(); if (!transform) return;
+    const point = svg.createSVGPoint(); point.x = event.clientX; point.y = event.clientY;
+    const x = point.matrixTransform(transform.inverse()).x;
+    setParameter(id, Math.round(Math.max(0, Math.min(1, ((x - 30) / 540 - .05) / .9)) * 65535));
+  };
+  const handle = (id: number, label: string, y: number, color: string) => <g key={id} className="string-handle" role="slider" tabIndex={busy ? -1 : 0} aria-label={label} aria-valuemin={5} aria-valuemax={95} aria-valuenow={Math.round(5 + 90 * preset.parameters[id] / 65535)} aria-disabled={busy}
+    onPointerDown={event => { if (!busy) { event.currentTarget.setPointerCapture(event.pointerId); dragPosition(event, id); } }}
+    onPointerMove={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) dragPosition(event, id); }}
+    onPointerUp={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }}
+    onKeyDown={event => { if (!busy && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) { event.preventDefault(); const step = event.shiftKey ? 6554 : 1311; setParameter(id, event.key === "Home" ? 0 : event.key === "End" ? 65535 : Math.max(0, Math.min(65535, preset.parameters[id] + (event.key === "ArrowRight" ? step : -step)))); } }}>
+    <rect x={position(id)-20} y={y-20} width={40} height={40} rx={12} fill="transparent" />
+    <circle cx={position(id)} cy={y} r={id === 4 ? 8 : 7} fill={color} stroke="var(--synth-scope)" strokeWidth={2} />
+    <text x={position(id)} y={y + (id === 4 || id === 18 ? -15 : 25)} textAnchor="middle" fill="currentColor" fontSize={12}>{label}</text>
+  </g>;
+  const materialMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setParameter(6, Math.round(Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * 65535));
+    setParameter(1, Math.round(Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)) * 65535));
+  };
+  const strikerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const rect=e.currentTarget.getBoundingClientRect();
+    setParameter(showBowPad?23:2,Math.round(Math.max(0,Math.min(1,(e.clientX-rect.left)/rect.width))*65535));
+    setParameter(showBowPad?22:12,Math.round((1-Math.max(0,Math.min(1,(e.clientY-rect.top)/rect.height)))*65535));
+  };
+  const marbleMaterialMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const rect=e.currentTarget.getBoundingClientRect();
+    setParameter(24,Math.round(Math.max(0,Math.min(1,(e.clientX-rect.left)/rect.width))*65535));
+    setParameter(25,Math.round((1-Math.max(0,Math.min(1,(e.clientY-rect.top)/rect.height)))*65535));
+  };
+  const budget=dspUsage(preset);
+  const tested=validVoiceBudget(preset,preset.voiceBudget);
+  const previewTarget=budgetTarget??budgetFocus;
+  const budgetProjection=fxPreview?dspUsage({...preset,effects:fxPreview}):budgetSource===undefined&&previewTarget!==undefined?dspUsage(tool==="modulate"?routePatch(preset,previewTarget,source,1):parameterPatch(preset,previewTarget,preset.parameters[previewTarget]||65535)):undefined;
+  const performanceGated=(id:number)=>[26,28,29].includes(id)&&preset.parameters[id]===0&&!Array.from({length:9},(_,source)=>routeDepth(preset,id,source)).some(Boolean)&&!dspAllows(preset,parameterPatch(preset,id,65535));
+  const driveUnavailable=performanceGated(26);
+  /** Whether a source can reach a knob, and why not when it cannot. */
+  const targetState=(id:number,src:number)=>{
+    const sampleGate=performanceGated(id), unavailable = sampleGate || ([29,30].includes(id) && bowMode) || (id===32&&(bowMode||!preset.sample.enabled));
+    const modulatable = !unavailable && ![8,21,27,31].includes(id) && (id!==7 || src>=5);
+    const targetFull=!canAssignTarget(preset,id,src), full=modulatable&&(targetFull||!dspRouteAllows(preset,id,src));
+    return {sampleGate,unavailable,modulatable,targetFull,full};
+  };
+  const dropRoute=(id:number,src:number)=>{const t=targetState(id,src);if(!t.modulatable||t.full)return;if(!routeDepth(preset,id,src))setRoute(id,src,dropDepth);};
+  const {drag,bind:dragBind,dragged}=useSourceDrag(dropRoute);
+  const highlight=drag?.source??budgetSource;
+  const control = (id: number) => {
+    const base=id>=33?springBase(preset,id):preset.parameters[id];
+    const original = id>=33?springNames[id-33]:physicalParameters[id],p=bowMode&&id===28?{...original,name:"Bow texture"}:original;
+    const {sampleGate,unavailable,modulatable,targetFull,full}=targetState(id,source);
+    const routes = physicalSources.map((label, i) => ({ label:String(label), i, bipolar:i===3||i===4||i===7||(i===6&&!preset.modulation.settings[14]), depth:routeDepth(preset,id,i) })).filter(r => r.depth !== 0);
+    const routeFull=tool==="modulate"&&full;
+    const modulating = tool === "modulate" && modulatable;
+    const value = modulating ? routeDepth(preset,id,source) : base;
+    const dropState=drag?(()=>{const t=targetState(id,drag.source);return t.modulatable&&!t.full?"ok":"blocked";})():undefined;
+    const alternate=tool==="value"&&modulatable&&!full?{value:routeDepth(preset,id,source),onChange:(d:number)=>setRoute(id,source,d)}:undefined;
+    const menu=(i:number,x:number,y:number)=>setRouteMenu({target:id,source:i,x,y});
+    return <div className="physical-control" key={id} data-mod-target={id} data-drop={dropState} data-drop-hover={drag?.target===id||undefined} data-source-route={highlight===undefined?undefined:routes.some(r=>r.i===highlight)?"yes":"no"} data-unavailable={unavailable||undefined} data-modulatable={modulatable} data-route-full={routeFull||undefined} title={routeFull?(targetFull?"4 sources on this target · remove one to add another":"DSP budget full · reduce another feature"):unavailable?sampleGate?"DSP budget full · reduce another feature":"Available with Strike":undefined} onPointerEnter={()=>{if(modulatable){setBudgetTarget(id);setBudgetSource(undefined);}}} onFocusCapture={()=>{if(modulatable){setBudgetFocus(id);setBudgetSource(undefined);}}} onBlurCapture={()=>setBudgetFocus(undefined)} onPointerMove={e=>{if(routeFull)setBlockedTip({x:e.clientX+16,y:e.clientY+18});}} onPointerLeave={()=>{setBlockedTip(undefined);setBudgetTarget(undefined);}}>
+      <strong>{p.name}</strong>
+      <PreviewValues ids={[id]}>{([effective]) => <><div className="knob-wrap">
+        {id===32?<input key={modulating?`route-${source}`:"value"} className="sample-direct-slider" type="range" aria-label={modulating?`${physicalSources[source]} to ${p.name}`:p.name} min={modulating?-65536:0} max={modulating?65536:65535} step="1" value={value} disabled={busy||unavailable||routeFull} onChange={e=>modulating?setRoute(id,source,Number(e.target.value)):setParameter(id,Number(e.target.value))} onPointerUp={()=>{if(modulating&&!locked)setTool("value");}} onKeyUp={()=>{if(modulating&&!locked)setTool("value");}}/>:<Knob key={modulating?`route-${source}`:"value"} label={modulating ? `${physicalSources[source]} to ${id===7?"Voice level":p.name}` : p.name} value={value} min={modulating ? -65536 : 0} max={modulating ? 65536 : 65535} disabled={busy || unavailable || routeFull} baseValue={base} effectiveValue={effective} routes={routes} onRouteDepth={(i,d)=>setRoute(id,i,d)} onRouteMenu={menu} alternate={alternate}
+          onChange={v => modulating ? setRoute(id, source, Math.round(v)) : setParameter(id, Math.round(v))} onRelease={() => { if (modulating&&!locked) setTool("value"); }} />}
+      </div>
+      <output aria-live="off" title={`${"strike" in p ? "Next strike" : "Live"}: ${p.describe(Math.round(effective*65535))}`}>{modulating ? `${Math.round(value/65536*100)}%` : p.describe(value)}</output></>}</PreviewValues>
+      <div className="knob-routes">{routes.map(r => <RouteChip key={r.i} short={sourceShortNames[r.i]} label={`${r.label} → ${p.name}`} color={sourceColors[r.i]} depth={r.depth} disabled={busy} onDepth={d=>setRoute(id,r.i,d)} onMenu={(x,y)=>menu(r.i,x,y)}/>)}</div>
+
+    </div>;
+  };
+  const bodyPanel=<fieldset className="body-panel" disabled={busy}><legend>Body EQ</legend><div className="body-layout">
+      <div className="material-surface"><div className="material-pad body-pad" role="slider" tabIndex={busy?-1:0} aria-label="Body size and material" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(preset.effects.values[4][1]/65535*100)} aria-valuetext={`${Math.round(preset.effects.values[4][1]/65535*100)} percent size, ${Math.round(preset.effects.values[4][2]/65535*100)} percent metal`}
+        onPointerDown={e=>{if(!busy)e.currentTarget.setPointerCapture(e.pointerId);}}
+        onPointerMove={e=>{if(!busy&&e.currentTarget.hasPointerCapture(e.pointerId)){const r=e.currentTarget.getBoundingClientRect();const values=preset.effects.values.map(row=>[...row]);values[4][1]=Math.round(Math.max(0,Math.min(1,(e.clientX-r.left)/r.width))*65535);values[4][2]=Math.round((1-Math.max(0,Math.min(1,(e.clientY-r.top)/r.height)))*65535);const effects={...preset.effects,values};retainedDraft.current=true;setPreset(p=>({...p,effects}));if(fxWaiting)setEffects(effects);else queue("fx",()=>client!.effects(effects));}}}
+        onPointerUp={e=>{if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);}}
+        onKeyDown={e=>{if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key)){e.preventDefault();const id=e.key==="ArrowLeft"||e.key==="ArrowRight"?1:2;setBody(id,Math.max(0,Math.min(65535,preset.effects.values[4][id]+(e.key==="ArrowRight"||e.key==="ArrowUp"?1:-1)*(e.shiftKey?6554:1311))));}}}>
+        <PadLabels corners={["Bell","Plate","Wood","Cabinet"]} x="Size" y="Color"/><span className="material-dot" style={{left:`${preset.effects.values[4][1]/65535*100}%`,top:`${100-preset.effects.values[4][2]/65535*100}%`}}/></div></div>
+      <div className="body-levels">{["Intensity","Focus"].map((label,i)=>{const id=i?3:0;return <label key={label}><span>{label}</span><input type="range" aria-label={`Body ${label}`} min="0" max="65535" step="1" value={preset.effects.values[4][id]} disabled={busy} onChange={e=>setBody(id,Number(e.target.value))}/><output>{Math.round(preset.effects.values[4][id]/65535*100)}%</output></label>;})}</div>
+    </div></fieldset>;
+  return <PreviewContext.Provider value={visual}><section ref={root} className="card physical-editor strings-editor" data-modulating={tool === "modulate" || undefined} data-source-dragging={drag?true:undefined} data-source-preview={drag===undefined&&budgetSource!==undefined||undefined} style={{ "--modulation-cursor": modulationCursor(source), "--modulation-color": sourceColors[source], "--highlight-color": sourceColors[highlight??source] } as CSSProperties} aria-label="Physical string editor"
+    onPointerDownCapture={()=>beginEdit()} onClickCapture={()=>beginEdit()} onClick={()=>endEdit()}
+    onKeyDownCapture={e=>{
+      const target=e.target as HTMLElement;
+      const text=target.closest('input:not([type="range"]):not([type="radio"]):not([type="checkbox"]),textarea,[contenteditable="true"]');
+      if((e.metaKey||e.ctrlKey)&&!e.altKey&&!text&&(["z","y"].includes(e.key.toLowerCase()))){
+        e.preventDefault();e.stopPropagation();restoreHistory(e.key.toLowerCase()==="y"||e.shiftKey?"redo":"undo");return;
+      }
+      if(!e.metaKey&&!e.ctrlKey&&!e.altKey)beginEdit();
+    }}>
+
+    <PresetLibrary preset={namedPreset} client={ready?client:undefined} disabled={busy} onRename={value=>replacePreset(p=>({...p,name:value}))} onBusy={v=>{if(v){edits.current.clear();clearTimeout(fxTimer.current);setFxWaiting(false);}setLoading(v);}} onLoad={async p=>{if(!isPhysicalPreset(p))throw Error('Select the matching engine.');await apply(p);}} onDeviceLoad={async(engine,name)=>{edits.current.clear();clearTimeout(fxTimer.current);retainedDraft.current=true;const value=await client!.readSound(name);if(engine!==2&&engine!==3){writeStoredText(localStorage, presetDraftKey(engine),JSON.stringify(value));onDeviceEngineLoaded?.(engine as 4|5|7);return;}if(!isPhysicalPreset(value))return;setDevice(await client!.status());resetPreset(value);}}/>
+    <PerformanceRow transport={transport} disabled={busy} voiceControls={advanced?<MonoControls polyAvailable={dspAllows(preset,{...preset,mono:{...(preset.mono??{glideMs:0}),flags:(preset.mono?.flags??0)&~3}})} value={preset.mono} disabled={busy} onChange={setMono}/>:undefined}/><ControllerControls transport={transport} disabled={busy} onState={visual.setController}/>
+
+    <div className="modulation-toolbar" role="toolbar" aria-label="Modulation tools">
+      <div className="sound-history" role="group" aria-label="Sound edit history"><button type="button" disabled={!canUndo||busy||sampleEditor} title="Undo sound edit · Ctrl/⌘ Z" onClick={()=>restoreHistory("undo")}>Undo</button><button type="button" disabled={!canRedo||busy||sampleEditor} title="Redo sound edit · Ctrl/⌘ Shift Z" onClick={()=>restoreHistory("redo")}>Redo</button></div>
+      <button aria-pressed={tool === "value"} onClick={() => { setTool("value"); setLocked(false); setSourceEditor(undefined); }}>Edit values</button>
+      {physicalSources.map((label,i) => <ModSourceButton key={label} label={label} color={sourceColors[i]} pressed={tool === "modulate" && source === i} locked={locked && tool === "modulate" && source === i}
+        title={i<5?modSourceHelp(i):undefined} count={i>=5&&i<7?modulationRouteCount(preset.modulation.routes,i-5):undefined} editorOpen={sourceEditor===i}
+        events={{...dragBind(i),onPointerEnter:()=>{setBudgetTarget(undefined);setBudgetSource(i);},onPointerLeave:()=>setBudgetSource(undefined),onFocus:()=>{setBudgetSource(i);setBudgetFocus(undefined);},onBlur:()=>setBudgetSource(undefined)}}
+        onSelect={lock => { if(dragged())return; if(sourceClickTool(tool==="modulate"&&source===i,lock)==="value"){setTool("value");setLocked(false);setSourceEditor(undefined);setBlockedTip(undefined);return;} setSource(i); setLocked(lock||(locked&&tool==="modulate")); setTool("modulate"); setSourceEditor(v=>v===i?v:undefined); }}
+        onEditor={i>=5&&i<7?() => { setSourceEditor(v=>v===i?undefined:i); }:undefined}/>)}
+      <small>{tool === "modulate" ? `${physicalSources[source]}${locked?" locked":""} → drag knobs${source >= 3 && source<5 ? " · neutral uses the base value; negative depth reverses":""} · ${locked?"click it again or Esc to finish":"Shift-click to lock"}` : `Drag knobs · drag a source onto a knob · ⌥/Alt-drag adds ${sourceShortNames[source]} · drag a route ring or chip for depth`}</small>
+    <ModulationBudget mono={!!((preset.mono?.flags??0)&3)} label="DSP budget" capacity={dspCapacity} testedUs={tested?.peakUs} used={budget.units} connections={budget.connections} projected={budgetProjection?.units} blocked={budgetProjection&&!budgetProjection.fits?(!budgetProjection.targetsValid?"Target has 4 sources":budgetProjection.connections>32?"Connection limit reached":undefined):undefined} contribution={budgetSource!==undefined?dspSourceContribution(preset,budgetSource):undefined}/>
+    {sourceEditor!==undefined && sourceEditor<7 && <ModSourceEditor source={sourceEditor} settings={preset.modulation.settings} onChange={setModSetting} onClose={()=>setSourceEditor(undefined)} onAssign={()=>{setSource(sourceEditor);setTool("modulate");setSourceEditor(undefined);}} disabled={busy} renderControl={(id,label)=> <div className="mod-source-control"><span>{label}</span><Knob label={label} value={preset.modulation.settings[id]} disabled={busy||(id===8&&!!performance.values[PerformanceSetting.lfoSync])} onChange={v=>setModSetting(id,Math.round(v))}/><output>{id===2?`${Math.round(preset.modulation.settings[id]/65535*100)}%`:id===8?performance.values[PerformanceSetting.lfoSync]?`${Math.min(50,performanceTempo/600*(1<<performance.values[PerformanceSetting.lfoDivision])).toFixed(2)} Hz · synced`:`${modulationRate(preset.modulation.settings[id]).toFixed(2)} Hz`:id===11?`${Math.round(preset.modulation.settings[id]/65535*360)}°`:id===15?`${Math.round(preset.modulation.settings[id]/65535*500)} ms`:id===6?preset.modulation.settings[id]<24000?"Fast rise":preset.modulation.settings[id]>41000?"Slow rise":"Linear":modulationSeconds(preset.modulation.settings[id])<1?`${Math.round(modulationSeconds(preset.modulation.settings[id])*1000)} ms`:`${modulationSeconds(preset.modulation.settings[id]).toFixed(1)} s`}</output></div>} />}
+    </div>
+
+
+    {drag&&<div className="mod-drag-ghost" data-blocked={drag.target!==undefined&&(()=>{const t=targetState(drag.target,drag.source);return !t.modulatable||t.full;})()||undefined} style={{left:drag.x+14,top:drag.y+14,borderColor:sourceColors[drag.source]}}><span className="source-dot" style={{background:sourceColors[drag.source]}}/>{sourceShortNames[drag.source]}</div>}
+    {routeMenu&&routeDepth(preset,routeMenu.target,routeMenu.source)!==0&&<RouteMenu title={`${physicalSources[routeMenu.source]} → ${(physicalParameters[routeMenu.target]??springNames[routeMenu.target-33]).name}`} color={sourceColors[routeMenu.source]} depth={routeDepth(preset,routeMenu.target,routeMenu.source)} x={routeMenu.x} y={routeMenu.y} onDepth={d=>setRoute(routeMenu.target,routeMenu.source,d)} onClose={()=>setRouteMenu(undefined)}/>}
+    {blockedTip && tool==="modulate"&&<div className="mod-limit-tooltip" role="tooltip" style={{left:Math.min(blockedTip.x,window.innerWidth-220),top:blockedTip.y}}>DSP budget full · reduce another feature</div>}
+    <header className="instrument-title"><h2>Physical Strings</h2><span>Stereo</span>{activity?<SynthProgress progress={activity}/>:<p role="status" className={failed ? "error" : ""}>{message}</p>}</header>
+    <div className="synth-activation" aria-label="Instrument playback">
+      <div><strong>{!transport ? "Connect Advanced to play" : !ready ? "Synth connection unavailable" : device?.state === "loading" ? "Starting synth…" : device?.state === "playing" ? "Synth running" : "Synth stopped"}</strong>
+        <small>{!transport ? "Use Connect HexBoard above, then start the synth here." : !ready ? "Waiting for the synth controls. Retry if the connection was interrupted." : device?.state === "playing" ? "Play the keys. Preview draft applies your current sound." : "Start loads your current draft and enables the instrument’s audio."}</small></div>
+      <div className="button-row">
+        <button className="synth-start" disabled={!ready || busy || !client || device?.state === "playing"} onClick={() => { edits.current.clear(); void operation(async () => { await client!.load({ ...preset, name }); return client!.start(); },"Starting synth…"); }}>{busy ? "Starting synth…" : "Start synth"}</button>
+        <button disabled={!ready || busy || !client || device?.state !== "playing"} onClick={() => void operation(() => client!.stop())}>Stop synth</button>
+        {client && <button disabled={!ready || busy} onClick={() => void apply({ ...preset, name })}>Preview draft</button>}
+        {transport && failed && <button onClick={() => setConnectionAttempt(value => value + 1)}>Retry synth connection</button>}
+      </div>
+    </div>
+
+    <div className="physical-workspace"><div className="instrument-workspace">
+    <div className="physical-grid compact-shaping"><fieldset className={`material-panel exciter-panel${preset.sample.enabled&&!bowMode?" sample-exciter":""}`} disabled={busy}><legend>Exciter</legend>
+
+
+        <div className="material-body"><div className="material-surface"><div className="exciter-mode" role="radiogroup" aria-label="Excitation mode">{["Strike","Bow","Sample"].map((label,i)=><label key={label} className={(bowMode?1:preset.sample.enabled?2:0)===i?"selected":""}><input type="radio" name="physical-exciter-mode" value={i} checked={(bowMode?1:preset.sample.enabled?2:0)===i} onChange={()=>chooseExciter(i)} />{label}</label>)}</div>
+        {(!preset.sample.enabled||bowMode)&&<div className="material-pad" role="slider" tabIndex={busy ? -1 : 0} aria-label={showBowPad?"Bow character":"Striker material"} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(preset.parameters[showBowPad?23:2]/65535*100)} aria-valuetext={showBowPad?`${Math.round(preset.parameters[23]/65535*100)} percent speed, ${Math.round(preset.parameters[22]/65535*100)} percent force`:`${Math.round(preset.parameters[2]/65535*100)} percent hardness, ${Math.round(preset.parameters[12]/65535*100)} percent resonance`}
+          onPointerDown={e=>{if(!busy){e.currentTarget.setPointerCapture(e.pointerId);strikerMove(e);}}}
+          onPointerMove={e=>{if(!busy && e.currentTarget.hasPointerCapture(e.pointerId))strikerMove(e);}}
+          onPointerUp={e=>{if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);}}
+          onKeyDown={e=>{if(busy)return;const horizontal=e.key==="ArrowLeft"||e.key==="ArrowRight";const axis=showBowPad?(horizontal?23:22):(horizontal?2:12); if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key)){e.preventDefault();setParameter(axis,Math.max(0,Math.min(65535,preset.parameters[axis]+(e.key==="ArrowRight"||e.key==="ArrowUp"?1:-1)*(e.shiftKey?6554:1311))));}}}>
+          <PadLabels corners={showBowPad?["Grip","Scrape","Slip","Glide"]:["Wood","Steel","Rubber","Plastic"]} x={showBowPad?"Speed":"Hardness"} y={showBowPad?"Force":"Resonance"}/>
+          <span className="material-dot" style={{left:`${preset.parameters[showBowPad?23:2]/65535*100}%`,top:`${100-preset.parameters[showBowPad?22:12]/65535*100}%`}} />
+          {showBowPad && <PreviewValues ids={[23,22]}>{([speed,force]) => <span className="material-live-dot" aria-hidden="true" style={{left:`${(speed*100).toFixed(1)}%`,top:`${(100-force*100).toFixed(1)}%`}} />}</PreviewValues>}
+        </div>}
+        </div>{(!preset.sample.enabled||bowMode)&&<div className="physical-grid mini-controls">{(showBowPad?[23,22]:[2,12]).map(control)}</div>}</div>
+
+
+      <div className="sample-panel-controls">{preset.sample.enabled&&!bowMode&&<>{control(32)}</>}</div><div className="sample-access"><button type="button" disabled={busy} onClick={()=>setSampleEditor(true)}>{preset.sample.frames.length?"Edit sample…":"Import sample…"}</button><span>{preset.sample.frames.length?`${preset.sample.name} · ${Math.round(preset.sample.frames.length/16)} ms`: "Recorded impacts & textures"}</span></div>      {(bowMode||preset.sample.enabled)&&<p className="panel-note">{bowMode?"Pressure controls force; speed moves from creaking drag through singing to scrape.":"Direct blends the recording with the string."}</p>}
+</fieldset>
+      <fieldset className="material-panel resonator-panel" disabled={busy}><legend>Resonator</legend>
+        <div className="material-body"><div className="material-surface"><div className="material-context" aria-hidden="true"/>
+        <div className="material-pad" role="slider" tabIndex={busy ? -1 : 0} aria-label="String material" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(preset.parameters[6] / 65535 * 100)} aria-valuetext={`${Math.round(preset.parameters[6] / 65535 * 100)} percent stiffness, ${Math.round(preset.parameters[1] / 65535 * 100)} percent loss`}
+          onPointerDown={e => { if (!busy) { e.currentTarget.setPointerCapture(e.pointerId); materialMove(e); } }}
+          onPointerMove={e => { if (!busy && e.currentTarget.hasPointerCapture(e.pointerId)) materialMove(e); }}
+          onPointerUp={e => { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); }}
+          onKeyDown={e => { if (busy) return; const delta = e.shiftKey ? 6554 : 1311; const axis = e.key === "ArrowLeft" || e.key === "ArrowRight" ? 6 : 1; if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) { e.preventDefault(); setParameter(axis, Math.max(0, Math.min(65535, preset.parameters[axis] + (e.key === "ArrowRight" || e.key === "ArrowDown" ? delta : -delta)))); } }}>
+          <PadLabels corners={["Nylon","Glass","Wood","Ceramic"]} x="Stiffness" y="Loss"/>
+          <span className="material-dot" style={{ left: `${preset.parameters[6] / 65535 * 100}%`, top: `${preset.parameters[1] / 65535 * 100}%` }} />
+        </div>
+        </div><div className="physical-grid mini-controls">{[6,1].map(control)}</div></div>
+
+
+      </fieldset>
+      <fieldset className="spatial-panel" disabled={busy}><legend>String workspace</legend><div className="string-workspace-heading"><span>Drag the strike and pickups</span><span className="string-motion-actions"><span title="Approximation of the last reported key, not an audio waveform">Motion preview</span><button type="button" disabled={!motionEnabled} aria-label="Replay string motion preview" title="Replay motion · visual only" onClick={()=>setMotionReplay(v=>v+1)}>▷</button><button type="button" aria-label={motionEnabled?"Pause string animation":"Enable string animation"} aria-pressed={motionEnabled} title={motionEnabled?"Pause animation":"Enable animation"} onClick={()=>setMotionEnabled(v=>!v)}>{motionEnabled?"Ⅱ":"↻"}</button></span></div>
+      <PreviewValues ids={previewParameterIds}>{effective => {
+        const pickup=.05+.9*effective[5], rightPickup=.05+.9*effective[14], dropCenter=.05+.9*effective[18], dropRadius=.45*effective[19];
+        return <PreviewExpression>{live => <svg className="string-view" viewBox={marbleMode ? "0 -32 600 177" : "0 0 600 145"} role="group" aria-label="String positions">
+
+        <defs><linearGradient id={stringGradient} gradientUnits="userSpaceOnUse" x1="30" x2="570" y1="0" y2="0"><stop offset="0" stopColor="var(--synth-1)"/><stop offset="1" stopColor="var(--synth-2)"/></linearGradient></defs>
+        <line className="string-glow" x1="30" x2="570" y1="82" y2="82" stroke={`url(#${stringGradient})`} />
+        <line className="string-rest" x1="30" x2="570" y1="82" y2="82" stroke={`url(#${stringGradient})`} />
+        <StringAnimation values={effective} signature={preset.parameters.join(",")+preset.routes.join(",")+preset.modulation.routes.join(",")} live={live} playing={device?.state==="playing"} replay={motionReplay} enabled={motionEnabled}/>
+        {[5,14].map(id=><circle key={id} cx={position(id)} cy="82" r="6" fill="var(--synth-scope)" stroke={id === 5 ? "var(--synth-1)" : "var(--synth-2)"} strokeWidth="2" />)}
+        <line x1={30 + pickup * 540} x2={30 + pickup * 540} y1="64" y2="104" stroke="var(--synth-1)" strokeWidth="2" strokeDasharray="4 3" opacity=".8" />
+        <line x1={30 + rightPickup * 540} x2={30 + rightPickup * 540} y1="70" y2="115" stroke="var(--synth-2)" strokeWidth="2" strokeDasharray="4 3" opacity=".8" />
+        {marbleMode && <><line x1={30+540*Math.max(.05,dropCenter-dropRadius)} x2={30+540*Math.min(.95,dropCenter+dropRadius)} y1="0" y2="0" stroke="#b9d6f0" strokeWidth="8" opacity=".4" />{handle(18,"Drop center",0,"#b9d6f0")}</>}{handle(4, bowMode?"Bow":"Strike", 40, "#d7ac68")}{handle(5, "Pickup L", 75, "var(--synth-1)")}{handle(14, "Pickup R", 106, "var(--synth-2)")}
+        <text x="30" y="99" fill="currentColor" fontSize="11">Nut</text><text x="570" y="99" textAnchor="end" fill="currentColor" fontSize="11">Bridge</text>
+      {!bowMode&&preset.parameters[29]>0&&<g className="preparation-pin" role="slider" tabIndex={busy?-1:0} aria-label="Preparation pin position and pressure" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(preset.parameters[30]/65535*100)} aria-valuetext={`${Math.round(preset.parameters[30]/65535*100)} percent position, ${Math.round(preset.parameters[29]/65535*100)} percent pressure`}
+        onPointerDown={e=>{if(!busy){e.preventDefault();pinDrag.current={y:e.clientY,pressure:preset.parameters[29]};e.currentTarget.setPointerCapture(e.pointerId);}}}
+        onPointerMove={e=>{if(!busy&&e.currentTarget.hasPointerCapture(e.pointerId)){const r=e.currentTarget.ownerSVGElement!.getBoundingClientRect();setParameter(30,Math.round(Math.max(0,Math.min(1,((e.clientX-r.left)/r.width*600-57)/486))*65535));setParameter(29,Math.round(Math.max(0,Math.min(1,(pinDrag.current?.pressure??preset.parameters[29])/65535+(e.clientY-(pinDrag.current?.y??e.clientY))/100))*65535));}}}
+        onPointerUp={e=>{if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);}}
+        onKeyDown={e=>{if(!busy&&["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key)){e.preventDefault();const id=e.key==="ArrowLeft"||e.key==="ArrowRight"?30:29;setParameter(id,Math.max(0,Math.min(65535,preset.parameters[id]+(e.key==="ArrowRight"||e.key==="ArrowDown"?1:-1)*(e.shiftKey?6554:1311))));}}}>
+        <title>Drag along the string; pull down to tighten contact</title><path d={`M${57+486*effective[30]},${38+18*effective[29]} v26`} stroke="#f0b56b" strokeWidth="5"/><circle cx={57+486*effective[30]} cy={38+18*effective[29]} r="9" fill="#f0b56b"/><circle cx={57+486*effective[30]} cy={38+18*effective[29]} r="18" fill="transparent"/>
+      </g>}</svg>}</PreviewExpression>; }}</PreviewValues>
+      <div className="physical-grid mini-controls">{[4,5,14,15].map(control)}</div>
+      <div className="pin-controls">{[29,30].map(control)}</div>
+    </fieldset>
+
+    <fieldset className="response-panel" disabled={busy}><legend>String response</legend><StringResponseView disabled={driveUnavailable}/><div className="knob-bank">{control(0)}{control(3)}{control(26)}{control(28)}</div><div className="source-tabs drive-characters" role="group" aria-label="Saturation character" aria-disabled={driveUnavailable} data-unavailable={driveUnavailable||undefined} >{["Warm","Edge","Fold"].map((name,i)=><button type="button" key={name} disabled={busy||driveUnavailable} aria-pressed={Math.round(preset.parameters[27]*2/65535)===i} onClick={()=>setParameter(27,Math.round(i*65535/2))}><svg className="drive-glyph" viewBox="0 0 24 14" aria-hidden="true"><path d={driveGlyphs[i]}/></svg>{name}</button>)}</div></fieldset>
+
+    <fieldset className="contact-panel" disabled={busy}><legend>Contact</legend>
+      <div className="source-tabs" aria-label="Contact mode">{["Off", "Bounce", "Rattle", "Mute", "Marbles"].map((mode, index) => <button key={mode} aria-pressed={Math.round(preset.parameters[8]*4/65535) === index} onClick={() => setParameter(8,Math.round(index*65535/4))}>{mode}</button>)}</div>
+
+      <div className="source-tabs" role="group" aria-label="Contact starts"><button type="button" aria-pressed={preset.parameters[31]<=32767} onClick={()=>setParameter(31,0)}>Note on</button><button type="button" aria-pressed={preset.parameters[31]>32767} onClick={()=>setParameter(31,65535)}>Note off</button></div>
+      {preset.parameters[31]>32767&&<p className="panel-note">Contact begins on key release · raise Release time for longer gestures</p>}
+      <div className="knob-bank">{(marbleMode ? [16,17,18,19,20] : [16,9,10,11,13]).map(control)}</div>
+      {marbleMode && <div className="contact-material"><div className="material-surface"><div className="material-pad" role="slider" tabIndex={busy?-1:0} aria-label="Marble material" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(preset.parameters[24]/65535*100)} aria-valuetext={`${Math.round(preset.parameters[24]/65535*100)} percent hardness, ${Math.round(preset.parameters[25]/65535*100)} percent resonance`}
+        onPointerDown={e=>{if(!busy){e.currentTarget.setPointerCapture(e.pointerId);marbleMaterialMove(e);}}} onPointerMove={e=>{if(!busy&&e.currentTarget.hasPointerCapture(e.pointerId))marbleMaterialMove(e);}} onPointerUp={e=>{if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);}}
+        onKeyDown={e=>{if(busy)return;const axis=e.key==="ArrowLeft"||e.key==="ArrowRight"?24:25;if(["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key)){e.preventDefault();setParameter(axis,Math.max(0,Math.min(65535,preset.parameters[axis]+(e.key==="ArrowRight"||e.key==="ArrowUp"?1:-1)*(e.shiftKey?6554:1311))));}}}><PadLabels corners={["Wood","Steel","Rubber","Plastic"]} x="Hardness" y="Resonance"/><span className="material-dot" style={{left:`${preset.parameters[24]/65535*100}%`,top:`${100-preset.parameters[25]/65535*100}%`}} /></div></div><div className="physical-grid mini-controls">{[24,25].map(control)}</div></div>}
+    </fieldset>
+
+
+    </div>
+    <div className="monitor-grid">
+    <fieldset className="pitch-spring-panel" disabled={busy}><legend>Pitch Spring</legend><div className="physical-grid mini-controls"><label className="physical-control">Source<select aria-label="Pitch spring source" value={preset.modulation.settings[18]} onChange={e=>setModSetting(18,+e.target.value)}>{springSourceNames.map((name,i)=><option key={name} value={springSourceWords[i]}>{name}</option>)}</select></label>{control(33)}{control(34)}<div className="physical-control"><label>Warble</label><Knob label="Pressure warble" value={preset.modulation.settings[21]} disabled={busy||tool==="modulate"} onChange={v=>setModSetting(21,Math.round(v))}/><output>{Math.round(preset.modulation.settings[21]/65535*100)}%</output></div></div><PreviewValues ids={[35]}>{([cents])=><div className="pitch-spring-meter" title="Approximation for the displayed note" role="meter" aria-label="Pitch spring gesture preview" aria-valuemin={-280} aria-valuemax={280} aria-valuenow={Math.round(cents)}><span style={{left:`${50+Math.max(-1,Math.min(1,cents/280))*48}%`}}/><output>{cents>=0?'+':''}{cents.toFixed(1)} ct</output></div>}</PreviewValues></fieldset>
+    <fieldset className="expression-panel" disabled={busy}><legend>Expression</legend>
+      <PreviewExpression>{live => <>{client&&ready&&<p className="panel-note">Tilt X ± {((live?.tiltX??0)*45).toFixed(1)}° · Y {((live?.tiltY??0)*45).toFixed(1)}° · {live?.motionValid?"Live":live?.motionDetected?"Waiting for valid gravity":"Connect for tilt"} {client&&ready&&<button disabled={busy||!live?.motionValid} onClick={()=>void operation(async()=>{await client.zeroMotion();return client.read();})}>Set tilt neutral</button>}</p>}
+      <p className="panel-note">{client && ready ? live?.key === null || live?.key === undefined ? "Play a key to see its pressure." : `Key ${live.key} · ${live.held ? "held" : "released"}` : "Connect to see live key expression."}</p></>}</PreviewExpression>
+      {physicalSources.map((label, i) => <div className="source-meter" key={label}><span>{sourceShortNames[i]}{i>=5&&i<7?" · preview":""}</span><PreviewSource id={i}>{value => <><meter aria-label={`${label}${i>=5?" preview":""} meter`} min={i<3||i===5||(i===6&&preset.modulation.settings[14])||i===8?0:-1} max={1} value={value} /><output aria-live="off">{i<3||i>=5?`${Math.round(value*100)}%`:`${Math.round(value*45)}°`}</output></>}</PreviewSource></div>)}
+      {!client && <label className="physical-control">Pressure preview<Knob label="Pressure preview" value={previewPressure} onChange={setPreviewPressure} /></label>}
+    </fieldset>
+    <fieldset className="output-panel" disabled={busy}><legend>Output</legend>{control(7)}
+        {client && <label className="physical-control">Global bend: {bend.toFixed(2)} semitones<Knob label="Global pitch bend" min={-2} max={2} value={bend} disabled={!ready || busy || device?.state !== "playing"} onChange={changeBend} onRelease={() => changeBend(0)} /><button onClick={() => changeBend(0)} disabled={!ready || device?.state !== "playing"}>Center bend</button></label>}
+      </fieldset>
+    </div>
+    </div><div className="engine-side"><FxRackEditor before={bodyPanel} rack={preset.effects} canApply={rack=>dspAllows(preset,{...preset,effects:rack})} onPreview={rack=>{setFxPreview(rack);setBudgetSource(undefined);}} targeting={{tool,source,values:[],finish:()=>{if(!locked)setTool("value");},focus:()=>setSourceEditor(undefined)}} busy={busy} waiting={fxWaiting} onChange={(rack,reorder)=>reorder?setEffects(rack):setRackControls(rack)}/></div></div>
+    {advanced&&<AssetStorageSelector client={client??undefined} disabled={busy}/>}
+    {sampleEditor&&<SampleEditor progress={progress} sample={preset.sample} onApply={sample=>applySample(sample)} onPreview={sample=>applySample(sample,true)} onClose={()=>setSampleEditor(false)}/>}
+    {advanced&&<VoiceBudgetEditor dsp preset={namedPreset} busy={busy} testing={busy&&/voic/.test(progress?.label??operationLabel)} connected={!!client&&ready} onCancel={()=>void client?.cancelVoiceTest().catch(fail)} onInvalidate={()=>{replacePreset(p=>({...p,voiceBudget:undefined}));if(client&&ready)void client.resetVoiceBudget().catch(fail);}} onTest={()=>{replacePreset(p=>({...p,voiceBudget:undefined}));edits.current.clear();clearTimeout(fxTimer.current);void operation(async()=>{const value=await client!.testVoiceLimit({...preset,name});replacePreset(value);return client!.status();},"Testing voice limit…");}}/>}
+      </section></PreviewContext.Provider>;
+}

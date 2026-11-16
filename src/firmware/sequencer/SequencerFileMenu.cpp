@@ -1534,11 +1534,11 @@ const NamingKey* namingKeyForButton(byte buttonIndex) {
   return nullptr;
 }
 
-uint32_t namingBlueColor() {
-  colorDef color = {
+LedColor namingBlueColor() {
+  LedHsv color = {
     kNamingBlueHue,
     SAT_VIVID,
-    applyLEDLevel(kNamingBlueValue, ledRestBrightness)
+    scaleLedLevel(kNamingBlueValue, ledRestBrightness)
   };
   return getLEDcode(color);
 }
@@ -1712,7 +1712,7 @@ void renderFileMenuLedOverrides(FileMenuSetLedPixelFn setLedPixel) {
   for (byte buttonIndex = 0; buttonIndex < LED_COUNT; ++buttonIndex) {
     setLedPixel(buttonIndex, 0);
   }
-  const uint32_t blue = namingBlueColor();
+  const LedColor blue = namingBlueColor();
   for (byte i = 0; i < sizeof(kNamingKeys) / sizeof(kNamingKeys[0]); ++i) {
     setLedPixel(kNamingKeys[i].buttonIndex, blue);
   }

@@ -191,7 +191,7 @@ public:
     return givenStepsFromC + tuning().spanCtoA() + transpose;
   }
   int keyDegree(int givenStepsFromC) {
-    return positiveMod(givenStepsFromC + keyStepsFromC(), tuning().cycleLength);
+    return positiveMod(givenStepsFromC + transpose + keyStepsFromC(), tuning().cycleLength);
   }
 };
 

@@ -198,7 +198,7 @@ struct SynthVoiceRenderCache {
   uint8_t phaseWarpActive = 0;
   uint8_t slewsActive = 0;
   uint8_t wavetableMipLevel = 0;
-  SynthWavetableReadContext wavetableContext = { activeSynthWaveTable[0], nullptr, 0 };
+  SynthWavetableReadContext wavetableContext = { synthSampleWorkspace.wavetable.base[0], nullptr, 0 };
 };
 
 struct SynthWavetableMipSelection {
@@ -215,6 +215,17 @@ extern volatile byte headphoneVolumeGain;
 extern volatile byte piezoVolumeGain;
 
 extern byte synthVibratoSine[SYNTH_WAVE_SAMPLE_COUNT];
+extern std::atomic<bool> synthWorkspacePauseRequested;
+extern std::atomic<bool> synthWorkspacePauseAcknowledged;
+extern std::array<byte, SYNTH_PREVIEW_SLOT_COUNT> synthPreviewVelocityForSlot;
+extern uint32_t synthRenderGenerations[POLYPHONY_LIMIT];
+#if HEXBOARD_ENABLE_SAMPLER
+void prepareCompactSamplerFrequency(uint8_t channel, float nativeHz, float bentHz, bool start);
+int32_t renderCompactSamplerMix(uint32_t& envSum, uint8_t& voices, uint8_t& flags);
+#else
+inline void prepareCompactSamplerFrequency(uint8_t, float, float, bool) {}
+inline int32_t renderCompactSamplerMix(uint32_t&, uint8_t&, uint8_t&) { return 0; }
+#endif
 extern volatile uint8_t activeSynthWaveFrameCount;
 extern uint16_t synthWavetableFramePositionByAmount[128];
 extern uint8_t synthFxModScaleByDepth[128][128];
@@ -299,6 +310,7 @@ extern byte attenuation[];
 extern uint16_t synthModValueQ8;
 extern uint32_t synthVibratoPhase;
 extern uint32_t synthVibratoPhaseIncrement;
+int16_t RAM_FUNC(readSynthVibratoSmoothNoiseSample)();
 extern uint32_t synthLfoPhase;
 extern uint32_t synthLfoPhaseIncrement;
 extern volatile uint16_t metronomeBeepSamplesRemaining;
@@ -339,17 +351,24 @@ void RAM_FUNC(smoothUint16Toward)(uint16_t& current, uint16_t target, uint8_t sh
 void RAM_FUNC(smoothUint16Toward)(uint16_t& current, uint16_t target, uint8_t shift, uint8_t elapsedTicks);
 uint32_t RAM_FUNC(ticksFromMicros)(uint32_t micros);
 uint32_t RAM_FUNC(envelopeAudioLevel)(uint32_t level);
+struct VolumeEnvelopeSettings {
+  EnvelopeParams params;
+  uint32_t releaseReciprocalQ32 = 0;
+  bool modulatedRelease = false;
+};
+extern std::array<EnvelopeParams, POLYPHONY_LIMIT> voiceVolumeEnvelopeParams;
+const VolumeEnvelopeSettings& RAM_FUNC(pendingVolumeEnvelopeSettings)();
 uint16_t RAM_FUNC(releaseIncrementForLevel)(uint32_t level);
 uint16_t RAM_FUNC(effectReleaseIncrementForLevel)(uint8_t envelopeIndex, uint32_t level);
 void RAM_FUNC(resetEnvelopeState)(EnvelopeState& env);
 void RAM_FUNC(publishEnvelopeCommand)(uint8_t channel, EnvelopeCommand command);
 EnvelopeCommand RAM_FUNC(consumeEnvelopeCommand)(uint8_t channel);
-void RAM_FUNC(publishVoiceFreed)(uint8_t channel);
+void RAM_FUNC(publishVoiceFreed)(uint8_t channel, uint32_t generation = 0);
 bool RAM_FUNC(consumeVoiceFreed)(uint8_t channel);
 void RAM_FUNC(clearPendingVoiceFreed)(uint8_t channel);
 void RAM_FUNC(advanceEnvelopeFromAttackPeak)(const EnvelopeParams& params, EnvelopeState& env);
 void RAM_FUNC(updateEnvelopeHoldStage)(const EnvelopeParams& params, EnvelopeState& env);
-void RAM_FUNC(updateAmpEnvelopeState)(EnvelopeState& env, uint8_t elapsedTicks);
+void RAM_FUNC(updateAmpEnvelopeState)(EnvelopeState& env, const EnvelopeParams& params, uint8_t elapsedTicks);
 void RAM_FUNC(resetCachedEffectEnvelopeModValue)(uint8_t envelopeIndex, uint8_t voiceIndex);
 void RAM_FUNC(startEffectEnvelopeAttack)(uint8_t envelopeIndex, EnvelopeState& env);
 void RAM_FUNC(startEffectEnvelopeRelease)(uint8_t envelopeIndex, EnvelopeState& env);
@@ -374,7 +393,7 @@ uint16_t SYNTH_HOT_OPTIMIZE RAM_FUNC(readActiveWavetableInterpolatedFrameSample)
 void RAM_FUNC(clearSynthPortamento)(uint8_t channelIndex);
 
 uint8_t RAM_FUNC(smoothedSynthModValue)(uint8_t elapsedTicks);
-uint8_t RAM_FUNC(scaleSynthModAmount)(uint8_t modValue);
+int16_t RAM_FUNC(scaleSynthModAmount)(uint8_t modValue);
 uint8_t RAM_FUNC(scaleSynthFxModDepth)(uint8_t depth, uint8_t value);
 int16_t RAM_FUNC(synthEffectAmountDepth)(uint8_t amountSetting);
 int16_t RAM_FUNC(clampSynthModAccumulator)(int16_t value);
@@ -415,3 +434,5 @@ uint16_t RAM_FUNC(synthStealFadeGainQ8)(uint8_t channelIndex);
 void RAM_FUNC(startSynthVoiceAttackInRender)(uint8_t channelIndex, EnvelopeState& env, bool& forceVoiceRenderCacheRefresh);
 void RAM_FUNC(resetSynthVoiceAfterAbandonedSteal)(uint8_t channelIndex);
 void RAM_FUNC(finishSynthStealFade)(uint8_t channelIndex, EnvelopeState& env, bool& forceVoiceRenderCacheRefresh);
+
+AudioOutputLevels renderCompactSamplerOutputLevels(byte destination);

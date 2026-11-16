@@ -1,3 +1,7 @@
+// Keep the processor in the build asset graph: its message contract must match
+// this controller even when a browser has cached audio from an earlier release.
+import synthPreviewWorkletUrl from "./synth-preview-worklet.js?url";
+
 export type SynthPreviewValues = Record<string, number>;
 
 export interface SynthPreviewPatch {
@@ -7,9 +11,20 @@ export interface SynthPreviewPatch {
   values: SynthPreviewValues;
 }
 
+/** The newest sounding voice's cycle: table position (0–127) and Q4 phase-warp amounts (±127). */
+export interface SynthVoiceShape {
+  position: number;
+  fold: number;
+  duty: number;
+  poly: number;
+}
+export type SynthVoiceShapeListener = (shape: SynthVoiceShape | null) => void;
+
 interface PendingNote {
   note: number;
   velocity: number;
+  id: number | string;
+  pitchOffset: number;
 }
 
 export class SynthPreviewController {
@@ -20,9 +35,22 @@ export class SynthPreviewController {
   private modValue = 0;
   private pendingNotes: PendingNote[] = [];
   private loading: Promise<void> | null = null;
+  private generation = 0;
+  private shapeListeners = new Set<SynthVoiceShapeListener>();
 
   get active(): boolean {
     return this.context !== null && this.context.state !== "closed";
+  }
+
+  // Lessons unlock audio from their Start button before hardware MIDI arrives.
+  async start(): Promise<void> {
+    await this.ensureStarted();
+  }
+
+  /** Follow the newest sounding voice; null when nothing plays. Returns an unsubscribe. */
+  onVoiceShape(listener: SynthVoiceShapeListener): () => void {
+    this.shapeListeners.add(listener);
+    return () => { this.shapeListeners.delete(listener); };
   }
 
   setPatch(patch: SynthPreviewPatch): void {
@@ -44,15 +72,28 @@ export class SynthPreviewController {
     this.node?.port.postMessage({ type: "setMod", value: this.modValue });
   }
 
-  async noteOn(note: number, velocity = 0.9): Promise<void> {
-    this.pendingNotes.push({ note, velocity });
-    await this.ensureStarted();
-    this.flushPendingNotes();
+  async noteOn(note: number, velocity = 0.9, id: number | string = note, pitchOffset = 0): Promise<void> {
+    if (!this.patch?.wavetableSamples) {
+      throw new Error("Download this wavetable from HexBoard to hear it in the browser");
+    }
+    this.pendingNotes.push({ note, velocity, id, pitchOffset });
+    try {
+      await this.ensureStarted();
+      this.flushPendingNotes();
+    } catch (error) {
+      this.pendingNotes = [];
+      throw error;
+    }
   }
 
-  noteOff(note: number): void {
-    this.pendingNotes = this.pendingNotes.filter((pending) => pending.note !== note);
-    this.node?.port.postMessage({ type: "noteOff", note });
+  noteOff(id: number | string, immediate = false): void {
+    this.pendingNotes = this.pendingNotes.filter((pending) => pending.id !== id);
+    this.node?.port.postMessage({ type: "noteOff", note: id, immediate });
+  }
+
+  setPitch(id: number | string, pitchOffset: number): void {
+    for (const pending of this.pendingNotes) if (pending.id === id) pending.pitchOffset = pitchOffset;
+    this.node?.port.postMessage({ type: "setPitch", id, pitchOffset });
   }
 
   allNotesOff(): void {
@@ -61,9 +102,11 @@ export class SynthPreviewController {
   }
 
   async close(): Promise<void> {
+    this.generation++;
     this.allNotesOff();
     this.node?.disconnect();
     this.node = null;
+    for (const listener of this.shapeListeners) listener(null);
     if (this.context && this.context.state !== "closed") {
       await this.context.close();
     }
@@ -80,7 +123,9 @@ export class SynthPreviewController {
     }
 
     if (!this.loading) {
-      this.loading = this.createAudioGraph();
+      const loading = this.createAudioGraph();
+      this.loading = loading;
+      void loading.finally(() => { if (this.loading === loading) this.loading = null; }).catch(() => {});
     }
     await this.loading;
   }
@@ -90,21 +135,37 @@ export class SynthPreviewController {
     if (!AudioContextCtor) {
       throw new Error("Browser audio preview is not available in this browser");
     }
+    const generation = this.generation;
     const context = new AudioContextCtor();
-    await context.audioWorklet.addModule(`${import.meta.env.BASE_URL}synth-preview-worklet.js`);
-    const node = new AudioWorkletNode(context, "hexboard-synth-preview", {
-      numberOfInputs: 0,
-      numberOfOutputs: 1,
-      outputChannelCount: [2]
-    });
-    node.connect(context.destination);
     this.context = context;
-    this.node = node;
-    this.node.port.postMessage({ type: "setVolume", volume: this.volume });
-    this.node.port.postMessage({ type: "setMod", value: this.modValue });
-    this.postPatch();
-    if (context.state === "suspended") {
-      await context.resume();
+    try {
+      // Resume during the user's gesture, before module loading yields.
+      const resumed = context.resume();
+      await Promise.all([
+        resumed,
+        context.audioWorklet.addModule(synthPreviewWorkletUrl)
+      ]);
+      if (generation !== this.generation) return;
+      const node = new AudioWorkletNode(context, "hexboard-synth-preview", {
+        numberOfInputs: 0,
+        numberOfOutputs: 1,
+        outputChannelCount: [2]
+      });
+      node.connect(context.destination);
+      node.port.onmessage = (event: MessageEvent) => {
+        const message = event.data;
+        if (message?.type !== "voiceShape") return;
+        const shape = message.active ? { position: message.position, fold: message.fold, duty: message.duty, poly: message.poly } : null;
+        for (const listener of this.shapeListeners) listener(shape);
+      };
+      this.node = node;
+      node.port.postMessage({ type: "setVolume", volume: this.volume });
+      node.port.postMessage({ type: "setMod", value: this.modValue });
+      this.postPatch();
+    } catch (error) {
+      if (context.state !== "closed") await context.close();
+      if (this.context === context) this.context = null;
+      throw error;
     }
   }
 
@@ -131,7 +192,9 @@ export class SynthPreviewController {
       this.node.port.postMessage({
         type: "noteOn",
         note: pending.note,
-        velocity: pending.velocity
+        velocity: pending.velocity,
+        id: pending.id,
+        pitchOffset: pending.pitchOffset
       });
     }
     this.pendingNotes = [];

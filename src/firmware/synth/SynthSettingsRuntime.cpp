@@ -19,6 +19,7 @@ void syncSynthSettingsToRuntime() {
     settings[static_cast<uint8_t>(SettingKey::SynthWavetablePosition)] =
       synthWavetablePosition;
   }
+  syncCompactSamplerSelection();
   loadSelectedSynthWavetable();
   updateCurrentSynthWavetableMenuLabel();
 
@@ -38,6 +39,7 @@ void syncSynthSettingsToRuntime() {
   if (arpeggiatorDivision == 0) {
     arpeggiatorDivision = 1;
   }
+  arpeggiatorNoteLength = constrain(settingValue(SettingKey::ArpeggiatorNoteLength), 1, 100);
   arpeggiatorDirection = settingValue(SettingKey::ArpeggiatorDirection);
   updateArpeggiatorDirection();
   synthBPM = settingValue(SettingKey::SynthBPM);

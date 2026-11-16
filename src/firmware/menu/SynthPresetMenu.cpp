@@ -4,6 +4,7 @@
 #include "MenuAndDisplay.h"
 #include "SynthPresetMenu.h"
 #include "VirtualListMenu.h"
+#include "../app/DiagnosticsTiming.h"
 #include "../storage/SynthPresetStorage.h"
 
 namespace {
@@ -17,134 +18,146 @@ enum class SynthPresetMenuReturn : uint8_t {
   SynthEditor
 };
 
-enum class SynthPresetMenuRowKind : uint8_t {
-  Action,
-  Folder,
-  Preset
+// The open folder is copied into these fixed buffers on entry, so scrolling
+// never touches flash and RAM does not grow with the library.
+constexpr uint8_t SYNTH_PRESET_MENU_MAX_SUBFOLDERS = 24;
+
+struct SynthPresetMenuPreset {
+  uint16_t handle = 0;
+  char name[SYNTH_PRESET_MENU_NAME_LENGTH] = {};
 };
 
-struct SynthPresetMenuRow {
-  SynthPresetMenuRowKind kind = SynthPresetMenuRowKind::Preset;
-  uint16_t index = 0;
-};
-
-constexpr uint16_t SYNTH_PRESET_MENU_MAX_ROWS = 1 + SYNTH_PRESET_MAX_COUNT + SYNTH_PRESET_MAX_COUNT;
 
 SynthPresetMenuMode activeSynthPresetMenuMode = SynthPresetMenuMode::Load;
 SynthPresetMenuReturn activeSynthPresetMenuReturn = SynthPresetMenuReturn::SynthEditor;
-SynthPresetMenuRow synthPresetMenuRows[SYNTH_PRESET_MENU_MAX_ROWS] = {};
-uint16_t synthPresetMenuRowCount = 0;
+SynthPresetMenuPreset synthPresetMenuPresets[SYNTH_PRESET_FOLDER_MAX_PRESETS] = {};
+char synthPresetMenuSubfolders[SYNTH_PRESET_MENU_MAX_SUBFOLDERS][SYNTH_PRESET_FOLDER_LENGTH] = {};
+uint8_t synthPresetMenuPresetCount = 0;
+uint8_t synthPresetMenuSubfolderCount = 0;
+uint16_t synthPresetMenuHiddenCount = 0;
 bool synthPresetMenuRebuildPending = false;
 char synthPresetMenuCurrentFolder[SYNTH_PRESET_FOLDER_LENGTH] = "/";
+// The Favorites view lists favorite presets from every folder.
+bool synthPresetMenuShowingFavorites = false;
+// Bumped on every rebuild, so a highlighted row is told apart across folders.
+uint16_t synthPresetMenuGeneration = 0;
+// The list menu reads these through pointers, so they can change in place.
+char synthPresetMenuTitleText[16] = "Sounds";
+char synthPresetMenuEmptyText[16] = "Blank";
 
-const char* synthPresetMenuTitle() {
-  return activeSynthPresetMenuMode == SynthPresetMenuMode::Save ? "Save Preset" : "Load Preset";
+// Rows: Favorites (Load, root only), action, subfolders, presets, then an
+// optional "more" notice. The Favorites view has only presets.
+enum class SynthPresetMenuRowKind : uint8_t {
+  Favorites,
+  Action,
+  Folder,
+  Preset,
+  Hidden
+};
+
+void updateSynthPresetMenuText() {
+  const bool save = activeSynthPresetMenuMode == SynthPresetMenuMode::Save;
+  snprintf(synthPresetMenuTitleText, sizeof(synthPresetMenuTitleText), "%s",
+           save ? "Save Sound" : (synthPresetMenuShowingFavorites ? "Favorites" : "Sounds"));
+  snprintf(synthPresetMenuEmptyText, sizeof(synthPresetMenuEmptyText), "%s",
+           save ? "No Sounds" : (synthPresetMenuShowingFavorites ? "No Favorites" : "Blank"));
 }
 
-const char* synthPresetMenuEmptyLabel() {
-  return activeSynthPresetMenuMode == SynthPresetMenuMode::Save ? "No Presets" : "Blank";
+bool synthPresetMenuHasFavoritesRow() {
+  return activeSynthPresetMenuMode == SynthPresetMenuMode::Load
+         && !synthPresetMenuShowingFavorites
+         && menuFolderIsRoot(synthPresetMenuCurrentFolder);
 }
 
 uint16_t synthPresetVirtualCount(void*) {
-  return synthPresetMenuRowCount;
+  const uint16_t items = static_cast<uint16_t>(synthPresetMenuPresetCount + (synthPresetMenuHiddenCount > 0 ? 1 : 0));
+  if (synthPresetMenuShowingFavorites) {
+    return items;
+  }
+  return static_cast<uint16_t>((synthPresetMenuHasFavoritesRow() ? 1 : 0) + 1
+                               + synthPresetMenuSubfolderCount + items);
 }
 
-void formatSynthPresetMenuLabel(uint16_t presetIndex, char* output, size_t outputLength) {
-  if (outputLength == 0) {
-    return;
+SynthPresetMenuRowKind synthPresetRowKind(uint16_t index, uint16_t& itemIndex) {
+  itemIndex = 0;
+  if (synthPresetMenuShowingFavorites) {
+    itemIndex = index;
+    return index < synthPresetMenuPresetCount ? SynthPresetMenuRowKind::Preset : SynthPresetMenuRowKind::Hidden;
   }
-  output[0] = '\0';
-  if (presetIndex >= synthPresets.size()) {
-    return;
+  if (synthPresetMenuHasFavoritesRow()) {
+    if (index == 0) {
+      return SynthPresetMenuRowKind::Favorites;
+    }
+    --index;
   }
-
-  const SynthPresetIndexEntry& preset = synthPresets[presetIndex];
-  if (menuFolderEntryBelongsToCurrentFolder(preset.folderPath, synthPresetMenuCurrentFolder)) {
-    snprintf(output, outputLength, "%s", preset.name);
-    return;
+  if (index == 0) {
+    return SynthPresetMenuRowKind::Action;
   }
-
-  char folderLabel[SYNTH_PRESET_MENU_LABEL_LENGTH] = {};
-  synthPresetFolderLabel(preset.folderPath, folderLabel, sizeof(folderLabel));
-  snprintf(output,
-           outputLength,
-           "%s/%s",
-           folderLabel,
-           preset.name);
+  itemIndex = static_cast<uint16_t>(index - 1);
+  if (itemIndex < synthPresetMenuSubfolderCount) {
+    return SynthPresetMenuRowKind::Folder;
+  }
+  itemIndex = static_cast<uint16_t>(itemIndex - synthPresetMenuSubfolderCount);
+  if (itemIndex < synthPresetMenuPresetCount) {
+    return SynthPresetMenuRowKind::Preset;
+  }
+  return SynthPresetMenuRowKind::Hidden;
 }
 
-const SynthPresetIndexEntry* synthPresetForRow(const SynthPresetMenuRow& row) {
-  if (row.index >= synthPresets.size()) {
-    return nullptr;
-  }
-  return &synthPresets[row.index];
-}
-
-bool synthPresetFolderRowPath(const SynthPresetMenuRow& row, char* output, size_t outputLength) {
-  const SynthPresetIndexEntry* preset = synthPresetForRow(row);
-  return preset
-         && menuFolderImmediateChildPath(preset->folderPath, synthPresetMenuCurrentFolder, output, outputLength);
-}
-
-bool synthPresetFolderAlreadyListed(const char* childFolderPath) {
-  char existing[SYNTH_PRESET_FOLDER_LENGTH] = {};
-  for (uint16_t i = 0; i < synthPresetMenuRowCount; ++i) {
-    if (synthPresetMenuRows[i].kind == SynthPresetMenuRowKind::Folder
-        && synthPresetFolderRowPath(synthPresetMenuRows[i], existing, sizeof(existing))
-        && menuFolderEquals(existing, childFolderPath)) {
+bool synthPresetMenuHasSubfolder(const char* folderPath) {
+  for (uint8_t i = 0; i < synthPresetMenuSubfolderCount; ++i) {
+    if (menuFolderEquals(synthPresetMenuSubfolders[i], folderPath)) {
       return true;
     }
   }
   return false;
-}
-
-bool synthPresetRowIsCurrent(const SynthPresetMenuRow& row) {
-  if (activeSynthPresetMenuMode != SynthPresetMenuMode::Load
-      || row.kind != SynthPresetMenuRowKind::Preset) {
-    return false;
-  }
-  uint16_t presetIndex = 0;
-  return currentSynthPresetCatalogIndex(presetIndex) && row.index == presetIndex;
-}
-
-bool findCurrentSynthPresetRow(uint16_t& index) {
-  for (uint16_t i = 0; i < synthPresetMenuRowCount; ++i) {
-    if (synthPresetRowIsCurrent(synthPresetMenuRows[i])) {
-      index = i;
-      return true;
-    }
-  }
-  return false;
-}
-
-void appendSynthPresetMenuRow(SynthPresetMenuRowKind kind, uint16_t index) {
-  if (synthPresetMenuRowCount >= SYNTH_PRESET_MENU_MAX_ROWS) {
-    return;
-  }
-  synthPresetMenuRows[synthPresetMenuRowCount++] = { kind, index };
 }
 
 void rebuildSynthPresetVirtualList() {
-  compactSynthPresets();
-  synthPresetMenuRowCount = 0;
-  appendSynthPresetMenuRow(SynthPresetMenuRowKind::Action, 0);
-
-  char childFolder[SYNTH_PRESET_FOLDER_LENGTH] = {};
-  for (size_t i = 0; i < synthPresets.size(); ++i) {
-    const SynthPresetIndexEntry& preset = synthPresets[i];
-    if (menuFolderImmediateChildPath(preset.folderPath,
-                                     synthPresetMenuCurrentFolder,
-                                     childFolder,
-                                     sizeof(childFolder))
-        && !synthPresetFolderAlreadyListed(childFolder)) {
-      appendSynthPresetMenuRow(SynthPresetMenuRowKind::Folder, static_cast<uint16_t>(i));
+  ++synthPresetMenuGeneration;
+  synthPresetMenuPresetCount = 0;
+  synthPresetMenuSubfolderCount = 0;
+  synthPresetMenuHiddenCount = 0;
+  updateSynthPresetMenuText();
+  auto addPreset = [&](const SynthPresetCatalogEntry& entry) {
+    if (synthPresetMenuPresetCount < SYNTH_PRESET_FOLDER_MAX_PRESETS) {
+      SynthPresetMenuPreset& row = synthPresetMenuPresets[synthPresetMenuPresetCount++];
+      row.handle = entry.handle;
+      snprintf(row.name, sizeof(row.name), "%s", entry.name);
+    } else if (synthPresetMenuHiddenCount < 0xFFFFu) {
+      ++synthPresetMenuHiddenCount;
     }
+    return true;
+  };
+  if (synthPresetMenuShowingFavorites) {
+    auto addFavorite = [&](const SynthPresetCatalogEntry& entry) {
+      return (entry.flags & SYNTH_PRESET_CATALOG_FLAG_FAVORITE) == 0 || addPreset(entry);
+    };
+    visitSynthPresetCatalogWith(addFavorite);
+    return;
   }
-
-  for (size_t i = 0; i < synthPresets.size(); ++i) {
-    if (menuFolderEntryBelongsToCurrentFolder(synthPresets[i].folderPath, synthPresetMenuCurrentFolder)) {
-      appendSynthPresetMenuRow(SynthPresetMenuRowKind::Preset, static_cast<uint16_t>(i));
+  bool subfoldersOverflowed = false;
+  // Subfolders come from the resident folder table; presets from one folder file.
+  auto addSubfolder = [&](const char* folderPath) {
+    char childFolder[SYNTH_PRESET_FOLDER_LENGTH] = {};
+    if (!menuFolderImmediateChildPath(folderPath, synthPresetMenuCurrentFolder, childFolder, sizeof(childFolder))
+        || synthPresetMenuHasSubfolder(childFolder)) {
+      return;
     }
+    if (synthPresetMenuSubfolderCount < SYNTH_PRESET_MENU_MAX_SUBFOLDERS) {
+      snprintf(synthPresetMenuSubfolders[synthPresetMenuSubfolderCount++],
+               SYNTH_PRESET_FOLDER_LENGTH,
+               "%s",
+               childFolder);
+    } else {
+      subfoldersOverflowed = true;
+    }
+  };
+  visitSynthPresetCatalogFolderPathsWith(addSubfolder);
+  visitSynthPresetCatalogFolderWith(synthPresetMenuCurrentFolder, addPreset);
+  if (synthPresetMenuHiddenCount > 0 || subfoldersOverflowed) {
+    sendToLog("Synth preset folder " + std::string(synthPresetMenuCurrentFolder)
+              + " has more entries than the browser shows.");
   }
 }
 
@@ -153,52 +166,76 @@ bool synthPresetVirtualLabel(void*, uint16_t index, char* output, size_t outputL
     return false;
   }
   output[0] = '\0';
-  if (index >= synthPresetMenuRowCount) {
-    return false;
-  }
-  const SynthPresetMenuRow& row = synthPresetMenuRows[index];
-  switch (row.kind) {
+  uint16_t itemIndex = 0;
+  switch (synthPresetRowKind(index, itemIndex)) {
+    case SynthPresetMenuRowKind::Favorites:
+      snprintf(output, outputLength, "Favorites");
+      return true;
     case SynthPresetMenuRowKind::Action:
       snprintf(output,
                outputLength,
                "%s",
-               activeSynthPresetMenuMode == SynthPresetMenuMode::Save ? "New Preset" : "Blank");
+               activeSynthPresetMenuMode == SynthPresetMenuMode::Save ? "New Sound" : "Blank");
       return true;
     case SynthPresetMenuRowKind::Folder:
-      {
-        char folderPath[SYNTH_PRESET_FOLDER_LENGTH] = {};
-        if (!synthPresetFolderRowPath(row, folderPath, sizeof(folderPath))) {
-          return false;
-        }
-        synthPresetFolderLabel(folderPath, output, outputLength);
-        return output[0] != '\0';
-      }
-    case SynthPresetMenuRowKind::Preset:
-      formatSynthPresetMenuLabel(row.index, output, outputLength);
+      synthPresetFolderLabel(synthPresetMenuSubfolders[itemIndex], output, outputLength);
       return output[0] != '\0';
+    case SynthPresetMenuRowKind::Preset:
+      snprintf(output, outputLength, "%s", synthPresetMenuPresets[itemIndex].name);
+      return output[0] != '\0';
+    case SynthPresetMenuRowKind::Hidden:
+      snprintf(output, outputLength, "+%u more in Sync", static_cast<unsigned>(synthPresetMenuHiddenCount));
+      return true;
   }
   return false;
 }
 
 VirtualListMenuRowType synthPresetVirtualRowType(void*, uint16_t index) {
-  if (index >= synthPresetMenuRowCount) {
-    return VirtualListMenuRowType::Button;
+  uint16_t itemIndex = 0;
+  switch (synthPresetRowKind(index, itemIndex)) {
+    case SynthPresetMenuRowKind::Favorites:
+    case SynthPresetMenuRowKind::Folder:
+      return VirtualListMenuRowType::Link;
+    case SynthPresetMenuRowKind::Hidden:
+      return VirtualListMenuRowType::Label;
+    default:
+      return VirtualListMenuRowType::Button;
   }
-  return synthPresetMenuRows[index].kind == SynthPresetMenuRowKind::Folder
-           ? VirtualListMenuRowType::Link
-           : VirtualListMenuRowType::Button;
+}
+
+// Set while a sound auditioned from the list is playing.
+bool auditionStartedFromMenu = false;
+uint16_t auditionedPresetHandle = 0;
+
+bool synthPresetVirtualIsAuditioning(void*, uint16_t index) {
+  uint16_t itemIndex = 0;
+  return auditionStartedFromMenu
+         && activeSynthPresetMenuMode == SynthPresetMenuMode::Load
+         && synthPresetRowKind(index, itemIndex) == SynthPresetMenuRowKind::Preset
+         && synthPresetMenuPresets[itemIndex].handle == auditionedPresetHandle;
 }
 
 bool synthPresetVirtualIsCurrent(void*, uint16_t index) {
-  return index < synthPresetMenuRowCount
-         && synthPresetRowIsCurrent(synthPresetMenuRows[index]);
+  uint16_t itemIndex = 0;
+  uint16_t currentHandle = 0;
+  return activeSynthPresetMenuMode == SynthPresetMenuMode::Load
+         && synthPresetRowKind(index, itemIndex) == SynthPresetMenuRowKind::Preset
+         && currentSynthPresetCatalogIndex(currentHandle)
+         && synthPresetMenuPresets[itemIndex].handle == currentHandle;
 }
 
 bool synthPresetVirtualInitialSelection(void*, uint16_t* index) {
   if (!index) {
     return false;
   }
-  return findCurrentSynthPresetRow(*index);
+  const uint16_t count = synthPresetVirtualCount(nullptr);
+  for (uint16_t i = 0; i < count; ++i) {
+    if (synthPresetVirtualIsCurrent(nullptr, i)) {
+      *index = i;
+      return true;
+    }
+  }
+  return false;
 }
 
 void returnFromSynthPresetMenu() {
@@ -211,38 +248,49 @@ void returnFromSynthPresetMenu() {
 }
 
 void synthPresetVirtualSelect(void*, uint16_t index) {
-  if (index >= synthPresetMenuRowCount) {
-    returnFromSynthPresetMenu();
+  uint16_t itemIndex = 0;
+  const SynthPresetMenuRowKind kind = synthPresetRowKind(index, itemIndex);
+  if (kind == SynthPresetMenuRowKind::Hidden) {
     return;
   }
-
-  const SynthPresetMenuRow& row = synthPresetMenuRows[index];
-  if (row.kind == SynthPresetMenuRowKind::Folder) {
-    char childFolder[SYNTH_PRESET_FOLDER_LENGTH] = {};
-    if (synthPresetFolderRowPath(row, childFolder, sizeof(childFolder))) {
-      snprintf(synthPresetMenuCurrentFolder, sizeof(synthPresetMenuCurrentFolder), "%s", childFolder);
-      rebuildSynthPresetVirtualList();
-      resetVirtualListMenuSelection();
-    }
+  if (kind == SynthPresetMenuRowKind::Favorites) {
+    synthPresetMenuShowingFavorites = true;
+    rebuildSynthPresetVirtualList();
+    resetVirtualListMenuSelection();
+    return;
+  }
+  if (kind == SynthPresetMenuRowKind::Folder) {
+    snprintf(synthPresetMenuCurrentFolder,
+             sizeof(synthPresetMenuCurrentFolder),
+             "%s",
+             synthPresetMenuSubfolders[itemIndex]);
+    rebuildSynthPresetVirtualList();
+    resetVirtualListMenuSelection();
     return;
   }
 
   if (activeSynthPresetMenuMode == SynthPresetMenuMode::Save) {
-    if (row.kind == SynthPresetMenuRowKind::Action) {
+    if (kind == SynthPresetMenuRowKind::Action) {
       saveSynthPresetAsNew(synthPresetMenuCurrentFolder);
     } else {
-      saveSynthPresetToSlot(row.index);
+      saveSynthPresetToSlot(synthPresetMenuPresets[itemIndex].handle);
     }
     requestSynthPresetMenuRebuild();
-  } else if (row.kind == SynthPresetMenuRowKind::Action) {
+  } else if (kind == SynthPresetMenuRowKind::Action) {
     loadBlankSynthPreset();
   } else {
-    loadSynthPresetFromSlot(row.index);
+    loadSynthPresetFromSlot(synthPresetMenuPresets[itemIndex].handle);
   }
   returnFromSynthPresetMenu();
 }
 
 bool synthPresetVirtualBack(void*) {
+  if (synthPresetMenuShowingFavorites) {
+    synthPresetMenuShowingFavorites = false;
+    rebuildSynthPresetVirtualList();
+    resetVirtualListMenuSelection();
+    return true;
+  }
   if (menuFolderIsRoot(synthPresetMenuCurrentFolder)) {
     return false;
   }
@@ -261,22 +309,92 @@ void synthPresetVirtualClose(void*) {
 void openSynthPresetMenu(SynthPresetMenuMode mode, SynthPresetMenuReturn destination) {
   activeSynthPresetMenuMode = mode;
   activeSynthPresetMenuReturn = destination;
+  // After a firmware-only update, build the index on first use. This writes
+  // flash once and then makes every folder load a single sequential read.
+  ensureSynthPresetCatalogIndexed(false);
   snprintf(synthPresetMenuCurrentFolder, sizeof(synthPresetMenuCurrentFolder), "%s", SYNTH_PRESET_ROOT_FOLDER);
+  synthPresetMenuShowingFavorites = false;
   rebuildSynthPresetVirtualList();
   VirtualListMenuProvider provider;
-  provider.title = synthPresetMenuTitle();
+  provider.title = synthPresetMenuTitleText;
   provider.getCount = synthPresetVirtualCount;
   provider.getLabel = synthPresetVirtualLabel;
   provider.getRowType = synthPresetVirtualRowType;
   provider.isCurrent = synthPresetVirtualIsCurrent;
+  provider.isAuditioning = synthPresetVirtualIsAuditioning;
+  provider.auditionIcon = virtualListHeadphonesBits;
   provider.getInitialSelection = synthPresetVirtualInitialSelection;
   provider.select = synthPresetVirtualSelect;
   provider.back = synthPresetVirtualBack;
   provider.close = synthPresetVirtualClose;
-  provider.emptyLabel = synthPresetMenuEmptyLabel();
+  provider.emptyLabel = synthPresetMenuEmptyText;
   openVirtualListMenu(provider);
 }
+// Resting on a sound in the Sounds list auditions it: it plays, but is not
+// chosen or saved. Leaving the list without choosing returns to the sound
+// that was playing; choosing a sound loads it as usual.
+constexpr uint32_t SYNTH_PRESET_AUDITION_DELAY_MS = 200;
+constexpr uint32_t SYNTH_PRESET_AUDITION_NO_ROW = 0xFFFFFFFFu;
+uint32_t auditionWatchedRow = SYNTH_PRESET_AUDITION_NO_ROW;
+uint32_t auditionRowSinceMs = 0;
+bool auditionRowMoved = false;
+bool auditionRowDone = false;
+
+void finishSynthPresetMenuAudition() {
+  if (auditionStartedFromMenu) {
+    auditionStartedFromMenu = false;
+    endSynthAudition();
+    refreshVirtualListLauncherLabels();
+    redrawVirtualListMenu();
+  }
+}
+
+void auditionHighlightedSynthPreset(uint16_t row) {
+  uint16_t itemIndex = 0;
+  if (row == VIRTUAL_LIST_MENU_NO_ROW || synthPresetRowKind(row, itemIndex) != SynthPresetMenuRowKind::Preset) {
+    return;
+  }
+  // The diamond marks the chosen sound; resting on it returns to it.
+  if (synthPresetVirtualIsCurrent(nullptr, row)) {
+    finishSynthPresetMenuAudition();
+    return;
+  }
+  SynthPresetSlot preset = {};
+  if (!readSynthPresetFromCatalog(synthPresetMenuPresets[itemIndex].handle, preset)) {
+    return;
+  }
+  auditionSynthPreset(preset);
+  auditionStartedFromMenu = true;
+  auditionedPresetHandle = synthPresetMenuPresets[itemIndex].handle;
+  redrawVirtualListMenu();
+}
 }  // namespace
+
+void serviceSynthPresetMenuAudition() {
+  uint16_t row = VIRTUAL_LIST_MENU_NO_ROW;
+  if (activeSynthPresetMenuMode != SynthPresetMenuMode::Load
+      || !virtualListMenuHighlightedRow(synthPresetVirtualCount, row)) {
+    auditionWatchedRow = SYNTH_PRESET_AUDITION_NO_ROW;
+    auditionRowMoved = false;
+    finishSynthPresetMenuAudition();
+    return;
+  }
+  const uint32_t watched = (uint32_t(synthPresetMenuGeneration) << 16) | row;
+  const uint32_t now = millis();
+  if (watched != auditionWatchedRow) {
+    // The row highlighted on opening is the chosen sound; wait for a move.
+    auditionRowMoved = auditionWatchedRow != SYNTH_PRESET_AUDITION_NO_ROW;
+    auditionWatchedRow = watched;
+    auditionRowSinceMs = now;
+    auditionRowDone = false;
+    return;
+  }
+  if (!auditionRowMoved || auditionRowDone || now - auditionRowSinceMs < SYNTH_PRESET_AUDITION_DELAY_MS) {
+    return;
+  }
+  auditionRowDone = true;
+  auditionHighlightedSynthPreset(row);
+}
 
 int decodeSynthPresetFolderHex(char value) {
   if (value >= '0' && value <= '9') {

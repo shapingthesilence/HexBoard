@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { deterministicObjectId, objectIdToHex } from "../catalogs/index.ts";
-import { filterLibraryPresets, mergePresetBatch, presetsFromUnknown } from "./SynthPresetLibrary.tsx";
+import { favoritesFilter, loadComputerWavetables, wheelAmountByteToPercent, wheelAmountPercentToByte, filterLibraryPresets, mergePresetBatch, presetsFromUnknown } from "./SynthPresetLibrary.tsx";
 
 function presetRecord(id: string, name: string, folderPath: string) {
   return {
@@ -59,5 +59,46 @@ describe("synth preset library filtering", () => {
       "Soft Voice"
     ]);
     expect(filterLibraryPresets(presets, "Pads", "lead")).toEqual([]);
+  });
+
+  it("shows starred sounds from every folder under Favorites", () => {
+    const starred = presets.map((preset) => ({ ...preset, favorite: preset.name !== "Soft Voice" }));
+    expect(filterLibraryPresets(starred, favoritesFilter, "").map((preset) => preset.name)).toEqual(["Warm Pad", "Bright Lead"]);
+    expect(filterLibraryPresets(starred, favoritesFilter, "bright").map((preset) => preset.name)).toEqual(["Bright Lead"]);
+  });
+});
+
+describe("signed wheel amount", () => {
+  it("round trips every slider percentage and preserves legacy positive depths", () => {
+    for (let percent = -100; percent <= 100; ++percent) {
+      expect(wheelAmountByteToPercent(wheelAmountPercentToByte(percent))).toBe(percent);
+    }
+    expect(wheelAmountByteToPercent(127)).toBe(100);
+    expect(wheelAmountByteToPercent(0)).toBe(0);
+    expect(wheelAmountByteToPercent(254)).toBe(-100);
+    const [preset] = presetsFromUnknown({ ...presetRecord("negative", "Negative", ""), values: { SynthModAmount: 254 } });
+    expect(preset.values.SynthModAmount).toBe(254);
+  });
+});
+
+describe("factory wavetable library upgrade", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("adds missing device defaults once and preserves existing same-name samples", () => {
+    const stored = new Map<string, string>([
+      ["hexboard.synthWavetableFactorySeed.v1", "1"],
+      ["hexboard.synthWavetableComputerLibrary.v1", JSON.stringify([{ name: "NotPiano", folderPath: "/Custom", sampleCrc: 123 }])]
+    ]);
+    vi.stubGlobal("window", { localStorage: {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => stored.set(key, value),
+      removeItem: (key: string) => stored.delete(key)
+    } });
+    const upgraded = loadComputerWavetables();
+    expect(upgraded).toHaveLength(7);
+    expect(upgraded.find(record => record.name === "NotPiano")?.sampleCrc).toBe(123);
+    expect(stored.get("hexboard.synthWavetableFactorySeed.v1")).toBe("2");
+    // Subsequent loads respect the user's library, including intentional removals.
+    expect(loadComputerWavetables()).toHaveLength(1);
   });
 });

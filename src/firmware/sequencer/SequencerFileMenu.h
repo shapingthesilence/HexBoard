@@ -1,10 +1,11 @@
 #pragma once
 
 #include "../FirmwareModule.h"
+#include "../hardware/LedColor.h"
 
 namespace sequencer {
 
-using FileMenuSetLedPixelFn = void (*)(byte buttonIndex, uint32_t color);
+using FileMenuSetLedPixelFn = void (*)(byte buttonIndex, LedColor color);
 
 void setupSequenceFileMenu(GEMPage& sequencerMenuPage);
 bool fileWorkflowActive();

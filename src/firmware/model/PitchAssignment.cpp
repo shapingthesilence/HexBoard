@@ -89,14 +89,17 @@ void assignPitches() {
           h[i].frequency = 0.0;
         } else {
           h[i].note = ((N >= 127) ? 127 : round(N));
-          h[i].bend = (ldexp(N - h[i].note, 13) / MPEpitchBendSemis);
+          // Cache the same rounded bend formerly recalculated on every press.
+          h[i].bend = pitchBendForMidiPitch(N, h[i].note);
           h[i].frequency = targetFrequency;
         }
       }
       h[i].jiRetune = 0;
       h[i].jiRetuneCents = 0.0f;
-      h[i].activePitchBend = 0;
-      h[i].activeMidiNote = UNUSED_NOTE;
+      if (h[i].MIDIch == 0) {
+        h[i].activePitchBend = 0;
+        h[i].activeMidiNote = UNUSED_NOTE;
+      }
       h[i].jiFrequencyMultiplier = 1.0f;
       if (h[i].note < 128) {
         midiNoteToHexIndices[h[i].note].push_back(i);

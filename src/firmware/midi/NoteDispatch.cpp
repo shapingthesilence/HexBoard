@@ -113,7 +113,7 @@ void RAM_FUNC(startMappedMidiTone)(MappedButtonActiveTone& active,
   }
 
   if (tuned && MPEpitchBendsNeeded != 1) {
-    withMIDI([&](auto& M) { M.sendPitchBend(pitchBend, midiChannel); });
+    withMIDI([&](auto& M) { M.sendPerNotePitchBend(pitchBend, midiChannel); });
     if (extraMPE) {
       withMIDI([&](auto& M) {
         M.sendAfterTouch(velWheel.curValue, midiChannel);
@@ -245,12 +245,25 @@ void RAM_FUNC(releaseAllMappedButtonActions)() {
   memset(mappedButtonMidiNoteDepth, 0, sizeof(mappedButtonMidiNoteDepth));
 }
 
+void releaseActiveMidiNotesForRoutingReset() {
+  releaseAllMappedButtonActions();
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    tryMIDInoteOff(i);
+  }
+  pressedKeyIDs.clear();
+}
+
 void RAM_FUNC(tryMIDInoteOn)(byte x) {
   // This gets called on any non-command hex that is not scale-locked.
   if (h[x].note >= 128) {
     return;
   }
   if (!(h[x].MIDIch)) {
+    // Physical-note tuning is also needed by the synth when MIDI has no free
+    // channel. Preparing it once keeps allocation retries from changing pitch.
+    if (pressedKeyIDs.add(x)) {
+      justIntonationRetune(x);
+    }
     if (MPEpitchBendsNeeded == 1) {
       if (standardMidiMicrotonalActive) {
         h[x].MIDIch = h[x].mappedMidiChannel ? h[x].mappedMidiChannel : defaultMidiChannel;
@@ -275,14 +288,12 @@ void RAM_FUNC(tryMIDInoteOn)(byte x) {
     }
 
     if (h[x].MIDIch) {
-      pressedKeyIDs.add(x);  // Dynamic JI pressed key tracking
-      justIntonationRetune(x);
       prepareActiveMidiPitch(x);
       int16_t pitchBendValue = 0;
       // First, send the pitch bend (if applicable)
       if (MPEpitchBendsNeeded != 1) {
         pitchBendValue = h[x].activePitchBend;
-        withMIDI([&](auto& M) { M.sendPitchBend(pitchBendValue, h[x].MIDIch); });  // ch 1-16
+        withMIDI([&](auto& M) { M.sendPerNotePitchBend(pitchBendValue, h[x].MIDIch); });  // ch 1-16
         if (extraMPE) { // if the extra MPE messages are enabled
           withMIDI([&](auto& M) {
             M.sendAfterTouch(velWheel.curValue, h[x].MIDIch);  // Channel Pressure
@@ -308,25 +319,30 @@ void RAM_FUNC(tryMIDInoteOn)(byte x) {
 void RAM_FUNC(tryMIDInoteOff)(byte x) {
   // this gets called on any non-command hex
   // that is not scale-locked.
+  // An up edge ends its role as a JI anchor even if external note-off must
+  // retry, or this note never obtained a MIDI channel.
+  pressedKeyIDs.remove(x);
   if (h[x].MIDIch) {  // but just in case, check
     byte noteOff = (h[x].activeMidiNote < 128) ? h[x].activeMidiNote : h[x].note;
-    withMIDI([&](auto& M) { M.sendNoteOff(noteOff, velWheel.curValue, h[x].MIDIch); });
-    pressedKeyIDs.remove(x);  // Dynamic JI pressed key tracking
-    h[x].jiRetune = 0;
-    h[x].jiRetuneCents = 0.0f;
-    h[x].jiFrequencyMultiplier = 1.0f;
+    byte channel = h[x].MIDIch;
+    bool pooledMPEChannel = mpeChannelQueueActive
+        && channel >= mpeLowestChannel && channel <= mpeHighestChannel;
+    if (pooledMPEChannel
+          ? !finishMPEChannelRelease(channel, noteOff, h[x].timePressed)
+          : !sendNoteOffToConfiguredMidiOutputs(noteOff, 0, channel)) {
+      return;
+    }
     h[x].activeMidiNote = UNUSED_NOTE;
     h[x].activePitchBend = 0;
     sendToLog(
-      "sent note off: " + std::to_string(noteOff) + " vel " + std::to_string(velWheel.curValue) + " ch " + std::to_string(h[x].MIDIch));
-    if (mpeChannelQueueActive && h[x].MIDIch >= mpeLowestChannel && h[x].MIDIch <= mpeHighestChannel) {
+      "sent note off: " + std::to_string(noteOff) + " vel 0 ch " + std::to_string(channel));
+    if (pooledMPEChannel) {
       if (extraMPE) { //if the extra MPE messages are enabled
         withMIDI([&](auto& M) {
-          M.sendAfterTouch(0, h[x].MIDIch);                 // Channel Pressure
-          M.sendControlChange(74, CC74value, h[x].MIDIch);  // CC74 (Timbre)
+          M.sendAfterTouch(0, channel);                 // Channel Pressure
+          M.sendControlChange(74, CC74value, channel);  // CC74 (Timbre)
         });
       }
-      releaseMPEChannel(h[x].MIDIch);
     }
     noteOverlayReleaseGraceUntil = runTime + DISPLAYED_NOTES_RELEASE_GRACE_MICROS;
     h[x].MIDIch = 0;
@@ -334,4 +350,7 @@ void RAM_FUNC(tryMIDInoteOff)(byte x) {
       schedulePlayedNotesOverlayUpdate(false);
     }
   }
+  h[x].jiRetune = 0;
+  h[x].jiRetuneCents = 0.0f;
+  h[x].jiFrequencyMultiplier = 1.0f;
 }

@@ -31,7 +31,7 @@ describe("tuning bundle batch files", () => {
       tuningBundles: [first, second]
     });
 
-    expect(bundles.map((bundle) => bundle.tuning.name)).toEqual(["19 EDO Wicki", "Second Tuning"]);
+    expect(bundles.map((bundle) => bundle.tuning.name)).toEqual(["12 EDO Wicki-Hayden", "Second Tuning"]);
   });
 });
 
@@ -61,6 +61,14 @@ describe("HexBoard rescue geometry", () => {
 });
 
 describe("bundle item ordering", () => {
+  it("removes the legacy None scale and preserves its all-notes selection", () => {
+    const bundle=createDefaultTuningBundle();
+    const none={...bundle.scales[0],objectIdHex:"legacy-none",name:"None"};
+    const normalized=withProtectedAllNotesScale({...bundle,scales:[none,...bundle.scales],activeScaleIdHex:none.objectIdHex});
+    expect(normalized.scales.map(scale=>scale.name)).toEqual(["All Notes"]);
+    expect(normalized.activeScaleIdHex).toBe(normalized.scales[0].objectIdHex);
+    expect(withProtectedAllNotesScale({...bundle,scales:[none]}).scales[0].name).toBe("All Notes");
+  });
   it("moves a dragged item to the target position without mutating the source", () => {
     const items = [
       { objectIdHex: "a", name: "First" },

@@ -407,9 +407,9 @@ bool loadSynthWavetableFromCatalog(const char* name) {
     sendToLog("Unsupported wavetable sample length for " + std::string(wavetable.name));
     return false;
   }
-  size_t bytesRead = f.read(&activeSynthWaveTable[0][0], SYNTH_WAVETABLE_SAMPLE_BYTES);
+  size_t bytesRead = f.read(&synthSampleWorkspace.wavetable.base[0][0], SYNTH_WAVETABLE_SAMPLE_BYTES);
   if (bytesRead == SYNTH_WAVETABLE_SAMPLE_BYTES && sampleLength == SYNTH_WAVETABLE_MIP_SAMPLE_BYTES) {
-    size_t extraBytesRead = f.read(activeSynthWavetableMipExtraSamples, SYNTH_WAVETABLE_MIP_EXTRA_SAMPLE_BYTES);
+    size_t extraBytesRead = f.read(synthSampleWorkspace.wavetable.mips, SYNTH_WAVETABLE_MIP_EXTRA_SAMPLE_BYTES);
     if (extraBytesRead != SYNTH_WAVETABLE_MIP_EXTRA_SAMPLE_BYTES) {
       f.close();
       reportStorageHealthIssue(wavetable.samplePath, "short mip data");

@@ -1,5 +1,6 @@
 # Delegated Control Developer Reference
 
+
 Delegated control lets an external host treat the HexBoard as a raw button-and-LED surface. In this mode, the firmware sends button press/release events as MIDI note messages and accepts SysEx LED color updates from the host.
 
 The mode is intentionally external-only:
@@ -13,33 +14,32 @@ The mode is intentionally external-only:
 
 Primary implementation points:
 
-- `delegatedControl`, `delegatedColors`, delegated note-map state, and `SYSEX_*` constants live in `src/firmware/hardware/GridState.cpp`.
+- `DelegatedControlState` and `SYSEX_*` constants are declared in
+  `src/firmware/hardware/GridState.h`; `GridState.cpp` owns
+  `delegatedControlState` and note-map initialization.
 - `processIncomingSysEx()`, `delegatedButtonEvent()`, `processDelegatedNoteMapSysEx()`, and `processLedSysEx()` live in `src/firmware/midi/DelegatedControl.cpp`.
 - preset-sync message dispatch lives in `src/firmware/storage/PresetSync.cpp`, with protocol/object helpers in the neighboring `PresetSync*.cpp` files.
-- `processIncomingMIDIDelegated()` lives in `src/firmware/midi/MidiInput.cpp`.
+- `processIncomingMIDI()` lives in `src/firmware/midi/MidiInput.cpp`.
 - `readHexes()` and `updateWheels()` live in `src/firmware/hardware/GridScanRotary.cpp`.
 - delegated encoder event handling and the 5-second force-exit path live in `src/firmware/hardware/GridScanRotary.cpp`.
 - delegated OLED drawing lives in `src/firmware/menu/MenuAndDisplay.cpp`.
 - `lightUpLEDs()` lives in `src/firmware/hardware/LedRender.cpp`.
 - `animateLEDs()` lives in `src/firmware/hardware/LedAnimations.cpp`.
 - `arpeggiate()` lives in `src/firmware/synth/SynthVoiceAllocation.cpp`.
-- `hexboardLoop1()` lives in `src/firmware/app/Runtime.cpp` and contains the delegated-mode core-1 MIDI polling gate.
-
-`HexBoard.ino` is the root Arduino sketch used by the `Makefile`; firmware implementation lives under `src/firmware/`. Generated files under `build/` should not be edited as source.
+- `hexboardLoop()` lives in `src/firmware/app/Runtime.cpp` and owns MIDI polling in both normal and delegated modes.
 
 ## Runtime Behavior
 
-When `delegatedControl` is `false`, the firmware behaves normally.
+When `delegatedControlState.active` is `false`, the firmware behaves normally.
 
-When `delegatedControl` is `true`:
+When `delegatedControlState.active` is `true`:
 
-- `readHexes()` sends raw button press/release events instead of command buttons, MIDI notes, or synth notes.
-- `lightUpLEDs()` displays `delegatedColors[]` directly instead of computed palette, wheel, scale, or animation colors, except while the local Advanced-menu `LED Test` selector is actively previewing a solid diagnostic color.
+- `readHexes()` sends physical button press/release events instead of command buttons, normal MIDI notes, or synth notes. Presses are immediate; releases require 3 ms of continuously unpressed matrix readings to reject switch bounce. This also applies outside delegated mode.
+- `lightUpLEDs()` displays `delegatedControlState.ledHsv[]` directly instead of computed palette, wheel, scale, or animation colors, except while the local Advanced-menu `LED Test` selector is actively previewing a solid diagnostic color.
 - `arpeggiate()` returns early, so the mono/arpeggiator held-note sequencer is not advanced while a host owns the surface.
 - `updateWheels()` returns early.
 - `animateLEDs()` returns early.
-- `processIncomingMIDI()` returns early on core 0.
-- `loop1()` calls `processIncomingMIDIDelegated()` so incoming delegated SysEx can be handled on core 1.
+- `processIncomingMIDI()` reads and dispatches delegated messages on core 0.
 - the OLED shows `Delegated Control Mode`, the optional host application name,
   and a bottom prompt explaining the encoder hold-to-exit gesture while awake.
 - the normal menu is disabled; encoder turns and button presses are forwarded
@@ -62,7 +62,7 @@ F0 7D <command> <payload...> F7
 
 The preset-sync protocol is intentionally separate and uses the family form
 `F0 7D 10 <protocol...> F7`; see `docs/preset-sync-sysex.md`.
-Delegated-control command bytes `0x01` through `0x06` remain live-surface
+Delegated-control command bytes `0x01` through `0x0B` remain live-surface
 commands, not preset-sync messages.
 
 The command byte is one of:
@@ -75,6 +75,70 @@ The command byte is one of:
 | `0x04` | `SYSEX_DELEGATED_NOTE_MAP` | Host to device | Assign delegated MIDI channel/note output for one or more visible keys |
 | `0x05` | `SYSEX_DELEGATED_NOTE_MAP_RESET` | Host to device | Restore delegated key output to the default button-index encoding |
 | `0x06` | `SYSEX_DELEGATED_ENCODER_EVENT` | Device to host | Report encoder navigation events |
+| `0x07` | `SYSEX_DELEGATED_SESSION_ENTER` | Host to device | Request an acknowledged session |
+| `0x08` | Retired | — | Ignored; no heartbeat is used |
+| `0x09` | `SYSEX_DELEGATED_SESSION_STATUS` | Device to host | Report active, busy, or ended session |
+| `0x0A` | `SYSEX_DELEGATED_SESSION_EXIT` | Host to device | End only the matching session |
+| `0x0B` | `SYSEX_DELEGATED_DISPLAY_ROTATION` | Host to device | Set transient OLED orientation for a matching session |
+
+## Acknowledged Sessions and Manual Recovery
+
+Learn uses protocol version `2` and a nonzero 28-bit token, encoded as four
+7-bit bytes, most significant first (`t3 t2 t1 t0`). Frames:
+
+```text
+F0 7D 07 02 t3 t2 t1 t0 <optional printable app name> F7
+F0 7D 09 02 t3 t2 t1 t0 <status> F7
+F0 7D 0A t3 t2 t1 t0 F7
+```
+
+Status `1` acknowledges an active session, `0` reports its end, and `2` reports
+busy. Fresh entry is rejected while any visible key is held or another host
+owns the surface, including a legacy host. Repeating entry with the active
+token is idempotent: notes and LEDs are preserved. Fresh entry stops existing
+MIDI/synth output and resets the raw button map before ACK.
+
+Sessions have no heartbeat or automatic expiry. Stop, scoped exit, legacy
+exit, and a five-second encoder hold restore normal control and report status
+`0` for the ended token. If a browser disappears without delivering exit,
+the user holds the encoder to recover, then starts another session.
+
+Scoped exit requires exactly four matching token bytes. Unknown versions,
+zero entry tokens, malformed requests, and mismatched exit tokens have no
+effect. An old token's delayed exit cannot end a newer session. Tokens live
+only in RAM; sessions do not write settings or flash.
+
+Hosts wait for matching status `1` before interpreting keys or driving LEDs.
+Learn allows 2.5 seconds for this initial acknowledgement, then sends scoped
+exit and reports the failed start. After acknowledgement it sends no periodic
+session messages. It sends exit on Stop, view change, hidden tab, page exit,
+connection failure, or failed writes. Browser unload delivery is best effort;
+encoder hold is the recovery path.
+
+Version `1` (the retired heartbeat protocol) is not accepted. A mismatched
+app/firmware pair cannot start a session; update both together. Legacy `0x01`
+entry remains supported without a timeout and retains legacy note-map behavior.
+
+Core 0 owns all MIDI polling, parsing, note output, entry, and exit. The audio
+core never reads MIDI streams. Each bounded drain stops when its mode changes;
+entry and exit reset partial parser state without reopening USB or serial
+endpoints. Encoder exit therefore does not transfer a live parser between cores.
+
+## Temporary Display Orientation
+
+After session acknowledgement, a host can send:
+
+```text
+F0 7D 0B t3 t2 t1 t0 <device-rotation> F7
+```
+
+The payload must contain exactly four matching token bytes and a rotation
+`0..3`, using the same device-rotation convention as layout objects. Firmware
+applies its hardware display offset on core 0 when redrawing the delegated
+screen. Wrong tokens and invalid rotations are ignored. This command does not
+write settings. Entry clears the override; exit restores
+the saved display orientation, including while the OLED is asleep. Firmware
+without `0x0B` support ignores the command and retains the saved orientation.
 
 ## Entering And Exiting
 
@@ -96,9 +160,10 @@ Exit delegated mode:
 F0 7D 02 F7
 ```
 
-Entering delegated mode clears `delegatedColors[]` to black, clears delegated
-active-note tracking, wakes the OLED, and calls `setupMIDI()` to reset MIDI
-parser state. It does not reset the delegated note map. If the enter command is
+Entering delegated mode clears `delegatedControlState.ledHsv[]` to black, clears delegated
+active-note tracking, wakes the OLED, and resets the MIDI parsers without
+reinitializing USB or serial endpoints. `setupMIDI()` is boot-only. Legacy entry
+does not reset the delegated note map. If the enter command is
 received while delegated mode is already active, active delegated notes are
 released first and the delegated control surface state is reset without clearing
 the note map.
@@ -282,12 +347,8 @@ Malformed trailing bytes are ignored because `processLedSysEx()` only processes 
 
 ## Development Notes
 
-Keep delegated control separate from user settings unless there is a clear product reason to persist it. If a future change persists delegated mode, update all of these places deliberately:
-
-- `SettingKey`
-- `factoryDefaults`
-- `syncSettingsToRuntime()`
-- menu callback wiring, if any
-- settings-version compatibility behavior
+Delegated mode is transient host state. Keep it separate from profile settings
+and preset-sync transfers. See the [developer guide](developer-guide.md) for
+cross-core ownership and [AGENTS.md](../AGENTS.md) for engineering constraints.
 
 Avoid adding heavy work to delegated-mode button or LED paths. The value of this mode is low-latency host control, and large logs, heap allocation, or blocking operations will make external LED animation and raw input feel sluggish.

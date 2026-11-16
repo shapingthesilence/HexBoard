@@ -161,48 +161,6 @@ uint8_t presetSyncChunkChecksum(const uint8_t* data, size_t length) {
   return sum;
 }
 
-void presetSyncPack8To7(const uint8_t* raw, size_t rawLength, std::vector<uint8_t>& packed) {
-  for (size_t offset = 0; offset < rawLength; offset += 7) {
-    size_t count = std::min<size_t>(7, rawLength - offset);
-    uint8_t prefix = 0;
-    size_t prefixIndex = packed.size();
-    packed.push_back(0);
-    for (size_t i = 0; i < count; ++i) {
-      uint8_t value = raw[offset + i];
-      if (value & 0x80) {
-        prefix |= (1u << i);
-      }
-      packed.push_back(value & 0x7F);
-    }
-    packed[prefixIndex] = prefix;
-  }
-}
-
-bool presetSyncUnpack8To7(const uint8_t* packed, size_t packedLength, size_t rawLength, std::vector<uint8_t>& raw) {
-  raw.clear();
-  raw.reserve(rawLength);
-  size_t offset = 0;
-  while (offset < packedLength && raw.size() < rawLength) {
-    uint8_t prefix = packed[offset++];
-    if (prefix > 0x7F) {
-      return false;
-    }
-    size_t remainingRaw = rawLength - raw.size();
-    size_t count = std::min<size_t>(7, remainingRaw);
-    if (offset + count > packedLength) {
-      return false;
-    }
-    for (size_t i = 0; i < count; ++i) {
-      uint8_t low = packed[offset++];
-      if (low > 0x7F) {
-        return false;
-      }
-      raw.push_back(low | (((prefix >> i) & 0x01) << 7));
-    }
-  }
-  return raw.size() == rawLength;
-}
-
 void presetSyncAppendTlv(std::vector<uint8_t>& body, uint8_t tag, const uint8_t* value, uint16_t length) {
   body.push_back(tag);
   body.push_back(length & 0xFF);

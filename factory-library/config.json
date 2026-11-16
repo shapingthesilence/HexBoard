@@ -1,5 +1,5 @@
 {
-  "settingsVersion": 29,
+  "settingsVersion": 37,
   "selectedPreset": "Pads/Lo-Fi Synth Strings",
   "selectedWavetable": "/Classic",
   "selectedGeometry": "12 EDO (Normal)",
@@ -29,6 +29,7 @@
   ],
   "settings": {
     "RotaryInvert": 0,
+    "CommandEncoder": 0,
     "AutoSave": 1,
     "MPEpitchBend": 48,
     "MPEMode": 0,
@@ -101,6 +102,7 @@
     "HeadphoneVolumeCap": 127,
     "DeviceRotation": 0,
     "SynthPortamentoTimeIndex": 0,
+    "ArpeggiatorNoteLength": 100,
     "ArpeggiatorDirection": 0,
     "SynthWavetablePosition": 0,
     "SynthLfoTarget": 0,
@@ -117,6 +119,9 @@
     "SequencerSendClock": 0,
     "SequencerSendTransport": 0,
     "PiezoVolumeCap": 127,
-    "CurrentKeyStepsFromAHigh": 0
+    "CurrentKeyStepsFromAHigh": 0,
+    "ColorDithering": 0,
+    "LedFramePeriodLow": 232,
+    "LedFramePeriodHigh": 16
   }
 }

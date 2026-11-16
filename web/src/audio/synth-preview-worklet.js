@@ -1,16 +1,25 @@
+// Legacy positive wheel depths retain their byte values; 128..254 are negative.
+function wheelAmountDepth(value) {
+  return value <= 127 ? value : value <= 254 ? 127 - value : 0;
+}
+
 const ENVELOPE_TIMES_SECONDS = [
   0, 0.005, 0.01, 0.015, 0.02, 0.03, 0.05, 0.075, 0.1, 0.15,
-  0.2, 0.3, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4
+  0.2, 0.3, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 0.003
 ];
 
 const LFO_SPEEDS_HZ = [
-  0.05, 0.1, 0.2, 0.33, 0.5, 0.75, 1, 1.25, 1.5, 2,
+  0.05, 0.1, 0.2, 0.333, 0.5, 0.75, 1, 1.25, 1.5, 2,
   2.5, 3, 4, 5, 6, 8, 10, 12, 16, 20
 ];
 
-const FRAME_COUNT = 32;
+const FRAME_COUNT = 16;
+const MIP_LIMITS = [192, 96, 48, 24, 12, 6];
+const DEVICE_SAMPLE_RATE = 200000000 / 1024 / 6;
+const ATTENUATION = [64, 24, 17, 14, 12, 11, 10, 9, 8];
 const SAMPLE_COUNT = 512;
 const MAX_VOICES = 8;
+const VOLUME_ENVELOPE_PARAMETERS = ["attack", "hold", "decay", "sustain", "release"];
 const TARGET_FOLD_WARP = 0;
 const TARGET_VIBRATO = 1;
 const TARGET_PITCH = 2;
@@ -21,6 +30,8 @@ const MODE_MONO_RETRIGGER = 1;
 const MODE_ARPEGGIO = 2;
 const MODE_POLY = 3;
 const MODE_MONO_LEGATO = 4;
+const MODE_POLY_ARPEGGIO = 6;
+const isArpMode = mode => mode === MODE_ARPEGGIO || mode === MODE_POLY_ARPEGGIO;
 const LFO_NOISE_SEGMENTS = 16;
 const VIBRATO_SPEED_NOISE = 12;
 
@@ -64,95 +75,27 @@ function noiseStateSample(state) {
   return ((state >>> 24) / 127.5) - 1;
 }
 
-function smoothStep(value) {
-  return value * value * (3 - 2 * value);
-}
-
 function blend(a, b, amount) {
   return a + (b - a) * amount;
 }
 
-function normalizeSample(value) {
-  return clamp(value, -1, 1);
-}
-
-function generatedTableSample(name, frame, phase) {
-  const frameT = FRAME_COUNT <= 1 ? 0 : frame / (FRAME_COUNT - 1);
-  const harmonic = (multiplier, gain) => sine(wrapPhase(phase * multiplier)) * gain;
-
-  switch (name) {
-    case "Classic":
-      return normalizeSample(
-        harmonic(1, 0.78)
-        + harmonic(2, blend(0.05, 0.2, frameT))
-        + harmonic(3, blend(0.1, 0.28, frameT))
-        + harmonic(5, blend(0.03, 0.12, frameT))
-      );
-    case "Edge":
-      return normalizeSample(
-        blend(saw(phase), square(phase, blend(0.42, 0.58, frameT)), 0.35)
-        + harmonic(7, 0.12)
-        - harmonic(11, 0.06)
-      );
-    case "Glass":
-      return normalizeSample(
-        harmonic(1, 0.52)
-        + harmonic(blend(2.01, 2.8, frameT), 0.38)
-        + harmonic(blend(4.7, 6.2, frameT), 0.2)
-        + harmonic(9.1, 0.08)
-      );
-    case "Digital":
-      return normalizeSample(
-        Math.tanh(
-          blend(saw(phase), square(wrapPhase(phase * 2), 0.5), frameT) * 1.5
-          + harmonic(8, 0.28)
-        )
-      );
-    case "Motion":
-      return normalizeSample(
-        blend(sine(phase), triangle(phase), smoothStep(frameT)) * 0.8
-        + harmonic(blend(2, 5, frameT), 0.18)
-        + harmonic(blend(5, 2, frameT), 0.12)
-      );
-    case "Basic":
-    default: {
-      if (frameT < 1 / 3) {
-        return blend(sine(phase), triangle(phase), frameT * 3);
-      }
-      if (frameT < 2 / 3) {
-        return blend(triangle(phase), saw(phase), (frameT - 1 / 3) * 3);
-      }
-      return blend(saw(phase), square(phase, 0.5), (frameT - 2 / 3) * 3);
-    }
-  }
-}
-
-function createGeneratedWavetable(name) {
-  const frames = [];
-  for (let frame = 0; frame < FRAME_COUNT; frame += 1) {
-    const samples = new Float32Array(SAMPLE_COUNT);
-    for (let index = 0; index < SAMPLE_COUNT; index += 1) {
-      samples[index] = generatedTableSample(name, frame, index / SAMPLE_COUNT);
-    }
-    frames.push(samples);
-  }
-  return frames;
-}
-
+// Use the same 16 x 512 byte frames and optional six mip levels as firmware.
+// Missing tables stay silent instead of impersonating the selected instrument.
 function wavetableFromBytes(bytes) {
-  if (!bytes || bytes.length !== FRAME_COUNT * SAMPLE_COUNT) {
-    return null;
-  }
-  const frames = [];
-  for (let frame = 0; frame < FRAME_COUNT; frame += 1) {
-    const samples = new Float32Array(SAMPLE_COUNT);
-    const offset = frame * SAMPLE_COUNT;
-    for (let index = 0; index < SAMPLE_COUNT; index += 1) {
-      samples[index] = clamp((bytes[offset + index] - 128) / 128, -1, 1);
-    }
-    frames.push(samples);
-  }
-  return frames;
+  const stride = FRAME_COUNT * SAMPLE_COUNT;
+  if (!bytes || (bytes.length !== stride && bytes.length !== stride * MIP_LIMITS.length)) return null;
+  return Array.from({ length: bytes.length / stride }, (_, level) =>
+    Array.from({ length: FRAME_COUNT }, (_, frame) =>
+      Float32Array.from(bytes.subarray(level * stride + frame * SAMPLE_COUNT,
+        level * stride + (frame + 1) * SAMPLE_COUNT), value => (value - 128) / 128)));
+}
+
+// Floating point equivalents of SynthModulationCache.cpp's Q4 phase warps.
+function warpPhase(phase, fold, duty, poly) {
+  phase = wrapPhase(phase + Math.min(phase, 1 - phase) * fold * 5 / 256);
+  phase = wrapPhase(phase + (phase < 0.5 ? 1 : -1) * duty / 512);
+  const triangle = Math.min(phase, 1 - phase);
+  return wrapPhase(phase + triangle * (0.5 - triangle) * poly / 32);
 }
 
 class Envelope {
@@ -263,21 +206,44 @@ class Envelope {
   }
 }
 
+// Voices take a serial number on each trigger so the newest one can be shown live.
+let triggerSerial = 0;
+// About 30 voice-shape reports a second while notes sound.
+const SHAPE_REPORT_HZ = 30;
+
 class Voice {
   constructor() {
+    this.serial = 0;
+    this.shapePosition = 0;
+    this.shapeFold = 0;
+    this.shapeDuty = 0;
+    this.shapePoly = 0;
     this.phase = 0;
     this.frequency = 0;
     this.targetFrequency = 0;
+    this.glideRemaining = 0;
+    this.glideStep = 0;
     this.note = -1;
     this.velocity = 1;
     this.active = false;
     this.age = 0;
+    this.wheelValue = 0;
+    this.pendingTrigger = null;
+    this.fadeRemaining = 0;
+    this.fadeLength = Math.max(1, Math.round(sampleRate * 0.002));
     this.env = new Envelope();
     this.fxEnvs = [new Envelope(), new Envelope()];
   }
 
-  configure(patch) {
+  configure(patch, preserveAmp = this.active) {
+    const previousAmpParams = this.env.params;
     const values = patch.values;
+    this.fxSettings = ["EffectEnvelope", "EffectEnvelope2"].map(prefix => ({
+      target: values[`${prefix}Target`],
+      depth: values[`${prefix}Amount`] - 127,
+      enabled: ["AttackIndex", "HoldIndex", "DecayIndex", "SustainLevel", "ReleaseIndex"]
+        .some(key => values[`${prefix}${key}`] !== 0)
+    }));
     this.env.configure(
       values.EnvelopeAttackIndex,
       values.EnvelopeHoldIndex,
@@ -286,6 +252,11 @@ class Voice {
       values.EnvelopeReleaseIndex,
       sampleRate
     );
+    this.baseAmpParams = { ...this.env.params };
+    this.wheelTarget = values.SynthModTarget;
+    this.wheelAmount = values.SynthModAmount;
+    if (preserveAmp) this.env.params = previousAmpParams;
+    else this.updateVolumeEnvelope(this.wheelValue);
     this.fxEnvs[0].configure(
       values.EffectEnvelopeAttackIndex,
       values.EffectEnvelopeHoldIndex,
@@ -304,12 +275,34 @@ class Voice {
     );
   }
 
-  trigger(note, velocity, patch, retrigger) {
-    this.configure(patch);
+  updateVolumeEnvelope(wheelValue) {
+    this.wheelValue = wheelValue;
+    if (!this.baseAmpParams) return;
+    const amount = clamp(wheelValue / 127, 0, 1) * wheelAmountDepth(this.wheelAmount) / 127;
+    for (let index = 0; index < VOLUME_ENVELOPE_PARAMETERS.length; index++) {
+      const parameter = VOLUME_ENVELOPE_PARAMETERS[index];
+      const base = this.baseAmpParams[parameter];
+      this.env.params[parameter] = this.wheelTarget === 7 + index
+        ? blend(base, amount < 0 ? 0 : parameter === "sustain" ? 1 : 4, Math.abs(amount)) : base;
+    }
+  }
+
+  trigger(note, velocity, patch, retrigger, id = note, pitchOffset = 0, handoff = false) {
+    if (this.active && retrigger && !handoff) {
+      if (!this.pendingTrigger) this.fadeRemaining = this.fadeLength;
+      this.pendingTrigger = [note, velocity, patch, retrigger, id, pitchOffset, true];
+      return;
+    }
+    this.configure(patch, this.active && !retrigger);
     this.note = note;
+    this.id = id;
+    this.pitchOffset = pitchOffset;
     this.targetFrequency = midiToFrequency(note);
+    const glide = isArpMode(patch.values.PlaybackMode) ? 0 : ENVELOPE_TIMES_SECONDS[patch.values.SynthPortamentoTimeIndex] ?? 0;
+    this.glideRemaining = this.active && glide > 0 ? Math.round(glide * sampleRate) : 0;
+    this.glideStep = this.glideRemaining ? (this.targetFrequency - this.frequency) / this.glideRemaining : 0;
+    if (!this.glideRemaining) this.frequency = this.targetFrequency;
     if (!this.active || retrigger) {
-      this.frequency = this.targetFrequency;
       this.phase = 0;
       this.env.attack();
       this.fxEnvs.forEach((env) => env.attack());
@@ -317,14 +310,28 @@ class Voice {
     this.velocity = clamp(velocity, 0, 1);
     this.active = true;
     this.age += 1;
+    this.serial = ++triggerSerial;
   }
 
   release() {
+    this.pendingTrigger = null;
+    this.fadeRemaining = 0;
+    const amount = clamp(this.wheelValue / 127, 0, 1) * wheelAmountDepth(this.wheelAmount) / 127;
+    this.env.params.release = this.wheelTarget === 11
+      ? blend(this.baseAmpParams.release, amount < 0 ? 0 : 4, Math.abs(amount)) : this.baseAmpParams.release;
+    // Preserve release tails, but ramp even a zero-release patch to silence.
+    if (this.env.params.release === 0) this.env.params.release = 0.002;
     this.env.release();
     this.fxEnvs.forEach((env) => env.release());
   }
 
   render(processor) {
+    if (this.pendingTrigger && this.fadeRemaining === 0) {
+      const pending = this.pendingTrigger;
+      this.pendingTrigger = null;
+      this.trigger(...pending);
+    }
+    const fadeGain = this.fadeRemaining > 0 ? this.fadeRemaining-- / this.fadeLength : 1;
     if (!this.active) {
       return { sample: 0, envelope: 0 };
     }
@@ -334,6 +341,10 @@ class Voice {
     const envLevel = this.env.next();
     const fxLevels = this.fxEnvs.map((env) => env.next());
     if (this.env.stage === "idle") {
+      if (this.pendingTrigger) {
+        this.fadeRemaining = 0;
+        return { sample: 0, envelope: 0 };
+      }
       this.active = false;
       this.note = -1;
       this.frequency = 0;
@@ -341,12 +352,9 @@ class Voice {
       return { sample: 0, envelope: 0 };
     }
 
-    const glideSeconds = ENVELOPE_TIMES_SECONDS[clamp(values.SynthPortamentoTimeIndex, 0, ENVELOPE_TIMES_SECONDS.length - 1)] ?? 0;
-    if (glideSeconds > 0 && this.frequency > 0) {
-      const glideStep = 1 / Math.max(1, glideSeconds * sampleRate);
-      this.frequency += (this.targetFrequency - this.frequency) * glideStep;
-    } else {
-      this.frequency = this.targetFrequency;
+    if (this.glideRemaining > 0) {
+      this.frequency += this.glideStep;
+      if (--this.glideRemaining === 0) this.frequency = this.targetFrequency;
     }
 
     let foldWarp = 0;
@@ -384,10 +392,13 @@ class Voice {
       }
     };
 
-    addTarget(values.SynthModTarget, processor.modValue * (values.SynthModAmount / 127));
-    addTarget(values.SynthLfoTarget, processor.lfoSample() * ((values.SynthLfoAmount - 127) / 127));
-    addTarget(values.EffectEnvelopeTarget, fxLevels[0] * (values.EffectEnvelopeAmount - 127));
-    addTarget(values.EffectEnvelope2Target, fxLevels[1] * (values.EffectEnvelope2Amount - 127));
+    addTarget(values.SynthModTarget, processor.modValue * (wheelAmountDepth(values.SynthModAmount) / 127));
+    addTarget(values.SynthLfoTarget, processor.lfoSample() * (values.SynthLfoAmount - 127));
+    for (let i = 0; i < 2; i++) {
+      const { target, depth, enabled } = this.fxSettings[i];
+      if (enabled) addTarget(target, target === TARGET_VIBRATO && depth < 0
+        ? -depth * (1 - fxLevels[i]) : fxLevels[i] * depth);
+    }
 
     pitch = clamp(pitch, -127, 127);
     vibrato = clamp(vibrato, -127, 127);
@@ -396,30 +407,20 @@ class Voice {
     polyWarp = clamp(polyWarp, -127, 127);
     wavetablePosition = clamp(wavetablePosition, -127, 127);
 
-    const vibratoSemitones = (vibrato / 127) * 0.8 * processor.vibratoSample();
     const pitchSemitones = (pitch / 127) * 24;
-    const frequency = this.frequency * 2 ** ((pitchSemitones + vibratoSemitones) / 12);
+    const frequency = this.frequency * 2 ** ((pitchSemitones + this.pitchOffset) / 12)
+      * (1 + vibrato * 127 * processor.vibratoSample() / 262144);
     this.phase = wrapPhase(this.phase + frequency / sampleRate);
-
-    let phase = this.phase;
-    if (foldWarp !== 0) {
-      const amount = foldWarp / 127;
-      phase = wrapPhase(phase + triangle(phase) * amount * 0.18);
-    }
-    if (dutyWarp !== 0) {
-      const amount = dutyWarp / 127;
-      const bend = phase < 0.5 ? phase * 2 : (1 - phase) * 2;
-      phase = wrapPhase(phase + bend * amount * 0.14);
-    }
-    if (polyWarp !== 0) {
-      const amount = polyWarp / 127;
-      phase = wrapPhase(phase + sine(wrapPhase(phase * 3)) * amount * 0.08);
-    }
+    const phase = warpPhase(this.phase, foldWarp, dutyWarp, polyWarp);
 
     const position = clamp(values.SynthWavetablePosition + wavetablePosition, 0, 127);
-    const sample = processor.readWavetable(phase, position);
+    this.shapePosition = position;
+    this.shapeFold = foldWarp;
+    this.shapeDuty = dutyWarp;
+    this.shapePoly = polyWarp;
+    const sample = processor.readWavetable(phase, position, frequency);
     return {
-      sample: sample * envLevel * this.velocity,
+      sample: sample * envLevel * this.velocity * fadeGain,
       envelope: envLevel
     };
   }
@@ -431,12 +432,15 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
     this.patch = this.defaultPatch();
     this.volume = 0.35;
     this.modValue = 0;
+    this.envelopeWheelSamplesUntilRefresh = 0;
     this.voices = Array.from({ length: MAX_VOICES }, () => new Voice());
     this.heldNotes = [];
     this.heldOrder = [];
+    this.noteData = new Map();
     this.arpCursor = 0;
-    this.arpDirection = 1;
     this.arpSamplesUntilNext = 0;
+    this.arpGateRemaining = 0;
+    this.arpVoice = null;
     this.lfoPhase = 0;
     this.lfoNoiseState = 0x6D2B79F5;
     this.lfoNoiseSegment = -1;
@@ -449,9 +453,10 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
     this.vibratoNoiseCurrentSample = 0;
     this.currentLfoSample = 0;
     this.currentVibratoSample = 0;
-    this.outputSmooth = 0;
-    this.generatedWavetables = new Map();
-    this.activeWavetable = createGeneratedWavetable("Basic");
+    this.activeWavetable = null;
+    this.voiceAge = 0;
+    this.shapeSamplesUntilReport = 0;
+    this.shapeReported = false;
 
     this.port.onmessage = (event) => {
       const message = event.data;
@@ -460,10 +465,13 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
           this.setPatch(message.patch);
           break;
         case "noteOn":
-          this.noteOn(message.note, message.velocity ?? 0.9);
+          this.noteOn(message.note, message.velocity ?? 0.9, message.id ?? message.note, message.pitchOffset ?? 0);
           break;
         case "noteOff":
-          this.noteOff(message.note);
+          this.noteOff(message.note, message.immediate);
+          break;
+        case "setPitch":
+          this.setPitch(message.id, message.pitchOffset);
           break;
         case "allNotesOff":
           this.allNotesOff();
@@ -512,6 +520,7 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
         EffectEnvelope2ReleaseIndex: 0,
         SynthPortamentoTimeIndex: 0,
         ArpeggiatorDirection: 0,
+        ArpeggiatorNoteLength: 100,
         SynthWavetablePosition: 0,
         SynthLfoTarget: TARGET_FOLD_WARP,
         SynthLfoAmount: 127,
@@ -522,6 +531,7 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
   }
 
   setPatch(patch) {
+    const previousMode = this.patch.values.PlaybackMode;
     this.patch = {
       ...this.defaultPatch(),
       ...patch,
@@ -531,71 +541,81 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
       }
     };
     const sampleBytes = patch?.wavetableSamples ? new Uint8Array(patch.wavetableSamples) : null;
-    this.activeWavetable = wavetableFromBytes(sampleBytes) ?? this.generatedWavetable(this.patch.wavetableName);
+    this.activeWavetable = wavetableFromBytes(sampleBytes);
+    if (previousMode !== this.patch.values.PlaybackMode) this.allNotesOff();
     this.voices.forEach((voice) => voice.configure(this.patch));
   }
 
-  generatedWavetable(name) {
-    const tableName = name || "Basic";
-    if (!this.generatedWavetables.has(tableName)) {
-      this.generatedWavetables.set(tableName, createGeneratedWavetable(tableName));
-    }
-    return this.generatedWavetables.get(tableName);
-  }
-
-  noteOn(note, velocity) {
+  noteOn(note, velocity, id = note, pitchOffset = 0) {
     const mode = this.patch.values.PlaybackMode;
-    if (mode === 0) {
-      return;
-    }
-    if (!this.heldNotes.includes(note)) {
-      this.heldNotes.push(note);
-      this.heldOrder.push(note);
-    }
-    if (mode === MODE_ARPEGGIO) {
-      if (!this.voices[0].active) {
-        this.triggerArpNote(note);
-      }
+    this.refreshEnvelopeWheel();
+    if (mode === 0 || this.heldNotes.includes(id)) return;
+    this.noteData.set(id, { note, velocity, pitchOffset });
+    this.heldNotes.push(id);
+    this.heldOrder.push(id);
+    if (isArpMode(mode)) {
+      if (this.heldNotes.length === 1) this.triggerArpNote(id);
       return;
     }
     if (mode === MODE_MONO_RETRIGGER || mode === MODE_MONO_LEGATO) {
-      this.voices[0].trigger(note, velocity, this.patch, mode === MODE_MONO_RETRIGGER || !this.voices[0].active);
+      this.voices[0].trigger(note, velocity, this.patch,
+        mode === MODE_MONO_RETRIGGER || !this.voices[0].active, id, pitchOffset);
       return;
     }
-
-    let voice = this.voices.find((candidate) => !candidate.active);
+    let voice = this.voices.find(candidate => !candidate.active);
     if (!voice) {
       voice = this.voices.reduce((oldest, candidate) => candidate.age < oldest.age ? candidate : oldest, this.voices[0]);
     }
-    voice.trigger(note, velocity, this.patch, true);
+    voice.trigger(note, velocity, this.patch, true, id, pitchOffset);
+    voice.age = ++this.voiceAge;
   }
 
-  noteOff(note) {
-    this.heldNotes = this.heldNotes.filter((held) => held !== note);
-    this.heldOrder = this.heldOrder.filter((held) => held !== note);
+  setPitch(id, pitchOffset) {
+    if (!Number.isFinite(pitchOffset)) return;
+    const data = this.noteData.get(id);
+    if (data) data.pitchOffset = pitchOffset;
+    for (const voice of this.voices) {
+      if (voice.active && voice.id === id) voice.pitchOffset = pitchOffset;
+      if (voice.pendingTrigger?.[4] === id) voice.pendingTrigger[5] = pitchOffset;
+    }
+  }
+
+  noteOff(id, immediate = false) {
+    this.refreshEnvelopeWheel();
+    if (immediate) {
+      this.voices.filter(voice => voice.id === id || voice.pendingTrigger?.[4] === id).forEach(voice => { voice.active = false; voice.pendingTrigger = null; voice.fadeRemaining = 0; });
+    }
+    this.heldNotes = this.heldNotes.filter(held => held !== id);
+    this.heldOrder = this.heldOrder.filter(held => held !== id);
+    this.noteData.delete(id);
     const mode = this.patch.values.PlaybackMode;
-    if (mode === MODE_ARPEGGIO) {
-      if (this.heldNotes.length === 0) {
-        this.voices[0].release();
-      }
+    if (isArpMode(mode)) {
+      if (this.heldNotes.length === 0 || this.arpVoice?.id === id || this.arpVoice?.pendingTrigger?.[4] === id) this.closeArpGate();
       return;
     }
     if (mode === MODE_MONO_RETRIGGER || mode === MODE_MONO_LEGATO) {
+      if ((this.voices[0].pendingTrigger?.[4] ?? this.voices[0].id) !== id) return;
       if (this.heldNotes.length > 0) {
-        const nextNote = this.heldNotes[this.heldNotes.length - 1];
-        this.voices[0].trigger(nextNote, 0.9, this.patch, mode === MODE_MONO_RETRIGGER);
+        const nextId = this.heldNotes[this.heldNotes.length - 1];
+        const data = this.noteData.get(nextId);
+        this.voices[0].trigger(data.note, data.velocity, this.patch, mode === MODE_MONO_RETRIGGER, nextId, data.pitchOffset);
       } else {
         this.voices[0].release();
       }
       return;
     }
-    this.voices.filter((voice) => voice.note === note).forEach((voice) => voice.release());
+    this.voices.filter(voice => voice.id === id).forEach(voice => voice.release());
   }
 
   allNotesOff() {
     this.heldNotes = [];
     this.heldOrder = [];
-    this.voices.forEach((voice) => voice.release());
+    this.noteData = new Map();
+    this.arpCursor = 0;
+    this.arpVoice = null;
+    this.arpGateRemaining = 0;
+    this.arpSamplesUntilNext = 0;
+    this.voices.forEach((voice) => { voice.active = false; voice.pendingTrigger = null; voice.fadeRemaining = 0; voice.env.stage = "idle"; voice.env.level = 0; });
   }
 
   lfoSample() {
@@ -675,8 +695,16 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
       vibratoSpeedSetting === VIBRATO_SPEED_NOISE ? this.vibratoSmoothNoiseSample() : sine(this.vibratoPhase);
   }
 
-  readWavetable(phase, position) {
-    const framePosition = (position / 127) * (FRAME_COUNT - 1);
+  readWavetable(phase, position, frequency = 440) {
+    if (!this.activeWavetable) return 0;
+    const safeHarmonics = Math.min(sampleRate, DEVICE_SAMPLE_RATE) / (2 * frequency);
+    let level = 0;
+    while (level < this.activeWavetable.length - 1 && MIP_LIMITS[level] > safeHarmonics) level++;
+    const table = this.activeWavetable[level];
+    let framePosition = (position / 127) * (FRAME_COUNT - 1);
+    // Firmware snaps the 16 UI frame positions to exact frames.
+    const nearest = Math.round(framePosition);
+    if (position === Math.round(nearest * 127 / (FRAME_COUNT - 1))) framePosition = nearest;
     const frameA = Math.floor(framePosition);
     const frameB = Math.min(FRAME_COUNT - 1, frameA + 1);
     const frameFrac = framePosition - frameA;
@@ -684,8 +712,8 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
     const sampleA = Math.floor(samplePosition) % SAMPLE_COUNT;
     const sampleB = (sampleA + 1) % SAMPLE_COUNT;
     const sampleFrac = samplePosition - Math.floor(samplePosition);
-    const tableA = this.activeWavetable[frameA] ?? this.activeWavetable[0];
-    const tableB = this.activeWavetable[frameB] ?? tableA;
+    const tableA = table[frameA] ?? table[0];
+    const tableB = table[frameB] ?? tableA;
     const valueA = blend(tableA[sampleA], tableA[sampleB], sampleFrac);
     const valueB = blend(tableB[sampleA], tableB[sampleB], sampleFrac);
     return blend(valueA, valueB, frameFrac);
@@ -703,7 +731,10 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
       const ordered = [...this.heldOrder];
       return direction === 3 ? ordered.reverse() : ordered;
     }
-    const sorted = [...this.heldNotes].sort((a, b) => a - b);
+    const sorted = [...this.heldNotes].sort((a, b) => {
+      const left = this.noteData.get(a), right = this.noteData.get(b);
+      return (left.note + left.pitchOffset) - (right.note + right.pitchOffset);
+    });
     if (direction === 1) {
       return sorted.reverse();
     }
@@ -726,15 +757,32 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
       return;
     }
     const note = notes.length === 0 ? fallbackNote : notes[this.arpCursor % notes.length];
-    this.arpCursor = (this.arpCursor + 1) % Math.max(1, notes.length);
-    this.voices[0].trigger(note, 0.9, this.patch, true);
+    this.arpCursor = (this.arpCursor % Math.max(1, notes.length)) + 1;
+    const data = this.noteData.get(note);
+    this.closeArpGate();
+    let voice = this.voices[0];
+    if (this.patch.values.PlaybackMode === MODE_POLY_ARPEGGIO) {
+      voice = this.voices.find(candidate => !candidate.active)
+        ?? this.voices.reduce((oldest, candidate) => candidate.age < oldest.age ? candidate : oldest, this.voices[0]);
+    }
+    voice.trigger(data.note, data.velocity, this.patch, true, note, data.pitchOffset);
+    voice.age = ++this.voiceAge;
+    this.arpVoice = voice;
     this.arpSamplesUntilNext = this.nextArpIntervalSamples();
+    this.arpGateRemaining = Math.max(1, Math.round(this.arpSamplesUntilNext * clamp(this.patch.values.ArpeggiatorNoteLength, 1, 100) / 100));
+  }
+
+  closeArpGate() {
+    this.arpVoice?.release();
+    this.arpVoice = null;
+    this.arpGateRemaining = 0;
   }
 
   stepArp() {
-    if (this.patch.values.PlaybackMode !== MODE_ARPEGGIO || this.heldNotes.length === 0) {
+    if (!isArpMode(this.patch.values.PlaybackMode) || this.heldNotes.length === 0) {
       return;
     }
+    if (this.arpGateRemaining > 0 && --this.arpGateRemaining === 0) this.closeArpGate();
     this.arpSamplesUntilNext -= 1;
     if (this.arpSamplesUntilNext <= 0) {
       this.triggerArpNote();
@@ -742,22 +790,23 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
   }
 
   applyDrive(sample) {
-    switch (this.patch.values.SynthDrive) {
-      case 1:
-        return Math.tanh(sample * 1.15) / Math.tanh(1.15);
-      case 2:
-        return Math.tanh(sample * 1.8) / Math.tanh(1.8);
-      case 3:
-        return Math.tanh(sample * 2.8) / Math.tanh(2.8);
-      case 0:
-      default:
-        return sample;
-    }
+    const gain = [0, 1, 1.5, 2.5][this.patch.values.SynthDrive] ?? 0;
+    if (!gain) return sample;
+    const x = clamp(sample * gain, -1, 1);
+    return (3 * x - x * x * x) / 2;
+  }
+
+  refreshEnvelopeWheel() {
+    if (this.envelopeWheelSamplesUntilRefresh > 0) return;
+    for (const voice of this.voices) voice.wheelValue = this.modValue;
+    this.envelopeWheelSamplesUntilRefresh = Math.round(sampleRate * 0.05);
   }
 
   process(_inputs, outputs) {
+    this.refreshEnvelopeWheel();
     const output = outputs[0];
     const left = output[0];
+    this.envelopeWheelSamplesUntilRefresh -= left.length;
     const right = output[1] ?? output[0];
 
     for (let index = 0; index < left.length; index += 1) {
@@ -765,27 +814,40 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
       this.stepModulators();
       let mix = 0;
       let envelopeSum = 0;
-      let activeCount = 0;
       for (const voice of this.voices) {
         const rendered = voice.render(this);
         mix += rendered.sample;
         envelopeSum += rendered.envelope;
-        if (rendered.envelope > 0) {
-          activeCount += 1;
-        }
       }
 
-      if (activeCount > 1) {
-        mix /= Math.sqrt(activeCount);
+      if (this.patch.values.PlaybackMode === MODE_POLY || this.patch.values.PlaybackMode === MODE_POLY_ARPEGGIO) {
+        const count = clamp(envelopeSum, 0, MAX_VOICES);
+        const whole = Math.floor(count);
+        mix *= blend(ATTENUATION[whole], ATTENUATION[Math.min(8, whole + 1)], count - whole) / 64;
       }
-      const dynamicLevel = activeCount > 0 ? clamp(envelopeSum / activeCount, 0.25, 1) : 0;
-      let sample = this.applyDrive(mix * dynamicLevel) * this.volume;
-      sample = clamp(sample, -0.95, 0.95);
-      this.outputSmooth += (sample - this.outputSmooth) * 0.45;
-      left[index] = this.outputSmooth;
-      right[index] = this.outputSmooth;
+      const sample = clamp(this.applyDrive(mix) * this.volume, -1, 1);
+      left[index] = sample;
+      right[index] = sample;
     }
+    this.reportVoiceShape(left.length);
     return true;
+  }
+
+  // The editor draws the newest sounding voice's cycle: its table position and phase bends.
+  reportVoiceShape(samples) {
+    this.shapeSamplesUntilReport -= samples;
+    if (this.shapeSamplesUntilReport > 0) return;
+    this.shapeSamplesUntilReport = Math.round(sampleRate / SHAPE_REPORT_HZ);
+    let newest = null;
+    for (const voice of this.voices) if (voice.active && (!newest || voice.serial > newest.serial)) newest = voice;
+    if (!newest) {
+      if (this.shapeReported) this.port.postMessage({ type: "voiceShape", active: false });
+      this.shapeReported = false;
+      return;
+    }
+    this.shapeReported = true;
+    this.port.postMessage({ type: "voiceShape", active: true, position: newest.shapePosition,
+      fold: newest.shapeFold, duty: newest.shapeDuty, poly: newest.shapePoly });
   }
 }
 

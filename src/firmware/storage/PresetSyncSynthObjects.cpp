@@ -1,10 +1,13 @@
 #include "../FirmwareModule.h"
+#include <memory>
+#include <new>
 #include "../app/DiagnosticsTiming.h"
 #include "../app/RuntimeDefaults.h"
 #include "../menu/MenuAndDisplay.h"
 #include "../menu/SynthPresetMenu.h"
 #include "../menu/SynthWavetableMenu.h"
 #include "../synth/BuiltinWavetables.h"
+#include "../synth/CompactSamplerCodec.h"
 #include "../synth/SynthAudio.h"
 #include "../synth/SynthDefaults.h"
 #include "PresetSync.h"
@@ -47,6 +50,11 @@ std::vector<uint8_t> buildSynthPresetObjectBody(const SynthPresetSlot& preset) {
   presetSyncAppendTlv(body, PRESET_SYNC_TLV_SYNTH_VALUES, values.data(), static_cast<uint16_t>(values.size()));
   uint8_t favorite = preset.favorite ? 1 : 0;
   presetSyncAppendTlv(body, PRESET_SYNC_TLV_FAVORITE, &favorite, 1);
+  if (preset.samplerName[0]) {
+    presetSyncAppendTextTlv(body, PRESET_SYNC_TLV_SYNTH_SAMPLER_NAME, preset.samplerName, sizeof(preset.samplerName));
+    uint8_t envelopeOverride = preset.samplerEnvelopeOverride & SAMPLER_ENVELOPE_OVERRIDE_ALL;
+    presetSyncAppendTlv(body, PRESET_SYNC_TLV_SYNTH_SAMPLER_ENVELOPE_OVERRIDE, &envelopeOverride, 1);
+  }
   return body;
 }
 
@@ -147,6 +155,20 @@ bool parseSynthPresetObjectBody(const std::vector<uint8_t>& body, SynthPresetSlo
       case PRESET_SYNC_TLV_SYNTH_WAVETABLE_FOLDER_PATH:
         copyPresetSyncText(preset.wavetableFolderPath, sizeof(preset.wavetableFolderPath), value, length);
         break;
+      case PRESET_SYNC_TLV_SYNTH_SAMPLER_NAME:
+        if (!HEXBOARD_ENABLE_SAMPLER && length > 0) {
+          error = "sampler sounds are not supported";
+          return false;
+        }
+        copyPresetSyncText(preset.samplerName, sizeof(preset.samplerName), value, length);
+        break;
+      case PRESET_SYNC_TLV_SYNTH_SAMPLER_ENVELOPE_OVERRIDE:
+        if (length != 1 || (value[0] & ~SAMPLER_ENVELOPE_OVERRIDE_ALL) != 0) {
+          error = "bad sampler envelope override";
+          return false;
+        }
+        preset.samplerEnvelopeOverride = value[0];
+        break;
       default:
         break;
     }
@@ -157,6 +179,9 @@ bool parseSynthPresetObjectBody(const std::vector<uint8_t>& body, SynthPresetSlo
   if (!sawName || !sawObjectId || !sawValues) {
     error = "missing required synth preset TLV";
     return false;
+  }
+  if (!preset.samplerName[0]) {
+    preset.samplerEnvelopeOverride = 0;
   }
   normalizeSynthPresetValues(preset);
   normalizeSynthPresetMetadata(preset, 0);
@@ -545,24 +570,6 @@ bool parseSynthWavetableObjectFile(const char* bodyPath,
   return true;
 }
 
-bool readSynthWavetableSampleFile(const SynthWavetableSlot& wavetable, std::vector<uint8_t>& samples) {
-  char samplePath[SYNTH_WAVETABLE_SAMPLE_PATH_LENGTH] = {};
-  if (!resolveSynthWavetableSampleFilePath(wavetable, samplePath, sizeof(samplePath))) {
-    return false;
-  }
-  size_t sampleLength = synthWavetableSampleFileLength(samplePath);
-  if (!isSupportedSynthWavetableSampleLength(sampleLength)) {
-    sendToLog("Unsupported wavetable sample file length for " + std::string(wavetable.name));
-    return false;
-  }
-  samples.assign(sampleLength, 0);
-  if (!readSynthWavetableSampleFileRange(samplePath, 0, samples.data(), samples.size())) {
-    sendToLog("Incomplete wavetable sample file for " + std::string(wavetable.name));
-    return false;
-  }
-  return true;
-}
-
 std::vector<uint8_t> buildSynthWavetableObjectPrefix(const SynthWavetableSlot& wavetable, size_t sampleLength) {
   std::vector<uint8_t> body;
   body.reserve(256);
@@ -591,23 +598,8 @@ std::vector<uint8_t> buildSynthWavetableObjectPrefix(const SynthWavetableSlot& w
   return body;
 }
 
-std::vector<uint8_t> buildSynthWavetableObjectPrefix(const SynthWavetableSlot& wavetable) {
-  return buildSynthWavetableObjectPrefix(wavetable, SYNTH_WAVETABLE_SAMPLE_BYTES);
-}
-
-std::vector<uint8_t> buildSynthWavetableObjectBody(const SynthWavetableSlot& wavetable, const uint8_t* samples, size_t sampleLength) {
-  std::vector<uint8_t> body = buildSynthWavetableObjectPrefix(wavetable, sampleLength);
-  body.reserve(PRESET_SYNC_MAX_SYNTH_WAVETABLE_BYTES);
-  size_t offset = 0;
-  while (offset < sampleLength) {
-    size_t chunkLength = std::min(PRESET_SYNC_WAVETABLE_SAMPLE_TLV_CHUNK_BYTES, sampleLength - offset);
-    presetSyncAppendTlv(body, PRESET_SYNC_TLV_WAVETABLE_SAMPLES, samples + offset, chunkLength);
-    offset += chunkLength;
-  }
-  return body;
-}
-
 void applyParsedSynthWavetableToRuntime(const SynthWavetableSlot& wavetable, const uint8_t* samples, size_t sampleLength) {
+  if (compactSamplerActive() && !useCompactSamplerWavetableEngine()) return;
   synthWaveTableLoadInProgress = true;
   loadActiveSynthWavetableSamples(samples, sampleLength);
   setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
@@ -629,13 +621,13 @@ bool loadActiveSynthWavetableSamplesFromFile(const char* samplePath, size_t samp
   if (!f) {
     return false;
   }
-  size_t bytesRead = f.read(&activeSynthWaveTable[0][0], SYNTH_WAVETABLE_SAMPLE_BYTES);
+  size_t bytesRead = f.read(&synthSampleWorkspace.wavetable.base[0][0], SYNTH_WAVETABLE_SAMPLE_BYTES);
   if (bytesRead != SYNTH_WAVETABLE_SAMPLE_BYTES) {
     f.close();
     return false;
   }
   if (sampleLength == SYNTH_WAVETABLE_MIP_SAMPLE_BYTES) {
-    size_t extraBytesRead = f.read(activeSynthWavetableMipExtraSamples, SYNTH_WAVETABLE_MIP_EXTRA_SAMPLE_BYTES);
+    size_t extraBytesRead = f.read(synthSampleWorkspace.wavetable.mips, SYNTH_WAVETABLE_MIP_EXTRA_SAMPLE_BYTES);
     if (extraBytesRead != SYNTH_WAVETABLE_MIP_EXTRA_SAMPLE_BYTES) {
       f.close();
       return false;
@@ -649,6 +641,7 @@ bool loadActiveSynthWavetableSamplesFromFile(const char* samplePath, size_t samp
 }
 
 bool applyParsedSynthWavetableFileToRuntime(const SynthWavetableSlot& wavetable, const char* samplePath, size_t sampleLength) {
+  if (compactSamplerActive() && !useCompactSamplerWavetableEngine()) return false;
   synthWaveTableLoadInProgress = true;
   bool loaded = loadActiveSynthWavetableSamplesFromFile(samplePath, sampleLength);
   if (!loaded) {
@@ -862,6 +855,8 @@ size_t presetSyncMaxRawObjectBytesForType(uint8_t objectType) {
     case PRESET_SYNC_OBJECT_TYPE_EXPLICIT_BUTTON_MAP:
     case PRESET_SYNC_OBJECT_TYPE_USER_SCALE:
       return GEOMETRY_OBJECT_MAX_RAW_BYTES;
+    case PRESET_SYNC_OBJECT_TYPE_COMPACT_SAMPLER:
+      return HEXBOARD_ENABLE_SAMPLER ? 6 + PRESET_SYNC_MAX_SYNTH_PRESET_BYTES + CompactSampler::kFileBytes : 0;
     case PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET:
       return PRESET_SYNC_MAX_SYNTH_PRESET_BYTES;
     case PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE:
@@ -875,34 +870,87 @@ size_t presetSyncMaxRawObjectBytesForType(uint8_t objectType) {
   }
 }
 
-int findSynthPresetByObjectId(const uint8_t* objectId) {
-  for (size_t i = 0; i < synthPresets.size(); ++i) {
-    if (synthPresets[i].valid && memcmp(synthPresets[i].objectId, objectId, SYNTH_PRESET_OBJECT_ID_LENGTH) == 0) {
-      return static_cast<int>(i);
-    }
-  }
-  return -1;
-}
-
+// Returns a catalog handle, SYNTH_PRESET_CATALOG_NEW_HANDLE, or -1.
 int chooseSynthPresetWriteSlot(uint16_t handle, const SynthPresetSlot& preset) {
-  if (handle != PRESET_SYNC_NEW_OBJECT_HANDLE && handle < synthPresets.size()) {
-    if (synthPresets[handle].valid
-        && memcmp(synthPresets[handle].objectId,
-                  preset.objectId,
-                  SYNTH_PRESET_OBJECT_ID_LENGTH) == 0) {
+  ensureSynthPresetCatalogIndexed(false);
+  if (handle != PRESET_SYNC_NEW_OBJECT_HANDLE && handle < synthPresetCatalogHandleLimit()) {
+    SynthPresetCatalogEntry entry;
+    if (readSynthPresetCatalogEntry(handle, entry)
+        && memcmp(entry.objectId, preset.objectId, SYNTH_PRESET_OBJECT_ID_LENGTH) == 0) {
       return handle;
     }
     sendToLog("Synth preset write handle does not match its object id.");
     return -1;
   }
-  int existing = findSynthPresetByObjectId(preset.objectId);
-  if (existing >= 0) {
+  uint16_t existing = 0;
+  if (findSynthPresetCatalogHandle(preset.objectId, existing)) {
     return existing;
   }
-  if (synthPresets.size() < SYNTH_PRESET_MAX_COUNT) {
-    return static_cast<int>(synthPresets.size());
+  if (synthPresetCatalogCount() < SYNTH_PRESET_MAX_COUNT) {
+    return SYNTH_PRESET_CATALOG_NEW_HANDLE;
   }
   return -1;
+}
+
+uint8_t presetSyncStoreError(SynthPresetStoreResult result) {
+  switch (result) {
+    case SynthPresetStoreResult::Stored: return 0;
+    case SynthPresetStoreResult::MissingInstrument: return PRESET_SYNC_ERROR_OBJECT_MISSING;
+    case SynthPresetStoreResult::HandleMismatch: return PRESET_SYNC_ERROR_VALIDATION_FAILED;
+    default: return PRESET_SYNC_ERROR_STORAGE_FULL;
+  }
+}
+
+uint8_t storeSamplerSoundObjectFile(const char* path, uint16_t handle, uint8_t writeFlags) {
+  File f = LittleFS.open(path, "r");
+  uint8_t head[6] = {};
+  if (!f || f.read(head, sizeof(head)) != sizeof(head) || memcmp(head, "HXS1", 4) != 0) {
+    return PRESET_SYNC_ERROR_VALIDATION_FAILED;
+  }
+  const size_t bodyLength = head[4] | (static_cast<size_t>(head[5]) << 8);
+  const uint32_t fileLength = f.size();
+  if (!bodyLength || bodyLength > PRESET_SYNC_MAX_SYNTH_PRESET_BYTES || fileLength <= sizeof(head) + bodyLength) {
+    return PRESET_SYNC_ERROR_BAD_LENGTH;
+  }
+  std::vector<uint8_t> body(bodyLength);
+  const bool read = f.read(body.data(), bodyLength) == bodyLength;
+  f.close();
+  // This runs deep in the SysEx handler on Core 0's 4 KiB stack: keep the
+  // preset record on the heap.
+  std::unique_ptr<SynthPresetSlot> parsed(new (std::nothrow) SynthPresetSlot);
+  if (!parsed) {
+    return PRESET_SYNC_ERROR_STORAGE_FULL;
+  }
+  SynthPresetSlot& preset = *parsed;
+  std::string error;
+  if (!read || !parseSynthPresetObjectBody(body, preset, error)) {
+    sendToLog("Preset sync rejected sampler sound: " + error);
+    return PRESET_SYNC_ERROR_VALIDATION_FAILED;
+  }
+  SynthPresetInstrumentSource instrument;
+  instrument.path = path;
+  instrument.offset = static_cast<uint32_t>(sizeof(head) + bodyLength);
+  instrument.length = fileLength - instrument.offset;
+  // The instrument names itself; the sound's sampler name follows it.
+  if (!validateCompactSamplerInstrument(path, instrument.offset, instrument.length,
+                                        preset.samplerName, sizeof(preset.samplerName))) {
+    return PRESET_SYNC_ERROR_VALIDATION_FAILED;
+  }
+  const int slot = chooseSynthPresetWriteSlot(handle, preset);
+  if (slot < 0) {
+    return PRESET_SYNC_ERROR_STORAGE_FULL;
+  }
+  uint16_t storedHandle = 0;
+  const SynthPresetStoreResult result =
+    writeSynthPresetToCatalogSlot(static_cast<uint16_t>(slot), preset, &storedHandle, &instrument);
+  if (result != SynthPresetStoreResult::Stored) {
+    return presetSyncStoreError(result);
+  }
+  requestSynthPresetMenuRebuild();
+  if (writeFlags & PRESET_SYNC_WRITE_APPLY_TO_RUNTIME) {
+    loadSynthPresetFromSlot(storedHandle);
+  }
+  return 0;
 }
 
 void applySynthPresetRuntimeOnly(const SynthPresetSlot& preset) {
@@ -1039,6 +1087,9 @@ void applySynthSettingRuntimeOnly(SettingKey key, uint8_t value) {
     case SettingKey::SynthPortamentoTimeIndex:
       synthPortamentoTimeIndex = value;
       updateSynthPortamentoSettings();
+      break;
+    case SettingKey::ArpeggiatorNoteLength:
+      arpeggiatorNoteLength = constrain(value, 1, 100);
       break;
     case SettingKey::ArpeggiatorDirection:
       arpeggiatorDirection = value;

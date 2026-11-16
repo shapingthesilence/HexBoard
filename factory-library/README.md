@@ -13,7 +13,10 @@ presets/Pads/Soft String Pad.json -> Pads/Soft String Pad
 ```
 
 The generator writes each source preset as one independently checksummed
-`/presets/<object-id>.hsp` file.
+`/presets/<first-id-hex-digit>/<object-id>.hsp` file, plus the `/preset_index/`
+folder index the device browser lists them from. The library holds at most 512 presets in at most
+32 folders, with at most 32 presets per folder; the build fails beyond those
+limits. Names longer than 23 characters are shortened in the device browser.
 
 The JSON `name` must match the filename and `folderPath` must match the source
 directory. Each preset must provide all current synth values and reference
@@ -29,7 +32,9 @@ folder and name.
 `web/scripts/generate-factory-wavetables.mjs` regenerates the supplied
 `wavetables/` files from the project WAV and anchor sources. Basic
 Shapes is intentionally excluded from LittleFS because it is the immutable
-rescue wavetable compiled into firmware.
+rescue wavetable compiled into firmware. Separately authored `.hexwav` records
+are preserved during regeneration. The generator bundles every factory wavetable
+record, including source subdirectories, into the web app for offline preview.
 
 ## Tuning Bundles
 

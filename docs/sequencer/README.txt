@@ -1,30 +1,19 @@
 HEXBOARD SEQUENCER DOCUMENTATION
 
-This folder contains the Sequencer-mode documentation set.
+For players
 
-Subfolders
+- manuals/sequencer_quick_manual.txt: controls and common workflows
+- manuals/sequencer_manual.txt: detailed playback, editing, files, and USB Backup
 
-- `manuals/`
-  Sequencer quick and detailed manuals.
-- `requirements/`
-  Sequencer requirements-style behavior references.
-- `layouts/`
-  Sequencer screen and menu layout references.
+For developers
 
-Notes
+- requirements/: current behavior contracts with stable requirement IDs
+- layouts/: screen sketches and interaction constraints
+- ../developer-guide.md: shared firmware architecture, storage, and build details
 
-- These files are maintained separately from the Keyboard docs on purpose.
+Keep implementation details in developer references. Update existing behavior
+contracts and sketches when meaning or interaction changes; cosmetic layout
+changes alone do not require documentation. General build and navigation changes
+also belong in the repository README or user manual as relevant.
 
-How to update these docs
-
-- `manuals/`
-  Update the quick and detailed user-facing behavior descriptions.
-- `requirements/`
-  Update intended behavior contracts. Keep an existing requirement ID when the
-  concept is unchanged.
-- `layouts/`
-  Update screen and menu sketches when visible OLED or menu behavior changes.
-
-Also update general docs such as `README.md`, `docs/user-manual.md`, and
-`docs/developer-guide.md` when a Sequencer change affects top-level build
-behavior, navigation, architecture, or shared firmware behavior.
+The documentation ownership map is in ../README.md. Code is authoritative.

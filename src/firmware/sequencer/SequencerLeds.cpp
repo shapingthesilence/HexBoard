@@ -39,20 +39,20 @@ bool selectedStepBlinkLit() {
   return (runTime % cycleMicros) < kSelectedStepBlinkOnMicros;
 }
 
-uint32_t ledColor(float hue, byte saturation, byte value) {
-  colorDef color = {
+LedColor ledColor(float hue, byte saturation, byte value) {
+  LedHsv color = {
     hue,
     saturation,
-    applyLEDLevel(value, ledRestBrightness)
+    scaleLedLevel(value, ledRestBrightness)
   };
   return getLEDcode(color);
 }
 
-uint32_t emptySelectedStepColor() {
+LedColor emptySelectedStepColor() {
   return ledColor(HUE_NONE, SAT_BW, kStepLightHigh);
 }
 
-uint32_t neutralStepColor(byte value) {
+LedColor neutralStepColor(byte value) {
   return ledColor(HUE_NONE, SAT_BW, value);
 }
 
@@ -66,33 +66,27 @@ byte programmedStepLightLevel(bool selected, bool playing, bool accented) {
   return kStepLightMedium;
 }
 
-uint32_t scaleLinearLedColor(uint32_t color, byte level) {
+LedColor scalePerceptualLedColor(LedColor color, byte level) {
   if (level == kStepLightOff) {
     return 0;
   }
   if (level >= kStepLightHighest) {
-    return gammaLEDcode(color);
+    return applyLedGamma16(color);
   }
 
-  uint32_t scaled = 0;
-  for (byte shift = 0; shift <= 16; shift += 8) {
-    uint32_t channel = (color >> shift) & 0xFF;
-    channel = (channel * level + 127) / 255;
-    scaled |= (channel << shift);
-  }
-  return gammaLEDcode(scaled);
+  return applyLedGamma16(scaleLedColor16(color, static_cast<uint16_t>(level) * 257u));
 }
 
-uint32_t filledStepColor(float hue, byte saturation, byte level) {
-  colorDef referenceColor = {
+LedColor filledStepColor(float hue, byte saturation, byte level) {
+  LedHsv referenceColor = {
     hue,
     saturation,
-    applyLEDLevel(kStepLightHighest, ledRestBrightness)
+    scaleLedLevel(kStepLightHighest, ledRestBrightness)
   };
-  return scaleLinearLedColor(getLEDcodeLinear(referenceColor), level);
+  return scalePerceptualLedColor(getLedPerceptualRgb16(referenceColor), level);
 }
 
-uint32_t regularProgrammedStepColor(bool selected, bool playing, bool accented) {
+LedColor regularProgrammedStepColor(bool selected, bool playing, bool accented) {
   byte level = programmedStepLightLevel(selected, playing, accented);
   return filledStepColor(stepHueValue(stepHue()), SAT_VIVID, level);
 }
@@ -101,8 +95,8 @@ bool noteProgrammedStepColor(int16_t pitchSteps,
                              bool selected,
                              bool playing,
                              bool accented,
-                             uint32_t& colorOut) {
-  colorDef baseColor = {};
+                             LedColor& colorOut) {
+  LedHsv baseColor = {};
   if (!getBaseLedColorForPitchSteps(pitchSteps, baseColor)) {
     return false;
   }
@@ -112,11 +106,11 @@ bool noteProgrammedStepColor(int16_t pitchSteps,
   return true;
 }
 
-uint32_t programmedStepColor(byte stepIndex, bool selected, bool playing, bool accented) {
+LedColor programmedStepColor(byte stepIndex, bool selected, bool playing, bool accented) {
   if (stepColorMode() == kStepColorNote) {
     const SequencerStep& target = step(stepIndex);
     if (target.noteCount > 0) {
-      uint32_t color = 0;
+      LedColor color = 0;
       if (noteProgrammedStepColor(target.pitchSteps[0], selected, playing, accented, color)) {
         return color;
       }
@@ -125,15 +119,15 @@ uint32_t programmedStepColor(byte stepIndex, bool selected, bool playing, bool a
   return regularProgrammedStepColor(selected, playing, accented);
 }
 
-uint32_t stoppedTransportColor() {
+LedColor stoppedTransportColor() {
   return ledColor(HUE_RED, SAT_VIVID, VALUE_FULL);
 }
 
-uint32_t runningTransportColor() {
+LedColor runningTransportColor() {
   return ledColor(HUE_GREEN, SAT_VIVID, VALUE_FULL);
 }
 
-uint32_t emptyStepColor(bool selected, bool playing, bool accented) {
+LedColor emptyStepColor(bool selected, bool playing, bool accented) {
   if (accented) {
     return neutralStepColor((selected || playing) ? kStepLightHighest : kStepLightMedium);
   }
@@ -143,16 +137,16 @@ uint32_t emptyStepColor(bool selected, bool playing, bool accented) {
   return 0;
 }
 
-uint32_t confirmClearColor() {
+LedColor confirmClearColor() {
   byte value = confirmClearHeld() ? VALUE_FULL : kActionBlueValue;
   return ledColor(kActionBlueHue, SAT_VIVID, value);
 }
 
-uint32_t utilityWhiteColor(bool active) {
+LedColor utilityWhiteColor(bool active) {
   return ledColor(HUE_NONE, SAT_BW, active ? kStepLightHigh : kStepLightMedium);
 }
 
-uint32_t actionBlueColor() {
+LedColor actionBlueColor() {
   return ledColor(kActionBlueHue, SAT_VIVID, kActionBlueValue);
 }
 
@@ -220,7 +214,7 @@ void renderLedOverrides(SetLedPixelFn setLedPixel) {
       continue;
     }
 
-    uint32_t color = programmedStepColor(stepIndex, selected, playing, accented);
+    LedColor color = programmedStepColor(stepIndex, selected, playing, accented);
     setLedPixel(static_cast<byte>(buttonIndex), color);
   }
 
@@ -231,13 +225,13 @@ void renderLedOverrides(SetLedPixelFn setLedPixel) {
 
   if (mode == SequencerToolMode::ToolsPicker) {
     const SequencerToolKey* keys = toolKeys();
-    uint32_t blue = actionBlueColor();
+    LedColor blue = actionBlueColor();
     for (byte i = 0; i < toolKeyCount(); ++i) {
       setLedPixel(keys[i].buttonIndex, blue);
     }
   } else if (mode == SequencerToolMode::ExactLength) {
     const SequencerTextKey* keys = exactLengthKeys();
-    uint32_t blue = actionBlueColor();
+    LedColor blue = actionBlueColor();
     for (byte i = 0; i < exactLengthKeyCount(); ++i) {
       setLedPixel(keys[i].buttonIndex, blue);
     }

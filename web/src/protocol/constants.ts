@@ -27,6 +27,8 @@ export const DelegatedEncoderEvent = {
 export type DelegatedEncoderEventValue = (typeof DelegatedEncoderEvent)[keyof typeof DelegatedEncoderEvent];
 
 export const MessageType = {
+  CompactSamplerRequest: 0x36,
+  CompactSamplerResponse: 0x37,
   HelloRequest: 0x01,
   HelloResponse: 0x02,
   Ack: 0x06,
@@ -42,7 +44,21 @@ export const MessageType = {
   TransferAbort: 0x28,
   DeleteRequest: 0x29,
   SynthParamSet: 0x2a,
-  SynthWavetableSelect: 0x2b
+  SynthWavetableSelect: 0x2b,
+  PreviewBegin: 0x2c,
+  PreviewCommit: 0x2d,
+  PreviewAbort: 0x2e,
+  CalibrationRequest: 0x30,
+  CalibrationResponse: 0x31,
+  CalibrationLabRequest: 0x32,
+  CalibrationLabResponse: 0x33,
+  PhysicalSynthRequest: 0x34,
+  PhysicalSynthResponse: 0x35,
+  AdvancedObjectListRequest: 0x50,
+  AdvancedObjectListResponse: 0x51,
+  AdvancedReadRequest: 0x52,
+  AdvancedReadBegin: 0x53,
+  AdvancedDeleteRequest: 0x54
 } as const;
 
 export type MessageTypeValue = (typeof MessageType)[keyof typeof MessageType];
@@ -70,6 +86,7 @@ export const ErrorCode = {
 } as const;
 
 export const ObjectType = {
+  CompactSampler: 0x0e,
   DeviceProfile: 0x01,
   ActiveSnapshot: 0x02,
   UserTuning: 0x03,
@@ -107,6 +124,7 @@ export const ObjectListFlag = {
 export type ObjectListFlagValue = (typeof ObjectListFlag)[keyof typeof ObjectListFlag];
 
 export const CapabilityFlag = {
+  CompactSampler: 1 << 24,
   Profile: 1 << 0,
   SynthPreset: 1 << 1,
   UserTuning: 1 << 2,
@@ -122,7 +140,17 @@ export const CapabilityFlag = {
   LiveSynthParam: 1 << 12,
   CentsTableRuntimeTuning: 1 << 13,
   GeometryBundleFiles: 1 << 14,
-  LiveSynthWavetableSelect: 1 << 15
+  LiveSynthWavetableSelect: 1 << 15,
+  ScopedGeometryList: 1 << 16,
+  AtomicGeometryPreview: 1 << 17,
+  AdvancedCalibrationLab: 1 << 18,
+  AdvancedPhysicalSynth: 1 << 19,
+  AdvancedSynthEngines: 1 << 20,
+  AdvancedSampler: 1 << 22,
+  AdvancedPerformance: 1 << 21,
+  AdvancedContentLibrary: 1 << 23,
+  /** Wavetable patch on the generic engine transport (engine 7, layout schema 1). */
+  AdvancedWavetable: 1 << 25
 } as const;
 
 export type CapabilityFlagValue = (typeof CapabilityFlag)[keyof typeof CapabilityFlag];

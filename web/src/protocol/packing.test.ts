@@ -14,6 +14,16 @@ describe("8-to-7 packing", () => {
     expect(Array.from(unpack8To7(pack8To7(raw), raw.length))).toEqual(Array.from(raw));
   });
 
+  it("rejects truncated, trailing, and impossible declared lengths", () => {
+    const packed = pack8To7(Uint8Array.from([0x80, 1, 2, 3]));
+    for (const length of [-1, 0, 3, 5, 16383, 0.5, NaN, Infinity]) {
+      expect(() => unpack8To7(packed, length)).toThrow();
+    }
+    expect(() => unpack8To7([...packed, 0], 4)).toThrow();
+    expect(() => unpack8To7(packed.slice(0, -1), 4)).toThrow();
+    expect(unpack8To7([], 0)).toEqual(new Uint8Array());
+  });
+
   it("computes the chunk checksum from unpacked bytes", () => {
     expect(chunkChecksum(Uint8Array.from([0x48, 0x42, 0x53, 0x31]))).toBe(0x0e);
   });

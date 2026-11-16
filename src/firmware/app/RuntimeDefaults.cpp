@@ -1,6 +1,7 @@
 #include "../FirmwareModule.h"
 #include "PlatformCommon.h"
 #include "RuntimeDefaults.h"
+#include "../hardware/LedTiming.h"
 #include "../storage/PersistentDataModels.h"
 #include "../synth/SynthDefaults.h"
 #include "../tuning/Tuning.h"
@@ -42,6 +43,7 @@ byte arpeggiatorDivision = 32;  // denominator of whole-note duration (1/32 by d
 byte synthBPM = 120;
 
 byte arpeggiatorDirection = ARP_DIRECTION_UP;
+byte arpeggiatorNoteLength = 100;
 
 const MetronomeSignature metronomeSignatures[METRONOME_SIGNATURE_COUNT] = {
   { 4, 4 },
@@ -67,7 +69,6 @@ bool mirrorLeftRight = false;
 bool mirrorUpDown = false;
 
 //  Just Intonation related global variables
-byte justIntonationBPM = 60;
 byte justIntonationBPM_Multiplier = 1;
 bool useJustIntonationBPM = false;
 bool useDynamicJustIntonation = false;
@@ -129,6 +130,8 @@ bool bootAnimationEnabled = true;
 byte animationType = ANIMATE_BUTTON;
 
 byte ledTestMode = LED_TEST_OFF;
+bool colorDithering = false;
+int ledFramePeriodMicros = LED_FRAME_PERIOD_MIN_US;
 
 byte globalBrightness = BRIGHT_DIM;
 

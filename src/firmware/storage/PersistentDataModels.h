@@ -2,6 +2,7 @@
 
 #include "../FirmwareModule.h"
 #include "../tuning/Tuning.h"
+#include "SettingsMigration.h"
 
 struct SettingsHeader {
   char magic[3];           // e.g., "STG"
@@ -10,7 +11,7 @@ struct SettingsHeader {
   uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 29;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 37;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
 
@@ -23,9 +24,13 @@ enum class SettingKey : uint8_t {
 
 constexpr uint8_t NUM_SETTINGS = static_cast<uint8_t>(SettingKey::NumSettings);
 
-constexpr uint8_t SYNTH_PRESET_MAX_COUNT = 128;
-constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 11;
-constexpr uint8_t SYNTH_PRESET_SCHEMA_VERSION = 7;
+// Synth presets are listed from an on-flash index (SynthPresetCatalog.h); only
+// distinct folder paths and the open browser folder are held in RAM.
+constexpr uint16_t SYNTH_PRESET_MAX_COUNT = 512;
+constexpr uint8_t SYNTH_PRESET_FOLDER_MAX_COUNT = 32;
+constexpr uint8_t SYNTH_PRESET_FOLDER_MAX_PRESETS = 32;
+constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 13;
+constexpr uint8_t SYNTH_PRESET_SCHEMA_VERSION = 9;
 constexpr uint8_t SYNTH_WAVETABLE_FILE_VERSION = 1;
 constexpr uint8_t SYNTH_WAVETABLE_SCHEMA_VERSION = 1;
 constexpr uint8_t SYNTH_WAVETABLE_MAX_COUNT = 32;
@@ -57,6 +62,8 @@ constexpr char GEOMETRY_BUNDLE_FILE_EXTENSION[] = ".hgb";
 constexpr char DEFAULT_GEOMETRY_REFERENCE_FILE_PATH[] = "/default_geometry.dat";
 constexpr uint8_t DEFAULT_GEOMETRY_REFERENCE_VERSION = 1;
 constexpr size_t SYNTH_PRESET_NAME_LENGTH = 32;
+// Board browser name buffer (23 characters + NUL). Files keep 32-byte names.
+constexpr size_t SYNTH_PRESET_MENU_NAME_LENGTH = 24;
 constexpr size_t SYNTH_PRESET_FOLDER_LENGTH = 48;
 constexpr size_t SYNTH_PRESET_MENU_LABEL_LENGTH = 64;
 constexpr size_t SYNTH_PRESET_OBJECT_ID_LENGTH = 16;
@@ -69,7 +76,7 @@ constexpr const char* SYNTH_WAVETABLE_ROOT_FOLDER = "/";
 constexpr const char* SYNTH_WAVETABLE_BUILTIN_FOLDER = "/Built In";
 constexpr const char* SYNTH_WAVETABLE_BASIC_NAME = "Basic Shapes";
 
-constexpr std::array<SettingKey, 34> synthPresetKeys = {
+constexpr std::array<SettingKey, 35> synthPresetKeys = {
   SettingKey::PlaybackMode,
   SettingKey::Waveform,
   SettingKey::SynthDrive,
@@ -103,7 +110,8 @@ constexpr std::array<SettingKey, 34> synthPresetKeys = {
   SettingKey::SynthLfoTarget,
   SettingKey::SynthLfoAmount,
   SettingKey::SynthLfoWave,
-  SettingKey::SynthLfoSpeed
+  SettingKey::SynthLfoSpeed,
+  SettingKey::ArpeggiatorNoteLength
 };
 constexpr size_t SYNTH_PRESET_VALUE_COUNT = synthPresetKeys.size();
 constexpr size_t PROFILE_PERSISTED_SETTING_COUNT = NUM_SETTINGS - SYNTH_PRESET_VALUE_COUNT;
@@ -152,6 +160,13 @@ struct GeometryProfileReference {
 static_assert(sizeof(GeometryProfileReference) == 49,
               "GeometryProfileReference disk layout changed");
 
+constexpr uint8_t SAMPLER_ENVELOPE_OVERRIDE_ATTACK = 1u << 0;
+constexpr uint8_t SAMPLER_ENVELOPE_OVERRIDE_HOLD = 1u << 1;
+constexpr uint8_t SAMPLER_ENVELOPE_OVERRIDE_DECAY = 1u << 2;
+constexpr uint8_t SAMPLER_ENVELOPE_OVERRIDE_SUSTAIN = 1u << 3;
+constexpr uint8_t SAMPLER_ENVELOPE_OVERRIDE_RELEASE = 1u << 4;
+constexpr uint8_t SAMPLER_ENVELOPE_OVERRIDE_ALL = 0x1F;
+
 struct SynthPresetSlot {
   uint8_t valid = 0;
   uint8_t favorite = 0;
@@ -161,6 +176,12 @@ struct SynthPresetSlot {
   char wavetableName[SYNTH_WAVETABLE_NAME_LENGTH] = {};
   char wavetableFolderPath[SYNTH_WAVETABLE_FOLDER_LENGTH] = {};
   uint8_t values[SYNTH_PRESET_VALUE_COUNT] = {};
+  // Sampler presets name an installed Classic sampler instrument; empty
+  // selects the wavetable engine. Bit n set replaces amp envelope stage n
+  // (attack, hold, decay, sustain, release) with the preset's own value;
+  // a clear bit keeps each sample's per-region value ("Smpl").
+  char samplerName[SYNTH_PRESET_NAME_LENGTH] = {};
+  uint8_t samplerEnvelopeOverride = 0;
 };
 
 template <typename Slot, size_t Capacity>
@@ -254,16 +275,6 @@ private:
   size_t count_ = 0;
 };
 
-struct SynthPresetIndexEntry {
-  uint8_t valid = 0;
-  uint8_t favorite = 0;
-  uint8_t objectId[SYNTH_PRESET_OBJECT_ID_LENGTH] = {};
-  char name[SYNTH_PRESET_NAME_LENGTH] = {};
-  char folderPath[SYNTH_PRESET_FOLDER_LENGTH] = {};
-};
-
-using SynthPresetCatalog = FixedCatalog<SynthPresetIndexEntry, SYNTH_PRESET_MAX_COUNT>;
-
 struct SynthWavetableFileHeader {
   char magic[3];     // "SYW"
   uint8_t version;
@@ -291,15 +302,18 @@ constexpr size_t SETTINGS_DATA_SIZE =
   + SETTINGS_GEOMETRY_DATA_SIZE
   + SETTINGS_SYNTH_REFERENCE_DATA_SIZE;
 
+static_assert(persistedSettingsWidth(CURRENT_SETTINGS_VERSION) == PROFILE_PERSISTED_SETTING_COUNT,
+              "Add the new settings schema to SettingsMigration.h");
+
 // The host-side factory-library compiler writes these records byte-for-byte.
 // Fail the firmware build if the RP2040 ABI ever changes their disk layout.
 static_assert(sizeof(SettingsHeader) == 12, "SettingsHeader disk layout changed");
-static_assert(SETTINGS_PROFILE_VALUES_DATA_SIZE == 504,
+static_assert(SETTINGS_PROFILE_VALUES_DATA_SIZE == 540,
               "Persisted settings payload changed; update the factory-library builder");
-static_assert(SETTINGS_DATA_SIZE == 1098,
+static_assert(SETTINGS_DATA_SIZE == 1134,
               "Settings payload changed; update the factory-library builder");
 static_assert(sizeof(SynthPresetFileHeaderBase) == 8, "SynthPresetFileHeaderBase disk layout changed");
-static_assert(sizeof(SynthPresetSlot) == 212, "SynthPresetSlot disk layout changed");
+static_assert(sizeof(SynthPresetSlot) == SYNTH_PRESET_RECORD_WIDTH, "SynthPresetSlot disk layout changed");
 static_assert(sizeof(SynthWavetableFileHeader) == 12, "SynthWavetableFileHeader disk layout changed");
 static_assert(sizeof(SynthWavetableSlot) == 145, "SynthWavetableSlot disk layout changed");
 
@@ -377,7 +391,6 @@ extern SynthProfileReference synthProfileReferences[PROFILE_COUNT];
 extern uint8_t* settings;
 extern uint8_t activeProfileIndex;
 extern uint8_t defaultProfileIndex;
-extern SynthPresetCatalog synthPresets;
 extern SynthWavetableCatalog synthWavetables;
 extern GeometryBundleCatalog geometryBundles;
 extern uint16_t geometryCatalogObjectCount;
