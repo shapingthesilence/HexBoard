@@ -937,7 +937,9 @@ on-device editing: choose tuning, center button, across steps, and down-left
 steps. `DeviceRotation` is the four-step physical/display orientation and does
 not alter pitches. `LayoutRotation` and `MirrorFlags` transform the musical
 vectors. Current factory layouts encode `DeviceRotation` plus the musical
-transform fields, with zero musical rotation and no mirrors.
+transform fields, with zero musical rotation and no mirrors. Applying a layout
+loads all three as authored; the on-device `Orientation` page then adjusts
+them for the current profile until another layout is applied.
 `CenterStepsFromC` lets a host re-center or transpose the affine layout without
 changing pitches; current firmware accepts the range of its signed 16-bit step
 indices.
@@ -945,8 +947,7 @@ indices.
 Current firmware live Apply supports `LayoutKind = 1` vector layouts. Applying
 a layout replaces the runtime layout name, center button, center-step offset,
 vectors, device rotation, musical rotation, and mirrors; clears previous
-explicit button overrides; then rebuilds scale membership, MIDI pitch
-assignment, display orientation, and LED color caches.
+explicit button overrides; then rebuilds scale membership, MIDI pitch assignment, display orientation, and LED color caches.
 
 A web bundle may contain multiple `UserLayout` objects for the same tuning. A
 generated vector layout can still be edited on-device with the compact
@@ -961,8 +962,8 @@ DownLeftSteps = -UpRightSteps
 UpRightSteps = -DownLeftSteps
 ```
 
-Direct changes to `LayoutRotation` and `MirrorFlags` leave pitch, color, and
-action overrides attached to physical button indices. The web editor's spatial
+The on-device `Orientation` rotation and flips leave pitch, color, and action
+overrides attached to physical button indices. The web editor's spatial
 toolbar instead rewrites the vector layout and moves override coordinates
 together, centered on its primary selected key.
 

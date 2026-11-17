@@ -19,7 +19,7 @@ void reset(bool dynamic = true, bool bpm = false, byte limit = 41) {
   pressedKeyIDs.clear();
   useDynamicJustIntonation = dynamic; useJustIntonationBPM = bpm;
   dynamicJIRatioTable = limit;
-  justIntonationBPM = 60; justIntonationBPM_Multiplier = 1;
+  synthBPM = 60; justIntonationBPM_Multiplier = 1;
   testReferenceHz = 440; testStepCents = 100;
   testPeriodCents = 1200; testCentsTable.clear();
   mpeLowestChannel = 2; mpeHighestChannel = 16; testChannelMask = 0xfffe;
@@ -38,7 +38,7 @@ void setSteps(byte key, int16_t steps) {
 void setMidi(byte key, int midi) { setSteps(key, midi - 69); }
 void tune(byte key) { pressedKeyIDs.add(key); justIntonationRetune(key); }
 float bpmExpected(byte key) {
-  const float grid = static_cast<float>((justIntonationBPM / 60.0) * justIntonationBPM_Multiplier);
+  const float grid = static_cast<float>((synthBPM / 60.0) * justIntonationBPM_Multiplier);
   if (!(grid > 0)) return 0;
   const double reference = std::round(testReferenceHz / grid);
   const double note = std::round(h[key].frequency / grid);
@@ -219,7 +219,7 @@ void invalidFrequencies() {
 void bpm() {
   reset(false, true);
   for (int tempo = 1; tempo <= 255; ++tempo) {
-    justIntonationBPM = tempo;
+    synthBPM = tempo;
     for (int multiplier = 1; multiplier <= 255; ++multiplier) {
       justIntonationBPM_Multiplier = multiplier;
       for (int midi : {0, 12, 60, 69, 127}) {
@@ -230,7 +230,7 @@ void bpm() {
   }
   // Defensive handling of invalid zero settings does not alter stored values.
   for (byte zeroField : {0, 1}) {
-    justIntonationBPM = zeroField ? 60 : 0;
+    synthBPM = zeroField ? 60 : 0;
     justIntonationBPM_Multiplier = zeroField ? 0 : 1;
     justIntonationRetune(0); finite(0); near(h[0].jiRetuneCents, 0);
   }
@@ -238,7 +238,7 @@ void bpm() {
   justIntonationRetune(0); near(h[0].jiRetuneCents, bpmExpected(0));
 }
 void combined() {
-  reset(true, true); justIntonationBPM = 123; justIntonationBPM_Multiplier = 3;
+  reset(true, true); synthBPM = 123; justIntonationBPM_Multiplier = 3;
   setMidi(0, 60); setMidi(1, 64); setMidi(2, 71);
   tune(0); near(h[0].jiRetuneCents, bpmExpected(0)); tune(1);
   near(h[1].jiRetuneCents - h[0].jiRetuneCents, 1200 * std::log2(1.25f) - 400);
@@ -246,7 +246,7 @@ void combined() {
   near(h[2].jiRetuneCents - h[1].jiRetuneCents, 1200 * std::log2(1.5f) - 700);
   reset(true, true, 3); setMidi(0, 60); setMidi(1, 61); tune(0); tune(1);
   near(h[1].jiRetuneCents - h[0].jiRetuneCents, 1200 * std::log2(256.0f / 243) - 100);
-  reset(true, true); justIntonationBPM = 255; justIntonationBPM_Multiplier = 255;
+  reset(true, true); synthBPM = 255; justIntonationBPM_Multiplier = 255;
   setMidi(0, 60); setMidi(1, 64); tune(0); tune(1); finite(0); finite(1);
   near(h[1].jiRetuneCents, 1200 * std::log2(1.25f) - 400);
 }

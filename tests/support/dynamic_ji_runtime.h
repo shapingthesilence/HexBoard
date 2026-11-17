@@ -33,7 +33,7 @@ struct TestKey {
 };
 inline TestKey h[BTN_COUNT];
 inline bool useDynamicJustIntonation = false, useJustIntonationBPM = false;
-inline byte dynamicJIRatioTable = 41, justIntonationBPM = 60, justIntonationBPM_Multiplier = 1;
+inline byte dynamicJIRatioTable = 41, synthBPM = 60, justIntonationBPM_Multiplier = 1;
 inline byte MPEpitchBendSemis = 48, MPEpitchBendsNeeded = 255;
 inline bool standardMidiMicrotonalActive = false, mpeChannelQueueActive = true, extraMPE = false;
 inline byte defaultMidiChannel = 1, standardMidiBaseChannel = 1;

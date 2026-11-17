@@ -9,6 +9,7 @@
 #include "../app/RuntimeDefaults.h"
 #include "../model/ScalePalettePreset.h"
 #include "../hardware/GridState.h"
+#include "../midi/MidiRouting.h"
 #include "../model/PitchAssignment.h"
 #include "../storage/BuiltinGeometry.h"
 #include "../storage/PresetSync.h"
@@ -465,8 +466,52 @@ void rebuildUserGeometryVirtualList(UserGeometryMenuKind kind) {
   }
 }
 
+// Control rows sit above the items: Key and Scale Lock in Scales,
+// Intonation at the root of Tuning, and Orientation in Layout.
+uint16_t userGeometryControlRowCount() {
+  switch (userGeometryVirtualKind) {
+    case UserGeometryMenuKind::Scale:
+      return 2;
+    case UserGeometryMenuKind::Layout:
+      return 1;
+    case UserGeometryMenuKind::Tuning:
+      return menuFolderIsRoot(userGeometryMenuCurrentFolder) ? 1 : 0;
+  }
+  return 0;
+}
+
+// Maps a list row to its item row; false for a control row.
+bool userGeometryItemIndex(uint16_t row, uint16_t& index) {
+  const uint16_t controls = userGeometryControlRowCount();
+  if (row < controls) {
+    return false;
+  }
+  index = static_cast<uint16_t>(row - controls);
+  return index < userGeometryVirtualCount;
+}
+
+// Set when returning from Intonation or Orientation, so the list opens on
+// the row that led there.
+bool userGeometryOpenOnControlRow = false;
+
+const char* intonationSummary() {
+  if (useDynamicJustIntonation && useJustIntonationBPM) return "Dyn+BPM";
+  if (useDynamicJustIntonation) return "Dyn JI";
+  if (useJustIntonationBPM) return "BPM JI";
+  return "Fixed";
+}
+
+const char* orientationSummary() {
+  const bool rotated = layoutRotation % 6 != 0;
+  const bool flipped = mirrorLeftRight || mirrorUpDown;
+  if (rotated && flipped) return "Rot+Flp";
+  if (rotated) return "Rotated";
+  if (flipped) return "Flipped";
+  return "Normal";
+}
+
 uint16_t userGeometryVirtualCountProvider(void*) {
-  return userGeometryVirtualCount+(userGeometryVirtualKind==UserGeometryMenuKind::Scale?2:0);
+  return static_cast<uint16_t>(userGeometryVirtualCount + userGeometryControlRowCount());
 }
 
 bool userGeometryVirtualLabelProvider(void*, uint16_t index, char* output, size_t outputLength) {
@@ -474,9 +519,18 @@ bool userGeometryVirtualLabelProvider(void*, uint16_t index, char* output, size_
     return false;
   }
   output[0] = '\0';
-  if(userGeometryVirtualKind==UserGeometryMenuKind::Scale){
-    if(index<2){snprintf(output,outputLength,"%s",index==0?"Key":"Scale Lock");return true;}index-=2;
+  const uint16_t controls = userGeometryControlRowCount();
+  if (index < controls) {
+    const char* label = "Orientation";
+    if (userGeometryVirtualKind == UserGeometryMenuKind::Scale) {
+      label = index == 0 ? "Key" : "Scale Lock";
+    } else if (userGeometryVirtualKind == UserGeometryMenuKind::Tuning) {
+      label = "Intonation";
+    }
+    snprintf(output, outputLength, "%s", label);
+    return true;
   }
+  index = static_cast<uint16_t>(index - controls);
   if (index >= userGeometryVirtualCount) {
     return false;
   }
@@ -513,7 +567,14 @@ bool userGeometryVirtualLabelProvider(void*, uint16_t index, char* output, size_
 }
 
 VirtualListMenuRowType userGeometryVirtualRowType(void*, uint16_t index) {
-  if(userGeometryVirtualKind==UserGeometryMenuKind::Scale){if(index==0)return VirtualListMenuRowType::Value;if(index==1)return VirtualListMenuRowType::Checkbox;index-=2;}
+  const uint16_t controls = userGeometryControlRowCount();
+  if (index < controls) {
+    if (userGeometryVirtualKind == UserGeometryMenuKind::Scale) {
+      return index == 0 ? VirtualListMenuRowType::Value : VirtualListMenuRowType::Checkbox;
+    }
+    return VirtualListMenuRowType::Link;
+  }
+  index = static_cast<uint16_t>(index - controls);
   if (index >= userGeometryVirtualCount) {
     return VirtualListMenuRowType::Button;
   }
@@ -522,9 +583,9 @@ VirtualListMenuRowType userGeometryVirtualRowType(void*, uint16_t index) {
            : VirtualListMenuRowType::Button;
 }
 
-bool userGeometryVirtualIsCurrent(void*, uint16_t index) {
-  if(userGeometryVirtualKind==UserGeometryMenuKind::Scale){if(index<2)return false;index-=2;}
-  if (index >= userGeometryVirtualCount
+bool userGeometryVirtualIsCurrent(void*, uint16_t row) {
+  uint16_t index = 0;
+  if (!userGeometryItemIndex(row, index)
       || userGeometryVirtualRows[index].kind != UserGeometryMenuRowKind::Item) {
     return false;
   }
@@ -536,13 +597,10 @@ bool geometryAuditionStartedFromMenu = false;
 UserGeometryMenuKind geometryAuditionedKind = UserGeometryMenuKind::Tuning;
 uint16_t geometryAuditionedHandle = USER_GEOMETRY_MENU_INVALID_HANDLE;
 
-bool userGeometryVirtualIsAuditioning(void*, uint16_t index) {
+bool userGeometryVirtualIsAuditioning(void*, uint16_t row) {
   if (!geometryAuditionStartedFromMenu || geometryAuditionedKind != userGeometryVirtualKind) return false;
-  if (userGeometryVirtualKind == UserGeometryMenuKind::Scale) {
-    if (index < 2) return false;
-    index -= 2;
-  }
-  return index < userGeometryVirtualCount
+  uint16_t index = 0;
+  return userGeometryItemIndex(row, index)
          && userGeometryVirtualRows[index].kind == UserGeometryMenuRowKind::Item
          && userGeometryVirtualRows[index].handle == geometryAuditionedHandle;
 }
@@ -551,8 +609,17 @@ bool userGeometryVirtualInitialSelection(void*, uint16_t* index) {
   if (!index) {
     return false;
   }
-  if(userGeometryVirtualKind==UserGeometryMenuKind::Scale){*index=0;return true;}
-  return findCurrentUserGeometryRow(*index);
+  if (userGeometryOpenOnControlRow || userGeometryVirtualKind == UserGeometryMenuKind::Scale) {
+    userGeometryOpenOnControlRow = false;
+    *index = 0;
+    return true;
+  }
+  uint16_t row = 0;
+  if (!findCurrentUserGeometryRow(row)) {
+    return false;
+  }
+  *index = static_cast<uint16_t>(row + userGeometryControlRowCount());
+  return true;
 }
 
 void loadUserGeometryHandle(UserGeometryMenuKind kind, uint16_t handle) {
@@ -592,18 +659,24 @@ void loadUserGeometryHandle(UserGeometryMenuKind kind, uint16_t handle) {
   menuHome();
 }
 
+void openGeometrySettingsMenu(UserGeometryMenuKind owner);
+
 void userGeometryVirtualSelect(void*, uint16_t index) {
-  if (userGeometryVirtualKind == UserGeometryMenuKind::Scale) {
-    if (index == 1) {
-      scaleLock = !scaleLock;
-      settings[static_cast<uint8_t>(SettingKey::ScaleLock)] = scaleLock;
-      markSettingsDirty();
-      redrawVirtualListMenu();
+  const uint16_t controls = userGeometryControlRowCount();
+  if (index < controls) {
+    if (userGeometryVirtualKind == UserGeometryMenuKind::Scale) {
+      if (index == 1) {
+        scaleLock = !scaleLock;
+        settings[static_cast<uint8_t>(SettingKey::ScaleLock)] = scaleLock;
+        markSettingsDirty();
+        redrawVirtualListMenu();
+      }
       return;
     }
-    if (index == 0) return;
-    index -= 2;
+    openGeometrySettingsMenu(userGeometryVirtualKind);
+    return;
   }
+  index = static_cast<uint16_t>(index - controls);
   if (index >= userGeometryVirtualCount) {
     redrawVirtualListMenu();
     return;
@@ -638,18 +711,29 @@ void userGeometryVirtualClose(void*) {
   menuHome();
 }
 
-bool scaleControlIsChecked(void*, uint16_t index) {
+bool userGeometryControlIsChecked(void*, uint16_t index) {
   return userGeometryVirtualKind == UserGeometryMenuKind::Scale && index == 1 && scaleLock;
 }
 
-bool scaleControlValue(void*, uint16_t index, char* output, size_t outputLength) {
-  if (userGeometryVirtualKind != UserGeometryMenuKind::Scale || index != 0) return false;
-  formatTuningDegreeLabel(current.tuning(),
-                         static_cast<uint16_t>(userGeometryRuntime.active
-                           ? current.keyStepsFromA
-                           : current.keyStepsFromA - current.tuning().spanCtoA()),
-                         output, outputLength);
-  return true;
+bool userGeometryControlValue(void*, uint16_t index, char* output, size_t outputLength) {
+  if (index >= userGeometryControlRowCount()) return false;
+  switch (userGeometryVirtualKind) {
+    case UserGeometryMenuKind::Scale:
+      if (index != 0) return false;
+      formatTuningDegreeLabel(current.tuning(),
+                             static_cast<uint16_t>(userGeometryRuntime.active
+                               ? current.keyStepsFromA
+                               : current.keyStepsFromA - current.tuning().spanCtoA()),
+                             output, outputLength);
+      return true;
+    case UserGeometryMenuKind::Tuning:
+      snprintf(output, outputLength, "%s", intonationSummary());
+      return true;
+    case UserGeometryMenuKind::Layout:
+      snprintf(output, outputLength, "%s", orientationSummary());
+      return true;
+  }
+  return false;
 }
 
 void adjustScaleControl(void*, uint16_t index, int delta) {
@@ -681,7 +765,243 @@ void openUserGeometryMenu(UserGeometryMenuKind kind) {
   provider.back = userGeometryVirtualBack;
   provider.close = userGeometryVirtualClose;
   provider.emptyLabel = emptyUserGeometryLabel(kind);
-  if(kind==UserGeometryMenuKind::Scale){provider.isChecked=scaleControlIsChecked;provider.getValue=scaleControlValue;provider.adjust=adjustScaleControl;}
+  provider.isChecked = userGeometryControlIsChecked;
+  provider.getValue = userGeometryControlValue;
+  if (kind == UserGeometryMenuKind::Scale) {
+    provider.adjust = adjustScaleControl;
+  }
+  openVirtualListMenu(provider);
+}
+
+// Intonation (from Tuning) holds profile settings that apply to every tuning.
+// Orientation (from Layout) adjusts the current layout; choosing a layout
+// loads it as authored again. A profile keeps its adjustments across restarts.
+enum class GeometrySettingRow : uint8_t {
+  DynamicJI,
+  JITable,
+  BPMSync,
+  BPMMultiplier,
+  Tempo,
+  Rotation,
+  DeviceRotation,
+  FlipLeftRight,
+  FlipUpDown
+};
+
+constexpr uint8_t GEOMETRY_SETTING_ROW_CAPACITY = 5;
+GeometrySettingRow geometrySettingRows[GEOMETRY_SETTING_ROW_CAPACITY] = {};
+uint8_t geometrySettingRowCount = 0;
+UserGeometryMenuKind geometrySettingsOwner = UserGeometryMenuKind::Tuning;
+
+constexpr byte DYNAMIC_JI_RATIO_TABLES[] = {
+  DYNAMIC_JI_RATIO_TABLE_3_LIMIT, DYNAMIC_JI_RATIO_TABLE_5_LIMIT, DYNAMIC_JI_RATIO_TABLE_7_LIMIT,
+  DYNAMIC_JI_RATIO_TABLE_11_LIMIT, DYNAMIC_JI_RATIO_TABLE_13_LIMIT, DYNAMIC_JI_RATIO_TABLE_17_LIMIT,
+  DYNAMIC_JI_RATIO_TABLE_19_LIMIT, DYNAMIC_JI_RATIO_TABLE_23_LIMIT, DYNAMIC_JI_RATIO_TABLE_29_LIMIT,
+  DYNAMIC_JI_RATIO_TABLE_31_LIMIT, DYNAMIC_JI_RATIO_TABLE_37_LIMIT, DYNAMIC_JI_RATIO_TABLE_41_LIMIT
+};
+constexpr uint8_t DYNAMIC_JI_RATIO_TABLE_COUNT = sizeof(DYNAMIC_JI_RATIO_TABLES);
+
+// Dependent rows appear only while their switch is on.
+void rebuildGeometrySettingRows() {
+  geometrySettingRowCount = 0;
+  auto add = [](GeometrySettingRow row) { geometrySettingRows[geometrySettingRowCount++] = row; };
+  if (geometrySettingsOwner == UserGeometryMenuKind::Tuning) {
+    add(GeometrySettingRow::DynamicJI);
+    if (useDynamicJustIntonation) add(GeometrySettingRow::JITable);
+    add(GeometrySettingRow::BPMSync);
+    if (useJustIntonationBPM) {
+      add(GeometrySettingRow::BPMMultiplier);
+      add(GeometrySettingRow::Tempo);
+    }
+  } else {
+    add(GeometrySettingRow::Rotation);
+    add(GeometrySettingRow::DeviceRotation);
+    add(GeometrySettingRow::FlipLeftRight);
+    add(GeometrySettingRow::FlipUpDown);
+  }
+}
+
+bool geometrySettingRowAt(uint16_t index, GeometrySettingRow& row) {
+  if (index >= geometrySettingRowCount) return false;
+  row = geometrySettingRows[index];
+  return true;
+}
+
+void storeGeometryProfileSetting(SettingKey key, uint8_t value) {
+  settings[static_cast<uint8_t>(key)] = value;
+  markSettingsDirty();
+}
+
+uint16_t geometrySettingsCount(void*) {
+  return geometrySettingRowCount;
+}
+
+bool geometrySettingsLabel(void*, uint16_t index, char* output, size_t outputLength) {
+  GeometrySettingRow row;
+  if (outputLength == 0 || !geometrySettingRowAt(index, row)) return false;
+  const char* label = "";
+  switch (row) {
+    case GeometrySettingRow::DynamicJI: label = "Dynamic JI"; break;
+    case GeometrySettingRow::JITable: label = "JI Table"; break;
+    case GeometrySettingRow::BPMSync: label = "BPM Sync"; break;
+    case GeometrySettingRow::BPMMultiplier: label = "BPM Mult"; break;
+    case GeometrySettingRow::Tempo: label = "Sound Tempo"; break;
+    case GeometrySettingRow::Rotation: label = "Layout Rot"; break;
+    case GeometrySettingRow::DeviceRotation: label = "Device Rot"; break;
+    case GeometrySettingRow::FlipLeftRight: label = "Flip L/R"; break;
+    case GeometrySettingRow::FlipUpDown: label = "Flip U/D"; break;
+  }
+  snprintf(output, outputLength, "%s", label);
+  return true;
+}
+
+VirtualListMenuRowType geometrySettingsRowType(void*, uint16_t index) {
+  GeometrySettingRow row;
+  if (!geometrySettingRowAt(index, row)) return VirtualListMenuRowType::Label;
+  switch (row) {
+    case GeometrySettingRow::JITable:
+    case GeometrySettingRow::BPMMultiplier:
+    case GeometrySettingRow::Rotation:
+    case GeometrySettingRow::DeviceRotation:
+      return VirtualListMenuRowType::Value;
+    case GeometrySettingRow::Tempo:
+      return VirtualListMenuRowType::Label;
+    default:
+      return VirtualListMenuRowType::Checkbox;
+  }
+}
+
+bool geometrySettingsChecked(void*, uint16_t index) {
+  GeometrySettingRow row;
+  if (!geometrySettingRowAt(index, row)) return false;
+  switch (row) {
+    case GeometrySettingRow::DynamicJI: return useDynamicJustIntonation;
+    case GeometrySettingRow::BPMSync: return useJustIntonationBPM;
+    case GeometrySettingRow::FlipLeftRight: return mirrorLeftRight;
+    case GeometrySettingRow::FlipUpDown: return mirrorUpDown;
+    default: return false;
+  }
+}
+
+bool geometrySettingsValue(void*, uint16_t index, char* output, size_t outputLength) {
+  GeometrySettingRow row;
+  if (!geometrySettingRowAt(index, row)) return false;
+  switch (row) {
+    case GeometrySettingRow::JITable:
+      snprintf(output, outputLength, "%uLimit", static_cast<unsigned>(dynamicJIRatioTable));
+      return true;
+    case GeometrySettingRow::BPMMultiplier:
+      snprintf(output, outputLength, "%u", static_cast<unsigned>(justIntonationBPM_Multiplier));
+      return true;
+    case GeometrySettingRow::Tempo:
+      snprintf(output, outputLength, "%u", static_cast<unsigned>(synthBPM));
+      return true;
+    case GeometrySettingRow::Rotation:
+      snprintf(output, outputLength, "%u Deg", static_cast<unsigned>((layoutRotation % 6) * 60));
+      return true;
+    case GeometrySettingRow::DeviceRotation:
+      snprintf(output, outputLength, "%u Deg", static_cast<unsigned>((deviceRotation % 4) * 90));
+      return true;
+    default:
+      return false;
+  }
+}
+
+void geometrySettingsSelect(void*, uint16_t index) {
+  GeometrySettingRow row;
+  if (geometrySettingRowAt(index, row)) {
+    switch (row) {
+      case GeometrySettingRow::DynamicJI:
+        useDynamicJustIntonation = !useDynamicJustIntonation;
+        storeGeometryProfileSetting(SettingKey::DynamicJI, useDynamicJustIntonation);
+        refreshMidiRouting();
+        break;
+      case GeometrySettingRow::BPMSync:
+        useJustIntonationBPM = !useJustIntonationBPM;
+        storeGeometryProfileSetting(SettingKey::JustIntonationBPMSync, useJustIntonationBPM);
+        refreshMidiRouting();
+        break;
+      case GeometrySettingRow::FlipLeftRight:
+        mirrorLeftRight = !mirrorLeftRight;
+        storeGeometryProfileSetting(SettingKey::MirrorLeftRight, mirrorLeftRight);
+        updateLayoutAndRotate();
+        break;
+      case GeometrySettingRow::FlipUpDown:
+        mirrorUpDown = !mirrorUpDown;
+        storeGeometryProfileSetting(SettingKey::MirrorUpDown, mirrorUpDown);
+        updateLayoutAndRotate();
+        break;
+      default:
+        break;
+    }
+  }
+  rebuildGeometrySettingRows();
+  redrawVirtualListMenu();
+}
+
+void geometrySettingsAdjust(void*, uint16_t index, int delta) {
+  GeometrySettingRow row;
+  if (!geometrySettingRowAt(index, row) || delta == 0) return;
+  const int step = delta > 0 ? 1 : -1;
+  switch (row) {
+    case GeometrySettingRow::JITable: {
+      uint8_t position = DYNAMIC_JI_RATIO_TABLE_COUNT - 1;
+      for (uint8_t i = 0; i < DYNAMIC_JI_RATIO_TABLE_COUNT; ++i) {
+        if (DYNAMIC_JI_RATIO_TABLES[i] == dynamicJIRatioTable) position = i;
+      }
+      position = static_cast<uint8_t>((position + DYNAMIC_JI_RATIO_TABLE_COUNT + step) % DYNAMIC_JI_RATIO_TABLE_COUNT);
+      dynamicJIRatioTable = DYNAMIC_JI_RATIO_TABLES[position];
+      storeGeometryProfileSetting(SettingKey::DynamicJIRatioTable, dynamicJIRatioTable);
+      refreshMidiRouting();
+      break;
+    }
+    case GeometrySettingRow::BPMMultiplier: {
+      // 1 to 255, wrapping like the other spinners.
+      const int next = justIntonationBPM_Multiplier + step;
+      justIntonationBPM_Multiplier = static_cast<byte>(next < 1 ? 255 : (next > 255 ? 1 : next));
+      storeGeometryProfileSetting(SettingKey::BPMMultiplier, justIntonationBPM_Multiplier);
+      break;
+    }
+    case GeometrySettingRow::Rotation:
+      layoutRotation = static_cast<byte>((layoutRotation % 6 + 6 + step) % 6);
+      storeGeometryProfileSetting(SettingKey::LayoutRotation, layoutRotation);
+      updateLayoutAndRotate();
+      break;
+    case GeometrySettingRow::DeviceRotation:
+      // Turns the screen and grid together; the keys keep their pitches.
+      deviceRotation = static_cast<byte>((deviceRotation % 4 + 4 + step) % 4);
+      storeGeometryProfileSetting(SettingKey::DeviceRotation, deviceRotation);
+      applyDeviceDisplayRotation();
+      break;
+    default:
+      break;
+  }
+}
+
+bool geometrySettingsBack(void*) {
+  userGeometryOpenOnControlRow = true;
+  openUserGeometryMenu(geometrySettingsOwner);
+  return true;
+}
+
+void geometrySettingsClose(void*) {
+  menuHome();
+}
+
+void openGeometrySettingsMenu(UserGeometryMenuKind owner) {
+  geometrySettingsOwner = owner;
+  rebuildGeometrySettingRows();
+  VirtualListMenuProvider provider;
+  provider.title = owner == UserGeometryMenuKind::Tuning ? "Intonation" : "Orientation";
+  provider.getCount = geometrySettingsCount;
+  provider.getLabel = geometrySettingsLabel;
+  provider.getRowType = geometrySettingsRowType;
+  provider.isChecked = geometrySettingsChecked;
+  provider.getValue = geometrySettingsValue;
+  provider.select = geometrySettingsSelect;
+  provider.adjust = geometrySettingsAdjust;
+  provider.back = geometrySettingsBack;
+  provider.close = geometrySettingsClose;
   openVirtualListMenu(provider);
 }
 
@@ -738,12 +1058,9 @@ void auditionUserGeometryHandle(UserGeometryMenuKind kind, uint16_t handle) {
 
 void auditionHighlightedUserGeometryRow(uint16_t row) {
   if (row == VIRTUAL_LIST_MENU_NO_ROW) return;
-  uint16_t index = row;
-  if (userGeometryVirtualKind == UserGeometryMenuKind::Scale) {
-    if (index < 2) return;  // Key and Scale Lock
-    index -= 2;
-  }
-  if (index >= userGeometryVirtualCount || userGeometryVirtualRows[index].kind != UserGeometryMenuRowKind::Item) return;
+  uint16_t index = 0;
+  if (!userGeometryItemIndex(row, index)  // A control row is never auditioned.
+      || userGeometryVirtualRows[index].kind != UserGeometryMenuRowKind::Item) return;
   // The diamond marks the chosen item; resting on it returns to it.
   if (userGeometryVirtualIsCurrent(nullptr, row)) {
     finishUserGeometryAudition();

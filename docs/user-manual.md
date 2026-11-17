@@ -126,7 +126,7 @@ The main menu includes:
 - `Buzzer`
 - `Lights & Colors`
 - `Transpose`
-- `Editor`
+- `Synth`
 - `Profiles`
 - `Settings`
 
@@ -156,14 +156,48 @@ row marks the loaded item. Long names scroll when you leave the selection on the
 
 Use this section to choose the tuning for the whole board. Supplied factory
 tunings appear at the root in their original order, and additional saved
-tunings can be organized into folders. The active tuning shows a diamond in the left
-action-icon slot when it appears in the list. Selecting a tuning also loads the
+tunings can be organized into folders. The active tuning shows a diamond at the right
+edge of its row when it appears in the list. Selecting a tuning also loads the
 first linked layout, scale, colors, and custom key assignments so the
 board is immediately playable.
 
-Dynamic JI controls live under `Editor`.
+The first row, `Intonation`, shows the current just-intonation mode (`Fixed`,
+`Dyn JI`, `BPM JI`, or `Dyn+BPM`) and opens a page with:
 
-When MPE is active, Dynamic JI and JI BPM Sync send the closest MIDI note for
+- `Dynamic JI`
+- `JI Table` when `Dynamic JI` is on
+- `BPM Sync`
+- `BPM Mult` and `Sound Tempo` when `BPM Sync` is on
+
+These are profile settings: they apply to every tuning and stay as they are
+when you choose another tuning. Back returns to the tuning list.
+
+`JI Table` selects the maximum prime limit used by Dynamic JI ratio matching:
+`3Limit`, `5Limit`, `7Limit`, and higher options through `41Limit`. Lower-limit
+tables restrict the prime factors; higher-limit tables offer more interval
+choices.
+
+Dynamic JI tunes each new note against the oldest held note, preserving that
+note's existing adjustment when the original anchor is released. Matching uses
+actual frequency ratios across registers, including in non-octave tunings such
+as Bohlen-Pierce. Powers of two extend the ratio search without changing the
+tuning's layout or treating its repeat period as 1200 cents. An arbitrary
+non-rational period is approximated by JI like other intervals.
+
+Simple ratios within a quarter of a nominal tuning step are preferred. If none
+is close enough, Dynamic JI chooses the nearest ratio using a denser Pythagorean
+fallback that stays within every selectable prime limit. Notes therefore remain
+in a JI relationship to the anchor instead of falling back to static tuning.
+Fallback corrections can exceed a quarter step, especially in very fine tunings.
+
+`BPM Sync` retunes notes to a grid set by the current sound's `Tempo`
+(`Synth` -> `Tempo`) multiplied by `BPM Mult`. `Sound Tempo` shows
+that tempo; it changes with the sound, not here. With both JI modes on,
+subsequent notes inherit the held anchor's BPM correction. If a BPM grid is too
+coarse to represent a note or the tuning reference above zero, that note skips
+BPM correction.
+
+When MPE is active, Dynamic JI and BPM Sync send the closest MIDI note for
 the final retuned pitch, then use pitch bend only for the remaining fractional
 part. The onboard synth uses the computed JI cents directly, so its JI pitch
 resolution is not limited by the `MPE Bend` setting.
@@ -180,14 +214,25 @@ Changing tuning also resets:
 ### Layout
 
 Use this page to choose how pitch moves across the hex grid. Factory and saved
-layouts linked to the active tuning appear in a list. The active layout shows a diamond in
-the left action-icon slot when it appears in the list.
+layouts linked to the active tuning appear in a list. The active layout shows a diamond at
+the right edge of its row when it appears in the list.
 
 Choosing a layout remaps button pitches, loads its custom key assignments when
-present, and restores that layout's default device
-rotation in 90-degree steps.
+present, and loads the layout as authored, including its rotations and flips.
 
-Layout rotation, flip, and display rotation controls live under `Editor`.
+The first row, `Orientation`, shows `Normal`, `Rotated`, `Flipped`, or
+`Rot+Flp` and opens a page with:
+
+- `Layout Rot`, which turns the musical axes in 60-degree steps
+- `Device Rot`, which turns the screen and grid in 90-degree steps, for
+  example to hold the board sideways to suit a rotated layout; each key keeps
+  its pitch
+- `Flip L/R`, which mirrors the layout around the middle key, physical button `65`
+- `Flip U/D`, which mirrors the layout vertically across the grid
+
+These adjust the current layout. The profile keeps them across restarts, and
+choosing a layout or tuning loads that layout as authored again. Back returns
+to the layout list.
 
 ### Scale
 
@@ -196,7 +241,7 @@ Select `Key` to edit it with the encoder; back finishes editing.
 Select `Scale Lock` to toggle its checkbox.
 `Key` moves the scale root without retuning notes. `All Notes` includes every
 degree; the legacy `None` alias is omitted. Factory and saved scales linked to the
-active tuning appear in a list. The active scale shows a diamond in the left action-icon slot
+active tuning appear in a list. The active scale shows a diamond at the right edge of its row
 when it appears in the list.
 
 Choosing a scale updates scale membership while keeping the current user tuning,
@@ -242,56 +287,7 @@ the physical layout in place. Scale highlighting and `Scale Lock` follow each
 button's transposed note in the selected key and scale. Explicit per-key custom
 color overrides stay fixed.
 
-### Editor
-
-`Editor` contains fine controls that shape how the current setup behaves without
-choosing a new tuning, layout, scale, or profile.
-
-Options include:
-
-- `Synth`
-- `Dynamic JI`
-- `JI Table` when `Dynamic JI` is enabled
-- `JI BPM Sync`
-- `Beat BPM` when `JI BPM Sync` is enabled
-- `BPM Mult.` when `JI BPM Sync` is enabled
-- `Layout Rot`
-- `Flip L/R`
-- `Flip U/D`
-- `Device Rot`
-
-`JI Table` selects the maximum prime limit used by Dynamic JI ratio matching:
-`3Limit`, `5Limit`, `7Limit`, and higher options through `41Limit`. Lower-limit
-tables restrict the prime factors; higher-limit tables offer more interval
-choices.
-
-Dynamic JI tunes each new note against the oldest held note, preserving that
-note's existing adjustment when the original anchor is released. Matching uses
-actual frequency ratios across registers, including in non-octave tunings such
-as Bohlen-Pierce. Powers of two extend the ratio search without changing the
-tuning's layout or treating its repeat period as 1200 cents. An arbitrary
-non-rational period is approximated by JI like other intervals.
-
-Simple ratios within a quarter of a nominal tuning step are preferred. If none
-is close enough, Dynamic JI chooses the nearest ratio using a denser Pythagorean
-fallback that stays within every selectable prime limit. Notes therefore remain
-in a JI relationship to the anchor instead of falling back to static tuning.
-Fallback corrections can exceed a quarter step, especially in very fine tunings.
-
-`Beat BPM` and `BPM Mult.` control the BPM-synced retuning grid and are hidden
-when `JI BPM Sync` is off. With both JI modes enabled, subsequent notes inherit
-the held anchor's BPM correction. If a BPM grid is too coarse to represent a
-note or the tuning reference above zero, that note skips BPM correction.
-
-`Layout Rot` rotates the musical axes in 60-degree steps. `Flip L/R` mirrors
-the layout around the middle key, physical button `65`. `Flip U/D` mirrors the
-layout vertically across the grid. `Device Rot` changes the physical
-device/display orientation through `0`, `90`, `180`, and `270` degrees without
-changing the musical layout. User layouts can provide defaults for all four
-fields; the menu keeps the names distinct because device rotation never changes
-which pitch a physical key plays.
-
-#### Synth
+### Synth
 
 This page controls the onboard synth.
 
@@ -371,7 +367,7 @@ which held notes were pressed, not the physical button numbers.
 Basic Shapes is the built-in rescue table. Supplied factory wavetables appear
 in the root directory, while user-imported wavetables can be organized into
 folders. Factory wavetables other than Basic Shapes can be edited or erased. The active
-wavetable shows a diamond in the left action-icon slot when it appears in the
+wavetable shows a diamond at the right edge of its row when it appears in the
 list. The factory image includes:
 
 - `Basic Shapes`: sine, triangle, saw, and square anchors
@@ -503,7 +499,7 @@ the modulation direction, and `Off` disables it.
 each measure is accented.
 
 The top-level `Sound:<sound>` item and the `Sound:<sound>` item inside
-`Editor` -> `Synth` both open the `Sounds` list. The library holds up to
+`Synth` both open the `Sounds` list. The library holds up to
 `512` named presets in up to `32` folders, with up to `32` presets in each
 folder. Saving into a full folder or a full library is refused. Each settings profile remembers its selected
 synth preset or `Blank` state. Auto-save and manual profile saves also preserve
@@ -540,7 +536,7 @@ the app lists how many existing destination presets will be replaced and waits
 for confirmation.
 
 The load list also includes `Blank`. Loading from the top-level `Sound` item
-returns to the main menu; loading or saving from `Editor` -> `Synth` returns to
+returns to the main menu; loading or saving from `Synth` returns to
 `Synth`. Loading a preset changes only the current synth parameters and
 wavetable reference, which can still be preserved by profile auto-save. The
 currently loaded catalog preset shows a diamond at the right edge of its row

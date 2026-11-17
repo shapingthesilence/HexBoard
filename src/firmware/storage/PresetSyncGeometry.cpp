@@ -1194,8 +1194,28 @@ bool restoreGeometryReference(const GeometryProfileReference& reference) {
 bool loadGeometryRuntimeForProfile(uint8_t profileIndex) {
   bool previousApplyDefaultColorMode = applyGeometryBundleDefaultColorMode;
   applyGeometryBundleDefaultColorMode = false;
-  bool loaded =
-    restoreGeometryReferenceForProfile(profileIndex) || loadDefaultGeometryRuntime();
+  // Restoring a profile's own layout keeps the orientation saved with the
+  // profile, which may adjust that layout. A fallback layout loads as authored.
+  const uint8_t savedOrientation[] = {
+    settings[static_cast<uint8_t>(SettingKey::DeviceRotation)],
+    settings[static_cast<uint8_t>(SettingKey::LayoutRotation)],
+    settings[static_cast<uint8_t>(SettingKey::MirrorLeftRight)],
+    settings[static_cast<uint8_t>(SettingKey::MirrorUpDown)]
+  };
+  const bool restored = restoreGeometryReferenceForProfile(profileIndex);
+  if (restored) {
+    settings[static_cast<uint8_t>(SettingKey::DeviceRotation)] = savedOrientation[0];
+    settings[static_cast<uint8_t>(SettingKey::LayoutRotation)] = savedOrientation[1];
+    settings[static_cast<uint8_t>(SettingKey::MirrorLeftRight)] = savedOrientation[2];
+    settings[static_cast<uint8_t>(SettingKey::MirrorUpDown)] = savedOrientation[3];
+    deviceRotation = savedOrientation[0] % 4;
+    layoutRotation = savedOrientation[1] % 6;
+    mirrorLeftRight = savedOrientation[2] != 0;
+    mirrorUpDown = savedOrientation[3] != 0;
+    applyLayout();
+    applyDeviceDisplayRotation();
+  }
+  bool loaded = restored || loadDefaultGeometryRuntime();
   applyGeometryBundleDefaultColorMode = previousApplyDefaultColorMode;
   return loaded;
 }
@@ -1502,6 +1522,8 @@ bool applyUserGeometryRuntimeLayout(const GeometryObjectSlot& object) {
   userGeometryRuntime.active = true;
   userGeometryRuntime.deviceRotation = storedDeviceRotation;
   userGeometryRuntime.layoutCenterStepsFromC = static_cast<int16_t>(centerStepsFromC);
+  // A layout loads as authored: its rotations and mirrors replace any
+  // adjustment made to the previous layout.
   deviceRotation = storedDeviceRotation;
   layoutRotation = storedLayoutRotation;
   mirrorLeftRight = (mirrorFlags & 0x01u) != 0;

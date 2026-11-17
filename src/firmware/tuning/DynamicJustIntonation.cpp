@@ -410,7 +410,7 @@ int16_t justIntonationRetune(byte x) {
   // A matched interval already inherits the anchor's BPM correction. Only
   // quantize independently for the first note or an invalid source interval.
   if (useJustIntonationBPM && !matchedDynamicRatio) {
-    const float rounding = static_cast<float>(justIntonationBPM / 60.0 * justIntonationBPM_Multiplier);
+    const float rounding = static_cast<float>(synthBPM / 60.0 * justIntonationBPM_Multiplier);
     if (rounding > 0.0f) {
       const double roundedReference = round(currentTuningReferenceHz() / rounding);
       const double roundedNote = round(h[x].frequency / rounding);
