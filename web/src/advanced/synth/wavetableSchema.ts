@@ -43,7 +43,7 @@ export const wavetableSourceShort = ['Strike', 'Pressure', 'Release', 'X tilt', 
 export const wavetableSourceColors = ['#efb86b', '#5cdac6', '#b29aff', '#70b8ff', '#ef8eb8', '#f3cf6e', '#91aaff', '#ff9f73', '#62d6ec', '#f39cce', '#a7dc82'];
 export const warpNames = ['Off', 'Fold', 'Poly', 'Duty', 'Sync'] as const;
 export const resonatorNames = ['Off', 'Bell', 'Wood', 'Custom'] as const;
-export const filterNames = ['Low-pass', 'Band-pass', 'High-pass'] as const;
+export const filterNames = ['Low-pass', 'Band-pass', 'High-pass', 'Notch', 'Bell boost', 'Hollow low-pass', 'Bright shelf'] as const;
 export const driveNames = ['Off', 'Soft', 'Hard', 'Fold'] as const;
 /** Drive pre-gain 2^(4 v) and the makeup that holds a loud note near its clean level. */
 export const driveGain = (v: number) => 2 ** (4 * v);
@@ -57,7 +57,7 @@ export function driveCurve(mode: number, x: number) {
 }
 export const transientNames = ['Click', 'Tonal pop', 'Air puff', 'Custom sample'] as const;
 export const shapeNames = ['Sine', 'Triangle', 'Saw', 'Square'] as const;
-const optionCounts: Record<number, number> = {[P.Unison]: 7, [P.WarpMode]: 5, [P.TransientShape]: 4,[P.AttackPlayback]:2,[P.DriveMode]:4,[P.FilterBypass]:2, [P.SubShape]: 2, [P.FilterMode]: 3, [P.Resonator]: 4, [P.Classic]: 2,[P.PhaseMode]:3,[P.Osc2Shape]:5};
+const optionCounts: Record<number, number> = {[P.Unison]: 7, [P.WarpMode]: 5, [P.TransientShape]: 4,[P.AttackPlayback]:2,[P.DriveMode]:4,[P.FilterBypass]:2, [P.SubShape]: 2, [P.FilterMode]: filterNames.length, [P.Resonator]: 4, [P.Classic]: 2,[P.PhaseMode]:3,[P.Osc2Shape]:5};
 export const pitchNames = ['Cents', 'Ratio', 'Tuning steps', 'Tuning periods'] as const;
 export const unisonNames = ['Cents', 'Beats / second', 'Interval stack'] as const;
 export const bodyMotionNames = ['Continuous sweep', 'Snapped pitches', 'Crossfaded pitches', 'Partial levels'] as const;
@@ -68,8 +68,18 @@ const ratioIds=new Set<number>([P.CarrierRatioNum,P.CarrierRatioDen,P.SubRatioNu
 export const isRatioWord = (id:number) => ratioIds.has(id) || partialField(id)===2 || partialField(id)===3;
 export const options = (id: number) => isPitchMode(id)||id===P.BodyMotion?4:id===P.UnisonMode?3:optionCounts[id] ?? 0;
 export const discrete = (id: number) => options(id) !== 0;
-export function option(id: number, value: number) { const n = options(id); return n < 2 ? 0 : Math.floor((value * (n - 1) + 32767) / 65535); }
-export function optionValue(id: number, choice: number) { const n = options(id); return n < 2 ? 0 : Math.floor(choice * 65535 / (n - 1)); }
+// Original LP/BP/HP presets use slots 0, 3 and 6 on the expanded scale.
+const filterFromSlot = [0, 3, 4, 1, 5, 6, 2];
+export function option(id: number, value: number) {
+  const n = options(id);
+  const slot = n < 2 ? 0 : Math.floor((value * (n - 1) + 32767) / 65535);
+  return id === P.FilterMode ? filterFromSlot[slot] : slot;
+}
+export function optionValue(id: number, choice: number) {
+  const n = options(id);
+  const slot = id === P.FilterMode ? filterFromSlot.indexOf(choice) : choice;
+  return n < 2 || slot < 0 || slot >= n ? 0 : Math.floor(slot * 65535 / (n - 1));
+}
 export const modulatable = (id: number, _source?: number) => id >= 0 && (id < P.TableLow || (id >= P.Coarse && id < parameterCount)) && !discrete(id) && !isRatioWord(id) && id !== P.Classic && !(id>=P.AttackFrames&&id<=P.AttackRoot);
 export const osc2Names = ['Sine', 'Triangle', 'Saw', 'Square', 'Noise'] as const;
 /** Coarse +-24 semitones (32768 centered); whole-semitone base values. */

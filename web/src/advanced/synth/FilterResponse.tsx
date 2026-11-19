@@ -4,10 +4,13 @@ import {PreviewSelect} from './SynthVisualPreview.tsx';
 import {CanvasPlot} from './CanvasPlot.tsx';
 // UI-only frequency response of the same two-pole TPT design as the audio
 // filter. Includes complex dry/wet summation; never feeds DSP or the transport.
+const weights = [[1,0,0], [0,1,0], [0,0,1], [1,0,1], [1,3,1], [1,0,.25], [.25,1,1]];
 export function filterResponse(cutoff:number,resonance:number,mix:number,mode:number,hz:number){
  const f=20*2**(9.813781*cutoff),k=2/(1+15*resonance),w=Math.tan(Math.PI*Math.min(20000,hz)/44100)/Math.tan(Math.PI*f/44100);
  const a=1-w*w,b=k*w,d=a*a+b*b;
- const real=mode===0?a/d:mode===1?b*b/d:-w*w*a/d,imag=mode===0?-b/d:mode===1?b*a/d:w*w*b/d;
+ const [low,band,high]=weights[mode] ?? weights[0];
+ const numerator=low-high*w*w;
+ const real=(numerator*a+band*b*b)/d,imag=(band*a-numerator)*b/d;
  return Math.hypot(1-mix+mix*real,mix*imag);
 }
 export function FilterResponse({rack,sources=[],previewSource}:{rack:FxRack;sources?:number[];previewSource?:(source:number)=>number}){

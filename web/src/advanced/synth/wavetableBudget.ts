@@ -31,7 +31,8 @@ export function wavetableCost(p: WavetablePatch & {effects?: FxRack}): Wavetable
     layers: (active(p, P.Noise) ? 8 : 0) + (active(p, P.Transient) ? 24+(option(P.AttackPlayback,p.parameters[P.AttackPlayback])?4:0) : 0) + (active(p, P.Sub) ? 10 : 0),
     resonator: resonator === 0 ? 0 : option(P.BodyMotion,p.parameters[P.BodyMotion])===2 ? 400 : 240,
     // Stereo offset: measured +16 to +23 µs peak at 8+2 voices (November 15).
-    filter: filterOpen(p) ? 0 : 32 + (p.parameters[P.FilterStereo] !== 32768 || routed(p, P.FilterStereo) ? 9 : 0),
+    // Mixed filter responses add up to 124 µs in the matched full-rack bench.
+    filter: filterOpen(p) ? 0 : 32 + (option(P.FilterMode, p.parameters[P.FilterMode]) >= 3 ? 48 : 0) + (p.parameters[P.FilterStereo] !== 32768 || routed(p, P.FilterStereo) ? 9 : 0),
     // Stereo antiderivative shaper: measured +204 to +292 µs at 8+2 voices (November 14).
     drive: [0, 90, 90, 110][option(P.DriveMode, p.parameters[P.DriveMode])],
     // Second oscillator: once per voice when heard or phase-modulating.

@@ -1240,6 +1240,12 @@ Classic and Advanced share **Sample → Tune & analyze** in the Sampler workspac
 [Sample tuning and loop suggestions](sampler-tuning.md) for reference-tone
 audition, fractional roots, confidence, and converted-loop verification.
 
+### Advanced wavetable voice filter
+
+Open **Filter → Mode** to choose the response for each note. **Notch** carves a moving gap. **Bell boost** emphasizes a band while preserving the surrounding sound. **Hollow low-pass** keeps bass, cuts a band above cutoff and leaves some treble. **Bright shelf** takes weight out of the lows. Low-pass, Band-pass, High-pass and Off are also available.
+
+Try assigning pressure to cutoff and holding two notes while pressing into one. The response graph follows cutoff and shows both sides when Stereo spreads them apart. The clean sub skips this stage.
+
 ### Advanced wavetable tables
 
 Use the menu in the top corner of the large wavetable viewer to select a default

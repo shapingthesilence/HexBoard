@@ -377,11 +377,18 @@ export function WavetableSynthEditor({ transport,onDeviceEngineLoaded }: { trans
           </div>
         </>, undefined, driveMode ? 'Per voice, before the filter. Harder strikes and louder envelope stages distort more; level stays matched.' : 'Add grit ahead of the filter: Soft warms, Hard clips, Fold wraps the peaks.')}
         {stage('filter', 'Filter', !filterBypassed, <>
-          <div className="source-tabs wt-choice" role="radiogroup" aria-label="Filter mode">
-            <button type="button" role="radio" aria-checked={filterOff} aria-pressed={filterOff} disabled={busy} onClick={() => setParameter(P.FilterBypass, 65535)}>Off</button>
-            {filterNames.map((name, i) => { const on = !filterOff && option(P.FilterMode, p[P.FilterMode]) === i; return <button type="button" role="radio" key={name} aria-label={name} title={name} aria-checked={on} aria-pressed={on} disabled={busy}
-              onClick={() => filterOff ? setFields({[P.FilterBypass]: 0, [P.FilterMode]: optionValue(P.FilterMode, i)}) : setParameter(P.FilterMode, optionValue(P.FilterMode, i))}>{name.replace('-pass', '')}</button>; })}
-          </div>
+          <label className="wt-layer-row">Mode
+            <select aria-label="Filter mode" disabled={busy} value={filterOff ? -1 : option(P.FilterMode, p[P.FilterMode])}
+              onChange={e => {
+                const mode = Number(e.target.value);
+                if (mode < 0) setParameter(P.FilterBypass, 65535);
+                else if (filterOff) setFields({[P.FilterMode]: optionValue(P.FilterMode, mode), [P.FilterBypass]: 0});
+                else setParameter(P.FilterMode, optionValue(P.FilterMode, mode));
+              }}>
+              <option value={-1}>Off</option>
+              {filterNames.map((name, i) => <option key={name} value={i}>{name}</option>)}
+            </select>
+          </label>
           <PreviewValues ids={[P.Cutoff, P.FilterStereo]}>{([cutoff, stereo]) => <FilterCurve cutoff={p[P.Cutoff] / 65535} resonance={p[P.Resonance] / 65535} mode={option(P.FilterMode, p[P.FilterMode])} live={cutoff} stereo={(stereo - .5) * 2} disabled={busy || tool !== 'value'} onChange={(c, r) => { setParameter(P.Cutoff, c); setParameter(P.Resonance, r); }}/>}</PreviewValues>
           <div className="knob-bank">{control(P.Cutoff)}{control(P.Resonance)}{control(P.KeyTrack)}{control(P.FilterStereo, 'Stereo')}</div>
         </>, undefined, filterOff ? 'Off · voices skip the filter. Its settings are kept.' : filterBypassed ? 'Fully open · bypassed to save DSP.' : 'Per voice, stereo. Stereo raises the right cutoff and lowers the left by up to an octave each; below centre the sides swap.')}
