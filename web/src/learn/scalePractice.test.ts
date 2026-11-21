@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { majorScale, MajorScaleRun, resolveLessonKeys, starterLayouts } from "./majorScale.ts";
-import { BeatScaleRun, scalePatternNotes, scalePatterns, type ScalePattern } from "./scalePractice.ts";
+import { BeatScaleRun, scalePatternNotes, scalePatterns, scalePracticeLesson, type ScalePattern } from "./scalePractice.ts";
+import { CourseRun } from "./beginnerCourse.ts";
 
 describe("scale practice patterns and timing", () => {
   it("reverses direction without repeating the turning note", () => {
@@ -106,5 +107,23 @@ describe("fixed beat grading", () => {
     expect(next.startAt).toBe(22000);
     next.press(0, 72, first.endAt); next.release(0);
     expect(next.result()).toMatchObject({ hits: 0, extras: 0 });
+  });
+});
+
+describe("generated scale lessons", () => {
+  const notes = scalePatternNotes("upDown");
+  const lesson = scalePracticeLesson("scale-test", "C Major", "upDown", notes);
+  it("completes a free-timing run through the course engine", () => {
+    const run = new CourseRun(lesson);
+    notes.forEach((note, i) => { run.press(i, note, 1000 + i * 300); run.release(i, 1100 + i * 300); });
+    expect(run.complete).toBe(true);
+    expect(run.mistakes).toBe(0);
+  });
+  it("grades metronome runs as one note per click", () => {
+    const run = new BeatScaleRun(notes, 10000, 60, undefined, { targets: lesson.targets, beats: lesson.timing!.beats, meter: lesson.timeSignature });
+    notes.forEach((note, i) => { const at = 10000 + i * 1000; run.tick(at); run.press(i, note, at); run.release(i, at + 200); });
+    run.tick(10000 + notes.length * 1000);
+    expect(run.complete).toBe(true);
+    expect(run.result()).toMatchObject({ score: 100, missed: 0, extras: 0 });
   });
 });

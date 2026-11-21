@@ -1,12 +1,47 @@
 import { answerAllows, matchAnswer, type StepAnswer } from "./lessonAnswers.ts";
 import { majorScale, noteName } from "./majorScale.ts";
 import { clickPlan, countInLabel, type ClickPlan, type Meter } from "./meterClicks.ts";
+import type { CourseLesson } from "./beginnerCourse.ts";
 
 export const scalePatterns = {
   ascending: "Ascending", descending: "Descending", upDown: "Up and down",
-  downUp: "Down and up", thirds: "Skip one scale tone"
+  downUp: "Down and up", thirds: "Thirds"
 } as const;
 export type ScalePattern = keyof typeof scalePatterns;
+const scalePatternHelp: Record<ScalePattern, string> = {
+  ascending: "Play each scale note from the root up to the root above.",
+  descending: "Start on the upper root and walk down to the root below.",
+  upDown: "Climb to the upper root and come back down. The top note is played once.",
+  downUp: "Walk down to the lower root and climb back. The bottom note is played once.",
+  thirds: "Skip one scale note each time (1–3, 2–4, 3–5 …), then finish on the top two notes."
+};
+/** Untimed runs and examples use this tempo when the metronome is off. */
+export const scaleExampleBpm = 80;
+
+/** A scale run uses the same lesson engine and controls as course exercises. */
+export function scalePracticeLesson(id: string, title: string, pattern: ScalePattern, notes: readonly number[]): CourseLesson {
+  return {
+    id, title, section: "Scale practice", instruction: scalePatternHelp[pattern],
+    targets: notes.map(note => [note]),
+    timing: { goalBpm: scaleExampleBpm, beats: notes.map(() => 1) },
+    timeSignature: { numerator: 4, denominator: 4 }
+  };
+}
+
+const count = (value: number, noun: string, plural = `${noun}s`) => `${value} ${value === 1 ? noun : plural}`;
+export function scaleCompletionGuidance(result: { mistakes: number; beat?: BeatResult } | undefined): string {
+  if (!result) return "";
+  const beat = result.beat;
+  if (beat) {
+    if (beat.missed) return `${beat.score}/100 · ${beat.grade}. Missed ${count(beat.missed, "note")}; slow down a little until every note lands on its click.`;
+    if (beat.extras) return `${beat.score}/100 · ${beat.grade}. Every note landed, with ${count(beat.extras, "extra press", "extra presses")}. Aim for one press per click.`;
+    return `${beat.score}/100 · ${beat.grade}. Nudge the tempo up, or try it without hints.`;
+  }
+  return result.mistakes
+    ? `Complete with ${count(result.mistakes, "wrong note")}. Play it again slowly and evenly, then try it without hints.`
+    : "Clean run. Try it without hints, add the metronome, or choose a new root.";
+}
+export const mistakeCount = (value: number) => count(value, "mistake");
 export function scalePatternNotes(pattern: ScalePattern, scale: readonly number[] = majorScale): number[] {
   const up = [...scale], down = [...up].reverse();
   switch (pattern) {
