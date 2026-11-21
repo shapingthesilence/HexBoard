@@ -28,27 +28,36 @@ panel when opening a lesson without a board.
 
 ## Learning Your First Scale
 
-Open **Learn** to practice scales. It starts with the bundled **12 EDO (Normal)**
-tuning and major scale. Wicki-Hayden, Harmonic Table, and Gerhard are available
-without downloading anything. Choose **Start on HexBoard** and release all
-hardware keys before starting. When disconnected, an on-screen test is available
-under **Test without a HexBoard**.
+Open **Learn → Scale practice** to practice scales. It starts with the bundled
+**12 EDO (Normal)** tuning and major scale. Wicki-Hayden, Harmonic Table, and
+Gerhard are available without downloading anything.
 
 Use **Scale practice**, **Courses**, and **Progress** to navigate. Learn opens on
 **Courses** the first time, then returns to the section you used last.
-Start/Stop and Hints sit above the key map. Choose a scale to preview its exact
-exercise pitches immediately, including every duplicate key in the selected
-register. Other notes stay dimly colored. **Display & sound** and
-**Library & help** expand when needed.
+Scale practice uses the same lesson screen and side buttons as a course
+exercise. The left panel holds the side-button guide, **Play freely**, the
+**Scale**, **Root**, **Pattern**, and **Octave** choices, **Color mode** and
+**Contrast**, **Repeat runs**, and **Settings**. Choosing a scale previews its
+exact exercise pitches immediately, including every duplicate key in the
+selected register; other notes stay dimly colored. Changing the scale, root,
+octave, or pattern during a run returns to Start without closing the HexBoard
+session. **Settings** opens one pop-up with **Tuning** and **Layout**, the
+tuning library, on-screen testing when no HexBoard is connected, and **Help**.
+
+Start, restart, and repeat with the side buttons, as in courses: orange
+**Start · hints**, yellow **Start · no hints**, and cyan **Hear example**.
+When a HexBoard is connected, pressing a side-button guide entry in the browser
+also opens the board session. Release all hardware keys before starting. When
+disconnected, use **Settings → Try on screen**.
 
 ### Loading from HexBoard
 
-Connecting loads only the tuning names. Choose a tuning under **On HexBoard**
+Connecting loads only the tuning names. Choose a tuning under **Settings → Tuning → On HexBoard**
 to read its definition, palette, and layout/scale names. Choose a layout to read
-that layout and its key assignments; choose a scale to read its degrees. Learn
+that layout and its key assignments; choose a scale in the left panel to read its degrees. Learn
 never downloads the full library or a complete tuning bundle from the device.
 Previously read items are cached for this connection, including across visits
-to Learn. **Library & help → Refresh tuning names** clears that cache and returns to 12-EDO; use
+to Learn. **Settings → Refresh tuning names** clears that cache and returns to 12-EDO; use
 it after changing the device library. Disconnected or failed reads are reported
 and can be retried. Selections load before practice begins.
 
@@ -71,13 +80,18 @@ Targets use full Learn brightness before the board’s normal processing.
 Contrast is saved as your browser preference, separate from courses.
 
 Choose a **Pattern**: ascending, descending, up and down, down and up,
-or **Skip one scale tone** (thirds in a seven-tone scale). Round trips play the
-turning note once. Runs cover one period of the chosen scale.
+or **Thirds** (skip one scale note each time). Round trips play the
+turning note once. Runs cover one period of the chosen scale. The heading above
+the key map names the root, scale, tuning, layout, and pattern.
+
+The **Tempo** slider above the note strip sets the timing. Its slowest position,
+**Free**, is free timing; any BPM uses the metronome. The tempo stays the same
+when you change scales.
 
 - **Free timing** waits for correct answers and counts extra
   attempts. Timing starts with the first correct attack and stops at the last
-  correct attack, excluding the final held note. The final correct attack completes the run. The last run's time and extra attempts remain visible.
-- **Metronome** offers 40–180 BPM and four high count-in
+  correct attack, excluding the final held note. The final correct attack completes the run.
+- **Metronome** tempos give four count-in
   clicks before every run. A correct press immediately highlights the next
   note; play it on its assigned click. If you miss, the cue advances when that
   beat's window closes. Each run shows a score out of 100, a grade, misses,
@@ -87,20 +101,27 @@ turning note once. Runs cover one period of the chosen scale.
   Use speakers or wired headphones for consistent timing; device/browser
   latency still affects the result.
 
-**Repeat runs** starts another free run on your next first note,
-or another beat run after the next count-in. Turn it off before starting for
-single runs with repeat buttons. Stop to change the pattern, mode, tempo, or
-layout. Hints and contrast remain adjustable during practice.
-Demonstrations are available in at-your-own-pace mode. Results last only for
-this visit. Course progress is saved separately, as described below.
+**Repeat runs** is on by default so you can keep moving up and down the scale.
+In free timing, the next run starts as soon as you finish: play the first note
+again. A key still held from the previous run does not count; press it again.
+With a metronome tempo, each score shows for a moment, then the next run counts
+in with the same hints choice. The last run's time, score, and mistakes stay
+below the key map. Turn **Repeat runs** off to stop after each run; the result
+then appears over the bottom of the key map with a suggestion and
+**Repeat without hints** / **Repeat with hints**. Color mode and
+contrast remain adjustable during practice. Scale results last only for this
+visit; course progress is saved separately, as described below.
 
-Under **Library & help → Import tuning bundle**, open JSON exported from the editor. EDO,
+Under **Settings → Import tuning bundle**, open JSON exported from the editor. EDO,
 equal-step, and Scala cents-table tunings are supported, including non-octave
 periods. Audio plays the actual fractional pitches without rounding to MIDI
-semitones. Choose a **Root** and **Register**. For microtonal
+semitones. Choose a **Root** and move the run with **Octave** − / +. Tunings
+whose period is not 1200 cents label this control **Period**. For microtonal
 labels, `[0]` means the register around the tuning's degree zero, `[-1]` the
 period below it, and `[1]` the period above; the stored reference sets frequency.
-This register number need not be a Western octave number.
+This register number need not be a Western octave number. Tunings with more
+than 12 degrees per period, and tunings read from HexBoard, choose the root from
+a list.
 
 Layouts honor rotation, mirroring, disabled keys, pitch overrides, and direct
 MIDI assignments. Command and one-button chord keys are unavailable for scale
@@ -113,7 +134,7 @@ Imported bundles last for this visit to Learn.
 The lesson uses its selected layout; saved device settings are not replaced.
 The web map rotates with the layout, and current firmware temporarily rotates
 the board's OLED to match. The saved OLED orientation returns on exit.
-Normal instrument playing and controls return after **Stop** in Scale practice,
+Normal instrument playing and controls return after **Stop lesson**,
 or after leaving Learn or hiding the browser tab. Moving between
 lessons or Learn sections keeps the connection active. Lesson changes stop
 old audio and wait for all held keys to be released before the next run. Sessions have no heartbeat
@@ -157,13 +178,13 @@ four of the seven side buttons are used, with an unused button between actions:
 | 5, yellow | Start, restart, or repeat without hints |
 | 7, orange | Start, restart, or repeat with hints |
 
-Unavailable actions go dark. Continue lights only when its matching web
+Scale practice uses the same buttons except Continue. Unavailable actions go dark. Continue lights only when its matching web
 button is available. The compact side-button guide in Learn follows the physical
 stagger and shows the unused buttons as blank spaces. Its labeled buttons are
 clickable and keyboard accessible: use them to hear examples, start/repeat with
 or without hints, and advance. Starting from an exercise also opens the HexBoard
-session when needed. Courses use these controls instead of a separate transport
-bar and hints checkbox. A repeat after Step or
+session when needed. Courses and Scale practice use these controls instead of a
+separate transport bar and hints checkbox. A repeat after Step or
 slower timed practice moves to the lesson's goal tempo. Moving between lessons
 keeps the session open. Untimed practice starts after all held playable keys are
 released; timed lessons wait for a Start press. Reading pages keep the session open.
@@ -191,10 +212,10 @@ result for the selected course on all layouts after you confirm; other courses a
 untouched. Export first if you may want the results back. No account or device
 writes are required.
 
-**Play synth** in Scale practice lets you explore the selected tuning/layout without starting a
-lesson or recording a score. It uses a connected HexBoard when available;
-otherwise, click the screen keys. You can also keep playing after a lesson ends.
-Use **Stop** to end synth play. Changing lessons still requires releasing held
+**Play freely** in Scale practice lets you explore the selected tuning/layout without starting a
+run or recording a score. It uses a connected HexBoard when available;
+otherwise, click the screen keys. You can also keep playing after a run ends.
+Start a run with the side buttons, or use **Stop lesson** to end free play. Changing lessons still requires releasing held
 physical keys before the new lesson starts.
 
 When hints are on and the author supplied finger assignments, the same two-hand
@@ -289,7 +310,7 @@ Reduced-motion preferences disable the celebration animation. Rewards use browse
 audio and stop when you stop, change lessons, leave Learn, or hide the tab.
 
 Course instructions refer to the physical HexBoard. When disconnected,
-**Test without a HexBoard → Try on screen** is available for testing lesson
+**Settings → Without a HexBoard → Try on screen** is available for testing lesson
 behavior with clickable keys. It is secondary to the normal learning workflow.
 
 All built-in courses support **Make a copy** and **Export course**. Use a copy
