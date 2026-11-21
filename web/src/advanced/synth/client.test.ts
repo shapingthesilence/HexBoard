@@ -8,7 +8,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { encodeDefaultPresetSyncFrame, decodePresetSyncFrame, encodeU14, encodeU21 } from "../../protocol/index.ts";
 import type { MidiMessageListener, MidiTransport } from "../../midi/types.ts";
 import { PhysicalSynthClient, decodePhysicalState, decodePhysicalExpression, decodeMotion, decodeModulation } from "./client.ts";
-import { initialPreset, factoryPhysicalPresets, physicalPresetFromUnknown, encodeLogPitchHz, effectiveParameters, releaseSeconds, defaultModulation, validateModulation, defaultFx, validateFx } from "./schema.ts";
+import { initialPreset, factoryPhysicalPresets, physicalPresetFromUnknown, encodeLogPitchHz, effectiveParameters, releaseSeconds, defaultModulation, validateModulation, defaultFx, validateFx, bowKind, exciterValues, physicalParameters } from "./schema.ts";
 import { PhysicalSynthEditor } from "./PhysicalSynthEditor.tsx";
 
 function payload() { return [17, 1, 2, ...encodeU21(131072), ...initialPreset.parameters.flatMap(encodeU21), ...initialPreset.routes.flatMap(v => encodeU21(v + 65536)), initialPreset.velocityEngine]; }
@@ -264,9 +264,21 @@ describe("Advanced physical editor", () => {
       const html=renderToStaticMarkup(createElement(PhysicalSynthEditor));
       expect(html).toContain('aria-label="Bow character"');
       expect(html).toContain('aria-label="Marble material"');
-      expect(html).toMatch(/checked=""[^>]*value="1"/);
+      expect(html).toContain('<option value="clean" selected="">Clean bow</option>');
       expect(html).toContain('aria-label="Bow speed"');expect(html).toContain('aria-label="Bow force"');
     } finally {vi.unstubAllGlobals();}
+  });
+  it("offers the exciter as a dropdown with Natural and Clean bows",()=>{
+    const bow=factoryPhysicalPresets.find(p=>p.name==="Pressure Bow")!;
+    const patch={...bow,parameters:bow.parameters.map((v,i)=>i===21?exciterValues.natural:v)};
+    vi.stubGlobal("window",{localStorage:{getItem:(key:string)=>key.endsWith("draft.v1")?JSON.stringify(patch):"[]"}});
+    try {
+      const html=renderToStaticMarkup(createElement(PhysicalSynthEditor));
+      expect(html).toMatch(/<select class="exciter-mode" aria-label="Exciter"[^>]*><option value="strike">Strike<\/option><option value="natural" selected="">Natural bow<\/option><option value="clean">Clean bow<\/option><option value="sample">Sample<\/option><\/select>/);
+      expect(html).toContain('aria-label="Bow character"');
+    } finally {vi.unstubAllGlobals();}
+    expect([0,32767,32768,49151,49152,65535].map(bowKind)).toEqual(["strike","strike","natural","natural","clean","clean"]);
+    expect(physicalParameters[21].describe(exciterValues.natural)).toBe("Natural bow");
   });
   it("keeps activation visible offline and explains how to connect", () => {
     const html = renderToStaticMarkup(createElement(PhysicalSynthEditor));
