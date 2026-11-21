@@ -80,7 +80,10 @@ export function RouteMenu({ title, color, depth, x, y, onDepth, onClose }: {
     root.current?.querySelector("input")?.select();
     return () => { document.removeEventListener("keydown", key, true); document.removeEventListener("pointerdown", outside, true); };
   }, []);
-  const commit = () => { const n = Number(text); if (Number.isFinite(n)) onDepth(clampDepth(n / 100 * 65536)); };
+  const commit = () => {
+    const n = Number(text);
+    if (Number.isFinite(n) && n !== Math.round(depth / 65536 * 100)) onDepth(clampDepth(n / 100 * 65536));
+  };
   return <div ref={root} className="route-menu" role="dialog" aria-label={`${title} route`} style={{ left: Math.min(x, window.innerWidth - 210), top: Math.min(y, window.innerHeight - 130), borderColor: color }}>
     <strong>{title}</strong>
     <label>Depth<input type="number" min={-100} max={100} step={1} value={text} onChange={e => setText(e.target.value)} onBlur={commit} onKeyDown={e => { if (e.key === "Enter") { commit(); onClose(); } }}/>%</label>

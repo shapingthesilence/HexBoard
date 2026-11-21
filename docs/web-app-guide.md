@@ -1161,14 +1161,17 @@ remain available through their separate caret buttons.
 
 In Physical Strings or Wavetable, select X/Y tilt, Joystick Mod, Expression or LFO 1 in the
 source toolbar and drag an FX knob to set signed modulation depth. Release
-returns to Edit values; Delete modulation removes an assignment. Available FX
-knobs glow while a global source is selected. FX use a shared LFO clock even
+returns to Edit values. Available FX knobs glow while a global source is selected. FX use a shared LFO clock even
 when individual notes restart their own LFO. Per-note sources cannot control the
 shared rack. Classic editors offer a small FX source selector for tilt, joystick
 and expression. Discrete selectors and step patterns cannot be modulated.
 
-FX assignments share the Physical Strings DSP/connection budget, save with the
-patch and return their capacity when the card is removed. Expression pedal input
+In any synth with an FX rack, click a source label below an effect knob and
+choose **Remove**. You can also focus the label and press **Delete** or
+**Backspace**. Removing a route frees its capacity.
+
+FX assignments share the Physical Strings DSP/connection budget and save with the
+patch. Removing an effect clears all routes to that effect. Expression pedal input
 uses slower noise filtering appropriate to foot control; configure type and
 travel under the device's **Settings → Pedal setup**.
 

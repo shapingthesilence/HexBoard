@@ -1,7 +1,7 @@
 import {describe,it,expect} from 'vitest';import {renderToStaticMarkup} from 'react-dom/server';
 import {defaultFx,validateFx,fxRow,initialPreset,physicalPresetFromUnknown} from './schema.ts';
 import {removeFx,moveFx,fxRoutePatch,fxRouteDepth,fxRoutingUsage} from './fxRouting.ts';import {dspUsage,dspSourceContribution,routePatch} from './dspBudget.ts';
-import {initialClassic,classicFromUnknown} from './classicSchema.ts';
+import {initialClassic,classicFromUnknown,classicEffects} from './classicSchema.ts';
 import {FxRackEditor} from './FxRackEditor.tsx';import {decodeFx} from './client.ts';import {encodeU21} from '../../protocol/index.ts';
 describe('FX filter and global routing',()=>{
  it('moves one effect to a slot among the others, clamped to the chain',()=>{const order=[1,2,3,4];expect(moveFx(order,1,2)).toEqual([2,3,1,4]);expect(moveFx(order,4,0)).toEqual([4,1,2,3]);expect(moveFx(order,2,1)).toEqual(order);expect(moveFx(order,3,9)).toEqual([1,2,4,3]);expect(moveFx(order,3,-1)).toEqual([3,1,2,4]);});
@@ -13,6 +13,18 @@ describe('FX filter and global routing',()=>{
  it('returns removed FX routing capacity without changing other cards',()=>{const f=fxRoutePatch(fxRoutePatch({...defaultFx(),order:[5,2]},20,8,30000),4,3,10000);const next=removeFx(f,5);expect(next.order).toEqual([2]);expect(fxRouteDepth(next,20,8)).toBe(0);expect(fxRouteDepth(next,4,3)).toBe(10000);});
  it('rejects imported graphs that exceed the shared voice/FX connection count',()=>{let p=physicalPresetFromUnknown(initialPreset);p.routes.fill(0);for(const id of [0,1,2,3,4,5,6,9,10,11,12,13,14,15,16,17])for(const source of [0,1])p=routePatch(p,id,source,1);p.effects=fxRoutePatch({...p.effects,order:[5]},20,8,1);expect(()=>physicalPresetFromUnknown(p)).toThrow(/capacity/);});
  it('round-trips filter, body, steps and all FX routes through the extended wire layout',()=>{const f=fxRoutePatch({...defaultFx(),order:[5,2]},20,8,-65536);const bytes=[18,...f.order,...Array(6-f.order.length).fill(0),...f.values.flat().flatMap(encodeU21),...f.steps.flatMap(encodeU21),...f.routes!.flatMap(v=>encodeU21(v+65536))];expect(bytes.length).toBe(379);expect(decodeFx(bytes)).toEqual(f);});
+ it.each([
+  ['Physical Strings',undefined,{tool:'value',source:-1,values:[],finish:()=>{}}],
+  ['Wavetable',undefined,undefined],
+  ['Juno',classicEffects(4),undefined],
+  ['DX7',classicEffects(5),undefined],
+ ] as const)('exposes editable FX routes in %s',(_engine,available,targeting)=>{
+  const f=fxRoutePatch(fxRoutePatch({...defaultFx(),order:[5]},20,8,40000),20,3,-8000);
+  const html=renderToStaticMarkup(<FxRackEditor available={available} rack={f} onChange={()=>{}} targeting={targeting&&{...targeting,values:[]}}/>);
+  expect(html.match(/class="route-chip"/g)).toHaveLength(2);
+  expect(html).toContain('aria-label="Expression → Filter Cutoff +61%. Drag or use arrow keys to change, Delete to remove, Enter for options"');
+  expect(html).toContain('aria-label="X tilt → Filter Cutoff -12%.');
+ });
  it('rejects a Classic voice LFO masquerading as a shared FX source',()=>{const p=initialClassic(4);p.effects=fxRoutePatch({...p.effects,order:[5]},20,6,20000);expect(()=>classicFromUnknown(p)).toThrow(/shared LFO/);});
  it('shows the filter modes, source rings and the same targeting affordance',()=>{const f=fxRoutePatch({...defaultFx(),order:[5]},20,8,40000);const html=renderToStaticMarkup(<FxRackEditor rack={f} onChange={()=>{}} targeting={{tool:'modulate',source:8,values:[],finish:()=>{}}}/>);expect(html).toContain('Filter mode');for(const mode of ['Low-pass','Band-pass','High-pass'])expect(html).toContain(mode);expect(html).toContain('Expression to Filter Cutoff');expect(html).toContain('data-modulatable="true"');expect(html).toContain('data-source="Expression"');});
 });
