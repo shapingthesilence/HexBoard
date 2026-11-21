@@ -14,7 +14,7 @@ export const P = {
   Cutoff: 15, Resonance: 16, FilterMode: 17, KeyTrack: 18, FilterStereo: 19,
   AmpAttack: 20, AmpDecay: 21, AmpSustain: 22, AmpRelease: 23,
   Resonator: 24, ResonatorMix: 25, ResonatorTune: 26, ResonatorDecay: 27,
-  Level: 28, Classic: 29, EdgeBlend: 30, PhaseMode: 31, TableLow: 32, TableHigh: 33,
+  Level: 28, Osc2Frame: 29, EdgeBlend: 30, PhaseMode: 31, TableLow: 32, TableHigh: 33,
   // Amp envelope segment curves: 32768 is a straight line (envelopeCurve.ts).
   AmpAttackCurve: 34, AmpDecayCurve: 35, AmpReleaseCurve: 36,
   // Pitch: coarse +-24 semitones, fine +-100 cents (32768 unchanged).
@@ -57,7 +57,7 @@ export function driveCurve(mode: number, x: number) {
 }
 export const transientNames = ['Click', 'Tonal pop', 'Air puff', 'Custom sample'] as const;
 export const shapeNames = ['Sine', 'Triangle', 'Saw', 'Square'] as const;
-const optionCounts: Record<number, number> = {[P.Unison]: 7, [P.WarpMode]: 5, [P.TransientShape]: 4,[P.AttackPlayback]:2,[P.DriveMode]:4,[P.FilterBypass]:2, [P.SubShape]: 2, [P.FilterMode]: filterNames.length, [P.Resonator]: 4, [P.Classic]: 2,[P.PhaseMode]:3,[P.Osc2Shape]:5};
+const optionCounts: Record<number, number> = {[P.Unison]: 7, [P.WarpMode]: 5, [P.TransientShape]: 4,[P.AttackPlayback]:2,[P.DriveMode]:4,[P.FilterBypass]:2, [P.SubShape]: 2, [P.FilterMode]: filterNames.length, [P.Resonator]: 4, [P.PhaseMode]:3,[P.Osc2Shape]:6};
 export const pitchNames = ['Cents', 'Ratio', 'Tuning steps', 'Tuning periods'] as const;
 export const unisonNames = ['Cents', 'Beats / second', 'Interval stack'] as const;
 export const bodyMotionNames = ['Continuous sweep', 'Snapped pitches', 'Crossfaded pitches', 'Partial levels'] as const;
@@ -70,18 +70,21 @@ export const options = (id: number) => isPitchMode(id)||id===P.BodyMotion?4:id==
 export const discrete = (id: number) => options(id) !== 0;
 // Original LP/BP/HP presets use slots 0, 3 and 6 on the expanded scale.
 const filterFromSlot = [0, 3, 4, 1, 5, 6, 2];
+export const osc2IndependentTable = 65533, osc2LinkedTable = 65534;
 export function option(id: number, value: number) {
   const n = options(id);
+  if (id === P.Osc2Shape) return (value === osc2LinkedTable || value === osc2IndependentTable) ? 5 : Math.floor((value*4+32767)/65535);
   const slot = n < 2 ? 0 : Math.floor((value * (n - 1) + 32767) / 65535);
   return id === P.FilterMode ? filterFromSlot[slot] : slot;
 }
 export function optionValue(id: number, choice: number) {
   const n = options(id);
+  if (id === P.Osc2Shape) return choice === 5 ? osc2LinkedTable : Math.floor(choice*65535/4);
   const slot = id === P.FilterMode ? filterFromSlot.indexOf(choice) : choice;
   return n < 2 || slot < 0 || slot >= n ? 0 : Math.floor(slot * 65535 / (n - 1));
 }
-export const modulatable = (id: number, _source?: number) => id >= 0 && (id < P.TableLow || (id >= P.Coarse && id < parameterCount)) && !discrete(id) && !isRatioWord(id) && id !== P.Classic && !(id>=P.AttackFrames&&id<=P.AttackRoot);
-export const osc2Names = ['Sine', 'Triangle', 'Saw', 'Square', 'Noise'] as const;
+export const modulatable = (id: number, _source?: number) => id >= 0 && (id < P.TableLow || (id >= P.Coarse && id < parameterCount)) && !discrete(id) && !isRatioWord(id) && !(id>=P.AttackFrames&&id<=P.AttackRoot);
+export const osc2Names = ['Sine', 'Triangle', 'Saw', 'Square', 'Noise', 'Current wavetable'] as const;
 /** Coarse +-24 semitones (32768 centered); whole-semitone base values. */
 export const coarseSemitones = (v: number) => (v - 32768) / 32767 * 24;
 export const coarseValue = (semitones: number) => Math.round(32768 + Math.max(-24, Math.min(24, Math.round(semitones))) * 32767 / 24);
@@ -220,7 +223,7 @@ export const wavetableParameters: ParameterInfo[] = [
   {name: 'Tune', describe: v => `×${(2 ** (3 * v / 65535)).toFixed(2)}`},
   {name: 'Ring', describe: v => `${(.12 * 2 ** (5 * v / 65535)).toFixed(2)} s`},
   {name: 'Level', describe: v => { const g = (v / 65535) ** 2; return g <= 0 ? '−∞ dB' : `${(20 * Math.log10(g)).toFixed(1)} dB`; }},
-  {name: 'Classic stepping', describe: v => v ? 'On' : 'Off'},
+  {name: 'Osc 2 position', describe: v => `${(1+15*v/65535).toFixed(1)} / 16`},
   {name: 'Edge blend', describe: pct},
   {name: 'Start phase', describe: v => ['Random','Reset','Evenly spread'][option(P.PhaseMode,v)]},
   {name: 'Table identity', describe: v => String(v)},

@@ -71,15 +71,19 @@ const keyStep = (e: KeyboardEvent, value: number, set: (v: number) => void, up =
 };
 
 /** Sixteen frames as a receding stack; reuse one pixel surface for moving traces. */
-export function TableTerrain({frame, live, spread, copies, warpMode, warpAmount, brightness, table, disabled, onFrame}: {table?:Uint8Array;frame: number; live: number; spread: number; copies: number; warpMode: number; warpAmount: number; brightness: number; disabled?: boolean; onFrame: (value: number) => void}) {
+export function TableTerrain({frame, live, osc2Position, spread, copies, warpMode, warpAmount, brightness, table, disabled, onFrame}: {table?:Uint8Array;frame: number; live: number; osc2Position?: number; spread: number; copies: number; warpMode: number; warpAmount: number; brightness: number; disabled?: boolean; onFrame: (value: number) => void}) {
   const stack = useMemo(() => Array.from({length: frames}, (_, f) => table?assetWave(table,f,1,0,0,96):waveform(frameSpectrum(f), 0, 0, 96)), [table]);
   const scale = useMemo(() => peakOf(stack), [stack]);
   const paths = useRef<{stack:number[][];items:{line:Path2D;fill:Path2D}[]} | undefined>(undefined);
   const position = live * 15, spreadFrames = spread * 4;
-  const current = useMemo(() => table?assetWave(table,position,brightness,warpMode,warpAmount,192):waveform(frameSpectrum(position, brightness), warpMode, warpAmount, 192), [table,position, brightness, warpMode, warpAmount]);
-  const currentScale = Math.max(scale, peakOf([current]));
+  const previewWave = (f: number, mode: number, amount: number) => table
+    ? assetWave(table, f, brightness, mode, amount, 192)
+    : waveform(frameSpectrum(f, brightness), mode, amount, 192);
+  const current = useMemo(() => previewWave(position, warpMode, warpAmount), [table, position, brightness, warpMode, warpAmount]);
+  const second = useMemo(() => osc2Position === undefined ? undefined : previewWave(osc2Position * 15, 0, 0), [table, osc2Position, brightness]);
+  const currentScale = Math.max(scale, peakOf(second ? [current, second] : [current]));
   const set = (e: PointerEvent<HTMLCanvasElement>) => { const r = e.currentTarget.getBoundingClientRect(), y = (e.clientY - r.top) / r.height * 240; onFrame(Math.round(Math.max(0, Math.min(1, (196 - y) / 10.5 / 15)) * 65535)); };
-  return <CanvasPlot className="wt-terrain" width={600} height={240} role="slider" tabIndex={disabled ? -1 : 0} aria-label="Wavetable frame · drag up and down" aria-valuemin={1} aria-valuemax={16} aria-valuenow={Math.round(frame * 15) + 1} aria-disabled={disabled}
+  return <CanvasPlot className="wt-terrain" width={600} height={240} role="slider" tabIndex={disabled ? -1 : 0} aria-label="Wavetable frame · drag up and down" aria-description={osc2Position === undefined ? undefined : `Osc 2 position: frame ${(1 + 15 * osc2Position).toFixed(1)} of 16`} aria-valuemin={1} aria-valuemax={16} aria-valuenow={Math.round(frame * 15) + 1} aria-disabled={disabled}
     onPointerDown={e => { if (disabled) return; e.currentTarget.setPointerCapture(e.pointerId); set(e); }}
     onPointerMove={e => { if (!disabled && e.currentTarget.hasPointerCapture(e.pointerId)) set(e); }}
     onKeyDown={e => { if (!disabled) keyStep(e, Math.round(frame * 65535), onFrame); }}
@@ -107,6 +111,18 @@ export function TableTerrain({frame, live, spread, copies, warpMode, warpAmount,
       strokeWave(ctx, current, 36 + position * 12, 196 - position * 10.5, 380, 34, currentScale);
       ctx.lineCap = 'butt'; ctx.lineJoin = 'round'; ctx.lineWidth = 2.4; ctx.strokeStyle = c.trace;
       ctx.shadowColor = c.trace; ctx.shadowBlur = 6 * ctx.getTransform().a; ctx.stroke(); ctx.shadowBlur = 0;
+      if (osc2Position !== undefined && second) {
+        const f = osc2Position * 15, y = 196 - f * 10.5;
+        ctx.strokeStyle = c.accent;
+        ctx.lineWidth = 2.4;
+        ctx.setLineDash([7, 4]);
+        strokeWave(ctx, second, 36 + f * 12, y, 380, 34, currentScale);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.arc(18 + f * 12, y, 8.5, 0, 2 * Math.PI);
+        ctx.stroke();
+      }
       ctx.fillStyle = c.text; ctx.font = `10px ${c.font}`; ctx.fillText('1', 422, 200); ctx.fillText('16', 602, 42.5);
     }}/>;
 }

@@ -1,4 +1,4 @@
-import {describe, expect, it} from 'vitest';
+import {describe, expect, it, vi} from 'vitest';
 import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {P, S, wavetableParameters, effectiveWavetable, factoryWavetablePresets, initialWavetable, option, optionValue, routeKey, routesUsed, sourceCount, validWavetable, wavetableFromUnknown, wavetableFromWords, wavetablePreset, wavetableWords, withRoute, wordCount, editCount, wavetableFormat, wavetableDefaultFx, driveCurve, driveGain, driveMakeup} from './wavetableSchema.ts';
@@ -149,8 +149,31 @@ describe('pitch, mono and second oscillator', () => {
     const sound = {...wavetablePreset('Mono', initialWavetable()), mono: {flags: 2, glideMs: 120}};
     expect(wavetableFromUnknown(JSON.parse(JSON.stringify(sound))).mono).toEqual({flags: 2, glideMs: 120});
   });
+  it('shows position controls only when the waveform uses them', () => {
+    const sound = wavetablePreset('Position', initialWavetable());
+    vi.stubGlobal('localStorage', {getItem: (key:string)=>key==='hexboard.wavetable.draft.v8'?JSON.stringify(sound):null});
+    try {
+      for(const [shape, knob] of [[0,false],[65534,false],[65533,true]] as const){
+        sound.parameters[P.Osc2Shape]=shape;
+        const html=renderToStaticMarkup(createElement(WavetableSynthEditor,{}));
+        expect(html).toContain('Wavetable · linked');
+        expect(html).toContain('Wavetable · independent');
+        expect(html.includes('data-mod-target="29"')).toBe(knob);
+        expect(html.includes('aria-description="Osc 2 position: frame')).toBe(knob);
+      }
+    } finally { vi.unstubAllGlobals(); }
+  });
   it('places Osc 2 after the oscillator with pitch controls', () => {
     const html = renderToStaticMarkup(createElement(WavetableSynthEditor, {}));
+    expect(html).toContain('Current wavetable');
+    expect([0,16383,32767,49151,65535,65534].map(word=>option(P.Osc2Shape,word))).toEqual([0,1,2,3,4,5]);
+    expect(optionValue(P.Osc2Shape,5)).toBe(65534);
+    expect(option(P.Osc2Shape,65533)).toBe(5);
+    const independent=initialWavetable();
+    independent.parameters[P.Osc2Shape]=65533;
+    independent.parameters[P.Osc2Frame]=48000;
+    independent.routes[4]={source:S.Lfo2,destination:P.Osc2Frame,depth:-18000};
+    expect(wavetableFromWords(wavetableWords(independent))).toEqual(independent);
     expect(html.indexOf('wt-stage-osc2')).toBeGreaterThan(html.indexOf('wt-stage-oscillator'));
     expect(html.indexOf('wt-stage-osc2')).toBeLessThan(html.indexOf('wt-stage-warp'));
     for (const label of ['Osc 2 shape', 'Phase mod', 'Carrier unit', 'Fine', 'Voice mode']) expect(html).toContain(label);

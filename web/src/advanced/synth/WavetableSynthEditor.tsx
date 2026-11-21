@@ -36,7 +36,7 @@ import {targetingEscape, sourceClickTool} from './modulationTargeting.ts';
 import {RouteChip, RouteMenu, dropDepth, useSourceDrag} from './modulationGestures.tsx';
 import {type FxRack,modulationRate, modulationSeconds} from './schema.ts';
 import {
-  P, S, driveNames, unisonNames,bodyMotionNames,partialField,modSettingCount, osc2Names, filterNames, modulatable, option, optionValue, parameterCount,
+  P, S, driveNames, unisonNames,bodyMotionNames,partialField,modSettingCount, osc2Names, osc2IndependentTable, osc2LinkedTable, filterNames, modulatable, option, optionValue, parameterCount,
   resonatorNames, tableCrc, routeDepth, routesUsed, sameWavetable, sourceCount, transientNames, warpAmountDescription, warpNames, wavetableEngine,
   wavetableParameters, wavetablePreset, wavetableSourceColors, wavetableSourceShort, wavetableSources, withRoute, bipolarSource, type WavetablePreset
 } from './wavetableSchema.ts';
@@ -52,7 +52,7 @@ const store = (key: string, value: unknown) => { try { writeStoredText(localStor
 // Controls whose neutral value is the centre (double-click resets there). Level resets to 0 dB instead.
 const centredParameters = new Set<number>([P.StackInterval,...Array.from({length:4},(_,j)=>P.Partial1Pan+j*7),...Array.from({length:4},(_,j)=>P.Partial1Interval+j*7),P.Coarse, P.Fine, P.SubCoarse, P.SubFine, P.Osc2Coarse, P.Osc2Fine, P.FilterStereo, P.AmpAttackCurve, P.AmpDecayCurve, P.AmpReleaseCurve]);
 const stageOrder: {id: WavetableStage; label: string}[] = [
-  {id: 'oscillator', label: 'Oscillator'}, {id: 'osc2', label: 'Osc 2'}, {id: 'warp', label: 'Warp'}, {id: 'unison', label: 'Unison'}, {id: 'layers', label: 'Layers'},
+  {id: 'oscillator', label: 'Osc 1'}, {id: 'osc2', label: 'Osc 2'}, {id: 'warp', label: 'Warp'}, {id: 'unison', label: 'Unison'}, {id: 'layers', label: 'Layers'},
   {id: 'resonator', label: 'Resonator'}, {id: 'drive', label: 'Drive'}, {id: 'filter', label: 'Filter'}, {id: 'amp', label: 'Amp'}, {id: 'output', label: 'Output'}
 ];
 function modText(id: number, v: number) {
@@ -334,15 +334,25 @@ export function WavetableSynthEditor({ transport,onDeviceEngineLoaded }: { trans
     </PartialsDialog>}
     <div className="wt-workspace">
       <div className="wt-stages">
-        {stage('oscillator', 'Oscillator', true, <>
+        {stage('oscillator', 'Osc 1', true, <>
           <div className="wt-table-viewer" data-table-missing={!!tableCrc(preset)&&!selectedTable||undefined}><div className="wt-table-picker"><select aria-label="Wavetable table" disabled={busy} value={preset.table?.id??'basic'} onChange={e=>{const id=e.target.value;if(id==='import'){setImporting('new');return;}if(id==='edit'){setImporting('edit');return;}if(id==='export'){if(selectedTable)download(exportTable(selectedTable),`${selectedTable.name}.hexwav.json`);return;}if(id==='basic')chooseTable();else void getTable(id).then(t=>{if(!t)throw Error('The table is no longer in this browser.');chooseTable(t);}).catch(fail);}}><option value="basic">Basic Shapes</option><optgroup label="HexBoard Classic">{factoryTables.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</optgroup>{tables.length>0&&<optgroup label="My tables">{tables.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</optgroup>}{preset.table&&![...factoryTables,...tables].some(t=>t.id===preset.table?.id)&&<option value={preset.table.id}>{preset.table.name}</option>}<option value="import">Import WAV…</option>{selectedTable&&<><option value="edit">Edit import settings…</option><option value="export">Export table…</option></>}</select></div>{!!tableCrc(preset)&&!selectedTable&&<div className="wt-table-unavailable">This sound uses a custom table. Import its sound file or original WAV to preview it.</div>}
-          <PreviewValues ids={[P.Frame, P.FrameSpread, P.WarpAmount, P.Brightness]}>{([frame, spread, amount, brightness]) => <TableTerrain table={selectedTable?.prepared} frame={p[P.Frame] / 65535} live={frame} spread={spread} copies={copies} warpMode={warpMode} warpAmount={amount} brightness={brightness} disabled={busy || tool !== 'value'} onFrame={v => setParameter(P.Frame, v)}/>}</PreviewValues></div>
+          <PreviewValues ids={p[P.Osc2Shape] === osc2IndependentTable ? [P.Frame, P.FrameSpread, P.WarpAmount, P.Brightness, P.Osc2Frame] : [P.Frame, P.FrameSpread, P.WarpAmount, P.Brightness]}>{([frame, spread, amount, brightness, osc2Position]) => <TableTerrain table={selectedTable?.prepared} frame={p[P.Frame] / 65535} live={frame} osc2Position={osc2Position} spread={spread} copies={copies} warpMode={warpMode} warpAmount={amount} brightness={brightness} disabled={busy || tool !== 'value'} onFrame={v => setParameter(P.Frame, v)}/>}</PreviewValues></div>
           <div className="knob-bank">{control(P.Frame,'Frame',tableCrc(preset)?v=>`${(v/65535*15+1).toFixed(1)} / 16`:undefined)}{control(P.FrameSpread)}{control(P.Brightness)}</div><IntervalControls label="Carrier" parameters={p} spec={{mode:P.CarrierPitchMode,amount:P.Coarse,num:P.CarrierRatioNum,den:P.CarrierRatioDen,fine:P.Fine}} disabled={busy} onFields={setFields} control={control}/>
         </>, 'Scan the table with Frame · pressure moves it by default. Spread fans unison copies across neighbouring frames.')}
         <div className="wt-column">
         {stage('osc2', 'Osc 2', p[P.Osc2Level] > 0 || p[P.PhaseMod] > 0, <>
-          {choice(P.Osc2Shape, osc2Names, 'Osc 2 shape')}
-          <IntervalControls label="Osc 2" parameters={p} spec={{mode:P.Osc2PitchMode,amount:P.Osc2Coarse,num:P.Osc2RatioNum,den:P.Osc2RatioDen,fine:P.Osc2Fine}} disabled={busy} onFields={setFields} control={control} before={<>{control(P.Osc2Level, 'Level')}{control(P.PhaseMod)}</>}/>
+          <label className="wt-layer-row">Waveform
+            <select aria-label="Osc 2 shape" disabled={busy}
+              value={p[P.Osc2Shape]===osc2IndependentTable ? osc2IndependentTable : optionValue(P.Osc2Shape,option(P.Osc2Shape,p[P.Osc2Shape]))}
+              onChange={e=>setParameter(P.Osc2Shape,Number(e.target.value))}>
+              {osc2Names.slice(0,-1).map((name,i)=><option key={name} value={optionValue(P.Osc2Shape,i)}>{name}</option>)}
+              <optgroup label="Current wavetable">
+                <option value={osc2LinkedTable}>Wavetable · linked</option>
+                <option value={osc2IndependentTable}>Wavetable · independent</option>
+              </optgroup>
+            </select>
+          </label>
+          <IntervalControls label="Osc 2" parameters={p} spec={{mode:P.Osc2PitchMode,amount:P.Osc2Coarse,num:P.Osc2RatioNum,den:P.Osc2RatioDen,fine:P.Osc2Fine}} disabled={busy} onFields={setFields} control={control} before={<>{control(P.Osc2Level, 'Level')}{control(P.PhaseMod)}{p[P.Osc2Shape]===osc2IndependentTable && control(P.Osc2Frame,'Position')}</>}/>
         </>, undefined, 'A second voice to mix in, or to bend the main oscillator’s phase with Phase mod.')}
         {stage('warp', 'Warp', warpMode > 0, <>
           {choice(P.WarpMode, warpNames, 'Warp mode')}

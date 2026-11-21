@@ -58,6 +58,11 @@
 .wavetable-editor .wt-choice button { flex: 1; min-width: 0; padding: 3px 4px; min-height: 24px; }
 .wavetable-editor .wt-layer { display: flex; flex-direction: column; gap: 6px; }
 .wavetable-editor .wt-layer h4 { margin: 0; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-soft); }
+.wavetable-editor .wt-stage-osc2 .wt-interval .knob-bank { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.wavetable-editor .wt-stage-osc2 .wt-interval .knob-wrap { width: min(100%, 52px); }
+.wavetable-editor .wt-stage-osc2 .wt-interval .physical-knob { width: 100%; height: auto; aspect-ratio: 1; }
+.wavetable-editor .wt-stage-osc2 [data-mod-target="29"] { order: 1; }
+.wavetable-editor .wt-stage-osc2 [data-mod-target="29"] .knob-routes { height: 11px; overflow-y: auto; }
 .wavetable-editor .wt-layer-row { display: flex; gap: 6px; }
 .wavetable-editor .wt-layer-row select { flex: 1; min-width: 0; }
 .wavetable-editor .wt-layer-row .wt-choice { flex: 1; }

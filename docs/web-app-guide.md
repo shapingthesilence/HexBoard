@@ -1240,6 +1240,10 @@ Classic and Advanced share **Sample → Tune & analyze** in the Sampler workspac
 [Sample tuning and loop suggestions](sampler-tuning.md) for reference-tone
 audition, fractional roots, confidence, and converted-loop verification.
 
+### Advanced wavetable Osc 2
+
+Open **Osc 2 → Waveform** and choose **Wavetable · linked** to follow Osc 1’s Frame, or **Wavetable · independent** to show a separate **Position** knob. Raise Osc 2 Level to hear it. Drag Position or assign it a modulation source to scan Osc 2 independently. A hollow pink ring tracks the independent position, including modulation. The matching dashed pink trace shows Osc 2’s waveform alongside Osc 1’s solid trace. Switching back to linked retains the independent setting and its modulation assignments. Try a fifth (ratio 3/2) for a distinct second pitch, or detune slightly for beating. To use Osc 2 only as a phase modulator, lower its Level to zero and raise Phase mod. Selecting or importing a table changes both readers.
+
 ### Advanced wavetable voice filter
 
 Open **Filter → Mode** to choose the response for each note. **Notch** carves a moving gap. **Bell boost** emphasizes a band while preserving the surrounding sound. **Hollow low-pass** keeps bass, cuts a band above cutoff and leaves some treble. **Bright shelf** takes weight out of the lows. Low-pass, Band-pass, High-pass and Off are also available.

@@ -36,7 +36,7 @@ export function wavetableCost(p: WavetablePatch & {effects?: FxRack}): Wavetable
     // Stereo antiderivative shaper: measured +204 to +292 µs at 8+2 voices (November 14).
     drive: [0, 90, 90, 110][option(P.DriveMode, p.parameters[P.DriveMode])],
     // Second oscillator: once per voice when heard or phase-modulating.
-    osc2: active(p, P.Osc2Level) || active(p, P.PhaseMod) ? ([2, 3].includes(option(P.Osc2Shape, p.parameters[P.Osc2Shape])) ? 34 : 30) + (active(p, P.PhaseMod) ? 36 : 0) : 0
+    osc2: active(p, P.Osc2Level) || active(p, P.PhaseMod) ? [30,30,34,34,30,85][option(P.Osc2Shape,p.parameters[P.Osc2Shape])] + (active(p, P.PhaseMod) ? 36 : 0) : 0
   };
   const stages: Record<WavetableStage, number> = {
     oscillator: Math.round(cycles.oscillator * usPerCycle + fixedUs), osc2: Math.round(cycles.osc2 * usPerCycle), warp: Math.round(cycles.warp * usPerCycle)+Math.round(cycles.warpControl*usPerCycle), unison: Math.round(cycles.unison * usPerCycle)+Math.round(cycles.intervals*usPerCycle),
