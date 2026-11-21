@@ -15,10 +15,12 @@ export function lessonLedColor(note: number | null, state: KeyLight, context?: {
     keyDegree: context?.root ?? 0, defaultColorMode: context?.mode ?? ColorMode.Rainbow, periodCents: context ? tuningPeriod(context.bundle.tuning) : 1200,
     override: context?.bundle.layouts.find(layout => layout.objectIdHex === context.bundle.activeLayoutIdHex)?.buttonOverrides.find(key => key.buttonIndex === context.index)
   });
+  const rest = 127 * (1 - Math.max(25, Math.min(85, context?.contrast ?? 50)) / 100);
   return {
     hue: Math.round(color.hueTenthDegrees * 127 / 3600),
     saturation: Math.round(color.saturation * 127 / 255),
-    value: state === "target" ? 127 : state === "held" ? 116 : Math.round(127 * (1 - Math.max(25, Math.min(85, context?.contrast ?? 50)) / 100))
+    value: state === "target" ? 127 : state === "held" ? 116 : state === "trail" ? Math.round(rest + (127 - rest) * 0.55)
+      : state === "outside" ? Math.round(rest * 0.3) : Math.round(rest)
   };
 }
 

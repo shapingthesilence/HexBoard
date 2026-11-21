@@ -291,6 +291,16 @@ The default is 50%; saved contrast preferences are retained.
 Targets use full Learn brightness before the board’s normal processing.
 Contrast is saved as your browser preference, separate from courses.
 
+Each run starts with every copy of its first note lit. The copy you press
+first sets the **scale shape**: one key for each scale note, chosen as the
+tightest cluster around that key. With hints on, the board then follows that
+shape. The next note is brightest, the key you just played stays brighter as
+a trail (outlined on screen), the rest of the shape is softly lit, and every
+other key dims further, including other copies of scale notes. Other copies
+still count when played. The next run lights every copy of the first note
+again; press a different one to move the shape. **Hear example** follows the
+latest shape. Without hints the shape stays hidden.
+
 Choose a **Pattern**: ascending, descending, up and down, down and up,
 or **Thirds** (skip one scale note each time). Round trips play the
 turning note once. Runs cover one period of the chosen scale. The heading above

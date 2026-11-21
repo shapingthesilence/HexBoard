@@ -81,7 +81,9 @@ export class MajorScaleRun {
   }
 }
 
-export type KeyLight = "off" | "rest" | "target" | "held" | "alternate";
+// "shape", "trail" and "outside" belong to a chosen scale route: the rest of the
+// shape, the key just played, and every key outside the shape.
+export type KeyLight = "off" | "rest" | "target" | "held" | "alternate" | "shape" | "trail" | "outside";
 export function keyLight(key: LessonKey, target: number | undefined, held: ReadonlyMap<number, number>, hints: boolean, dimPastHeld = false): KeyLight {
   if (key.note === null) return "off";
   if (held.has(key.key.index) && !(dimPastHeld && key.note !== target)) return "held";
