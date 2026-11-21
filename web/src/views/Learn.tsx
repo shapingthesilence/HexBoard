@@ -13,6 +13,7 @@ import { DelegatedSession } from "../learn/delegatedSession.ts";
 import { lessonLedColor, lessonScreenColor } from "../learn/lessonColors.ts";
 import { keyLight, isLessonTuning, lessonLayouts, MajorScaleRun, noteName, resolveLessonKeys, starterLayouts, unavailableScaleNotes, type LessonLayout } from "../learn/majorScale.ts";
 
+import { routeKeyLight, scaleRoute } from "../learn/scaleRoute.ts";
 import { BeatScaleRun, mistakeCount, scaleCompletionGuidance, scalePatterns, scalePatternNotes, scalePracticeLesson, type ScalePattern, type BeatResult } from "../learn/scalePractice.ts";
 import { CapabilityFlag, ObjectType, type HelloResponsePayload, type ObjectListRecord } from "../protocol/index.ts";
 import { lessonDeviceLibrary } from "../learn/deviceLibrary.ts";
@@ -151,6 +152,11 @@ export function Learn({ transport, connected, deviceHello,connectionControl,navi
   const lesson = course ? courseLesson : scaleLesson;
   const notes = useMemo(() => lesson.targets.map(target => target[0] ?? -1), [lesson]);
   const targets = lesson.targets;
+  // The first note pressed in a run picks which copy of the scale shape to
+  // follow; the shape stays until another first note moves it.
+  const [routeAnchor, setRouteAnchor] = useState<{ lesson: string; layout: string; index: number }>();
+  const anchorIndex = !course && routeAnchor?.lesson === scaleLesson.id && routeAnchor.layout === selection.layout.objectIdHex ? routeAnchor.index : undefined;
+  const route = useMemo(() => anchorIndex === undefined ? undefined : scaleRoute(keys, notes, anchorIndex), [keys, notes, anchorIndex]);
   const exploring = course && lesson.kind === "exploration" && !!lesson.exploration;
   const availablePitches = keys.flatMap(key=>key.note===null?[]:[key.note]);
   const previewNotes = exploring ? availablePitches.filter(note=>inPitchSet(note,lesson.exploration!)) : course ? [...new Set(lesson.targets.flatMap((_,step)=>answerNotes(lesson,step,availablePitches)))] : baseNotes;
@@ -188,6 +194,8 @@ export function Learn({ transport, connected, deviceHello,connectionControl,navi
   const [message, setMessage] = useState("");
   const [, redraw] = useState(0);
   const run = useRef<MajorScaleRun | BeatScaleRun>(new MajorScaleRun());
+  // The key that played the latest note in this run, for the route trail.
+  const trail = useRef<{ run: MajorScaleRun | BeatScaleRun; index: number }>(undefined);
   const usedHints = useRef(true);
   const streak=useRef(0),streakHints=useRef(false);
   const [streakCount,setStreakCount]=useState(0);
@@ -553,7 +561,17 @@ export function Learn({ transport, connected, deviceHello,connectionControl,navi
     }
     if (pressed) {
       const alreadySounding = [...run.current.held.values()].includes(note);
-      const attacked = run.current.press(index, note, receivedAt);
+      const active = run.current, stepBefore = active.step;
+      const graded = active instanceof BeatScaleRun ? [...active.errors] : [];
+      const attacked = active.press(index, note, receivedAt);
+      // The step this press completed: timed runs grade a slot, free runs advance.
+      const hit = active instanceof BeatScaleRun
+        ? active.errors.findIndex((error, slot) => error !== undefined && graded[slot] === undefined)
+        : active.step > stepBefore ? stepBefore : -1;
+      if (attacked && hit >= 0) {
+        if (!course && hit === 0) setRouteAnchor({ lesson: scaleLesson.id, layout: selection.layout.objectIdHex, index });
+        trail.current = { run: active, index };
+      }
       if (attacked && !alreadySounding) {
         void audio.current?.noteOn(note).catch(() => stop("Browser audio stopped. Start the lesson again."));
       }
@@ -691,7 +709,12 @@ export function Learn({ transport, connected, deviceHello,connectionControl,navi
   const targetNotes = exploring ? previewNotes : stage === "demo" ? demoNote ?? [] : course ? answerNotes(lesson,run.current.step,availablePitches) : targets[run.current.step] ?? [];
   const cues = course ? lessonCues(lesson, selection.layout.objectIdHex, stage === "demo" ? demoStep : stage === "ready" ? 0 : run.current.step) : [];
   const lightCues=course&&(stage==="ready"||stage==="waiting") ? lesson.fingerings?.find(item=>item.layoutId===selection.layout.objectIdHex)?.steps.flat()??[] : cues;
-  const lights = keys.map((key) => exploring && hints && key.note!==null && previewNotes.includes(key.note) && !run.current.held.has(key.key.index) ? (lesson.exploration!.highlighted?.length && !lesson.exploration!.highlighted.includes(key.note) ? "alternate" : "target") : courseKeyLight(key, lightCues, keyLight(key, key.note !== null && ((stage === "ready" || stage === "waiting") ? previewNotes : targetNotes).includes(key.note) ? key.note : undefined, run.current.held, stage === "ready" || stage === "waiting" || stage === "demo" || (hints && stage === "practice"), course && hints && stage === "practice")));
+  // Scale practice follows one copy of the shape once the run's first note is
+  // played (the example uses the latest shape). Without hints nothing is revealed.
+  const routeLit = !!route && !course && (stage === "demo" || (stage === "practice" && hints && trail.current?.run === run.current));
+  const routeTrail = stage === "demo" ? (demoStep > 0 ? route?.get(notes[demoStep - 1]) : undefined) : trail.current?.index;
+  const baseLights = keys.map((key) => exploring && hints && key.note!==null && previewNotes.includes(key.note) && !run.current.held.has(key.key.index) ? (lesson.exploration!.highlighted?.length && !lesson.exploration!.highlighted.includes(key.note) ? "alternate" : "target") : courseKeyLight(key, lightCues, keyLight(key, key.note !== null && ((stage === "ready" || stage === "waiting") ? previewNotes : targetNotes).includes(key.note) ? key.note : undefined, run.current.held, stage === "ready" || stage === "waiting" || stage === "demo" || (hints && stage === "practice"), course && hints && stage === "practice")));
+  const lights = routeLit ? keys.map((key, index) => routeKeyLight(key, baseLights[index], route!, routeTrail)) : baseLights;
   const showHands=course && hints && (stage==="ready" || stage==="practice" || stage==="demo") && lesson.fingerings?.some(f=>f.layoutId===selection.layout.objectIdHex&&f.steps.some(step=>step.some(cue=>cue.hand&&cue.finger)));
   const fingerColor=(note:number)=>{const key=keys.find(key=>key.note===note);return lessonScreenColor(lessonLedColor(note,"target",{bundle:{...bundle,activeLayoutIdHex:selection.layout.objectIdHex},steps:key?.steps??0,root,mode:colorMode,index:key?.key.index??0,contrast}));};
   const timingRun=hints&&stage==="practice"&&run.current instanceof BeatScaleRun?run.current:undefined;
@@ -1013,11 +1036,11 @@ export function Learn({ transport, connected, deviceHello,connectionControl,navi
             })}
             {timingRun&&timingSteps.flatMap(({step,dueAt})=>{
               const upcomingCues=course?lessonCues(lesson,selection.layout.objectIdHex,step):[];
-              return keys.filter(({key,note})=>key.role!=="command"&&note!==null&&(course?answerNotes(lesson,step,availablePitches):targets[step]??[]).includes(note)&&courseKeyLight({key,note},upcomingCues,"target")==="target").map(({key})=><g key={`${step}:${key.index}`} pointerEvents="none" transform={`translate(${32+key.coordCol*25} ${35+key.row*42})`}><TimingCue dueAt={dueAt} periodMs={timingRun.periodMs}/></g>);
+              return keys.filter(({key,note})=>key.role!=="command"&&note!==null&&(course?answerNotes(lesson,step,availablePitches):targets[step]??[]).includes(note)&&courseKeyLight({key,note},upcomingCues,"target")==="target"&&(!routeLit||route!.get(note)===key.index)).map(({key})=><g key={`${step}:${key.index}`} pointerEvents="none" transform={`translate(${32+key.coordCol*25} ${35+key.row*42})`}><TimingCue dueAt={dueAt} periodMs={timingRun.periodMs}/></g>);
             })}
           </g>
         </svg></div>{showHands&&<aside className="learnRecommendedHands" aria-label="Recommended fingers"><h3>Recommended fingers</h3><FingerHands cues={cues} color={fingerColor}/></aside>}</div>}
-        <div className="learnLegend">{exploring ? "Explore freely · no scoring · bright: chord tones or allowed scale · click to hold or release" : stage === "free" ? "Play freely · no scoring" : stage === "ready" ? "Bright keys: exercise notes" : "Bright: current target · dashed: held target"}{cues.some(cue => cue.button !== undefined) && (cues.some(cue => cue.button !== undefined && cue.acceptDuplicates === false) ? " · Use the suggested key for each note" : " · Other keys with the same note also count")}{course && lesson.targets.some(target => target.length > 1) && !onBoard && stage === "practice" && " · Click a key to hold or release"}</div>
+        <div className="learnLegend">{exploring ? "Explore freely · no scoring · bright: chord tones or allowed scale · click to hold or release" : stage === "free" ? "Play freely · no scoring" : stage === "ready" ? "Bright keys: exercise notes" : routeLit ? "Bright: next note · outlined: the key you just played · soft: your scale shape · other keys with the same note also count" : "Bright: current target · dashed: held target"}{cues.some(cue => cue.button !== undefined) && (cues.some(cue => cue.button !== undefined && cue.acceptDuplicates === false) ? " · Use the suggested key for each note" : " · Other keys with the same note also count")}{course && lesson.targets.some(target => target.length > 1) && !onBoard && stage === "practice" && " · Click a key to hold or release"}</div>
         {hints && stage === "practice" && cues.some(cue => (!showHands && (cue.hand || cue.finger)) || (cue.button !== undefined && cue.acceptDuplicates === false)) && <div className="learnFingering" aria-label="Hand and finger cues">{cues.map(cue => <span key={cue.note}>{labelNote(cue.note)} {cueLabel(cue)}{cue.button !== undefined && cue.acceptDuplicates === false ? ` · key ${cue.button} required` : ""}</span>)}</div>}
         <div className="learnRunStats">
           {course&&(lesson.repetitions??1)>1&&lesson.assessment?.graded!==false&&<span>Clean runs: {streakCount}/{lesson.repetitions}</span>}

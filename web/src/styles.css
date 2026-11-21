@@ -66,6 +66,8 @@ button.courseControlRow:disabled { cursor: default; }
 .learnKey.target polygon:not(.learnTimingRing) { stroke: var(--text); stroke-width: 3; }
 .learnKey.held polygon:not(.learnTimingRing) { stroke: var(--text); stroke-width: 3; stroke-dasharray: 4 2; }
 .learnKey.off polygon:not(.learnTimingRing) { fill: var(--surface-muted); stroke: var(--border); }
+.learnKey.trail polygon:not(.learnTimingRing) { stroke: var(--text); stroke-width: 2; }
+.learnKey.outside polygon:not(.learnTimingRing) { stroke: var(--border); }
 .learnLegend { font-size: .75rem; color: var(--text-soft); }
 .learnFeedback { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px; font-size: .85rem; }
 .learnCompletion { background: var(--surface-accent); border-radius: var(--radius-md); padding: 10px; margin-top: 8px; }

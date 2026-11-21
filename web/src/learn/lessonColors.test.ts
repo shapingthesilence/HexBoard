@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { ColorMode } from "../catalogs/layoutsCatalog.ts";
 import { lessonLedColor, lessonScreenColor } from "./lessonColors.ts";
+import { starterLayouts, type KeyLight } from "./majorScale.ts";
 
 describe("learning rainbow", () => {
   it("keeps all twelve pitch colors across octaves and uses brightness for feedback", () => {
@@ -20,6 +22,18 @@ describe("learning rainbow", () => {
       expect(held.value).toBeGreaterThan(rest.value);
     }
     expect(hues.size).toBe(12);
+  });
+  it("orders scale route brightness from outside keys up to the next note at every contrast", () => {
+    const { bundle } = starterLayouts()[0];
+    for (const contrast of [25, 50, 85]) {
+      const at = (state: KeyLight) => lessonLedColor(64, state, { bundle, steps: 4, root: 0, mode: ColorMode.Rainbow, index: 0, contrast }).value;
+      expect(at("outside")).toBeGreaterThan(0);
+      expect(at("outside")).toBeLessThan(at("shape"));
+      expect(at("shape")).toBe(at("rest"));
+      expect(at("shape")).toBeLessThan(at("trail"));
+      expect(at("trail")).toBeLessThan(at("held"));
+      expect(at("held")).toBeLessThan(at("target"));
+    }
   });
   it("shows C as red, dims its normal state and turns unavailable keys off", () => {
     expect(lessonScreenColor(lessonLedColor(60, "target")).fill).toBe("rgb(255 0 0)");
