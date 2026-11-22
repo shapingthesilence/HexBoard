@@ -5,9 +5,10 @@ import type { KeyLight } from "./majorScale.ts";
 
 export interface LessonLedColor { hue: number; saturation: number; value: number }
 
-// Pitch class owns hue, lesson state only changes brightness. These 7-bit
-// values go directly to delegated LEDs; hardware applies its normal hue/gamma
-// calibration and current limit. The screen shows nominal rainbow hues.
+// Pitch class owns hue; lesson state only changes brightness, except that a
+// wrong press briefly flashes white. These 7-bit values go directly to
+// delegated LEDs; hardware applies its normal hue/gamma calibration and
+// current limit. The screen shows nominal rainbow hues.
 export function lessonLedColor(note: number | null, state: KeyLight, context?: { bundle: TuningBundle; steps: number; root: number; mode: ColorModeValue; index: number; contrast?: number }): LessonLedColor {
   if (note === null || state === "off") return { hue: 0, saturation: 0, value: 0 };
   const { color } = resolveTuningBundleButtonColor({
@@ -15,6 +16,8 @@ export function lessonLedColor(note: number | null, state: KeyLight, context?: {
     keyDegree: context?.root ?? 0, defaultColorMode: context?.mode ?? ColorMode.Rainbow, periodCents: context ? tuningPeriod(context.bundle.tuning) : 1200,
     override: context?.bundle.layouts.find(layout => layout.objectIdHex === context.bundle.activeLayoutIdHex)?.buttonOverrides.find(key => key.buttonIndex === context.index)
   });
+  // A wrong press flashes white: every hue already names a pitch class.
+  if (state === "wrong") return { hue: 0, saturation: 0, value: 127 };
   const rest = 127 * (1 - Math.max(25, Math.min(85, context?.contrast ?? 50)) / 100);
   return {
     hue: Math.round(color.hueTenthDegrees * 127 / 3600),

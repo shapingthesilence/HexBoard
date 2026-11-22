@@ -240,8 +240,9 @@ opening the course editor (create, copy, edit, or recover a draft), or an
 unrecoverable error closes the session. Authoring actions remain available during
 a lesson; entry clears playback and evaluation state and releases delegated
 control before the editor can start recording or a learner preview. Saved
-completion progress is retained. The Learn header exposes Stop lesson while
-audio or a delegated session exists, including ready and completed states.
+completion progress is retained. Stop lesson sits below the side-button guide
+and is enabled while audio or a delegated session exists, including ready and
+completed states; the Progress page shows it in the Learn header.
 Ungraded synth play uses the same
 audio/session owner; ready, free-play, and completed states accept notes without
 advancing evaluation or changing progress. Changing lessons resets hints. Switching an allowed layout resets its streak, updates display rotation, and retains the physical-key release barrier. Timed course lessons return to ready; active untimed runs restart. A lesson layout requirement overrides a legacy course-level requirement. Course introductions render before practice and do not count toward completion.
