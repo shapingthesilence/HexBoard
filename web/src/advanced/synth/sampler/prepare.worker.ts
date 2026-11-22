@@ -8,6 +8,7 @@ import {
   preparePatch,
   wav,
   type Patch,
+  type Progress,
 } from "./prepare.mjs";
 self.onmessage = async (event: MessageEvent) => {
   try {
@@ -56,9 +57,11 @@ self.onmessage = async (event: MessageEvent) => {
       self.postMessage({ result: recordings });
       return;
     }
-    const result = await (request.target === "classic" ? prepareCompactPatch : preparePatch)(request.patch as Patch, (progress) =>
-      self.postMessage({ progress }),
-    );
+    const progress = (value: Progress) => self.postMessage({ progress: value });
+    const patch = request.patch as Patch;
+    const result = request.target === "classic"
+      ? await prepareCompactPatch(patch, progress)
+      : await preparePatch({ ...patch, storage: "streaming" }, progress);
     self.postMessage({ progress: { label: "Checking converted loop tuning…", asset: 0, total: 1, level: 0 } });
     const decoded = request.target === "classic" ? readCompactPatch(result.bytes) : readBank(result.bytes, { loopWindows: true });
     result.warnings.push(...verifyPreparedTuning(request.patch, decoded));

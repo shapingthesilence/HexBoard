@@ -11,7 +11,6 @@ export function resourceSummary(patch, classic = false) {
   const limits = playbackLimits(patch, classic);
   const pcm = patch.assets.reduce((n,a)=>n+((a.end??a.channels[0].length)-(a.start??0))*a.channels.length*2,0);
   const stereo = patch.assets.some(a=>a.channels.length===2);
-  const interior = patch.assets.some(a=>[1,3].includes(a.mode??0)&&((a.loopStart??0)!==(a.start??0)||(a.loopEnd??a.channels[0].length)!==(a.end??a.channels[0].length)));
-  const sd = !classic && (patch.storage==='streaming'||(patch.storage!=='resident'&&(pcm*2>5.5*1048576||interior)));
-  return {...limits,pcm,stereo,sd,readers:limits.voices+limits.tails,room:!!patch.settings?.space};
+  const streaming = !classic;
+  return {...limits,pcm,stereo,streaming,readers:limits.voices+limits.tails,room:!!patch.settings?.space};
 }

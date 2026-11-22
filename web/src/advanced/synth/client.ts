@@ -249,7 +249,6 @@ export class PhysicalSynthClient {
   samplerParameter(id:number,value:number){return this.request(46,[id,...encodeU21(value)]);}
   async uploadSampler(bytes:Uint8Array,progress?:(received:number,total:number)=>void){
     if(bytes.length<512||bytes.length%512)throw Error('Invalid prepared sampler file.');
-    if(this.assetMedium==="flash"&&(new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength).getUint16(18,true)&1))throw Error("This instrument needs SD streaming. Choose SD card storage.");
     await this.stopAndWait();
     const {crc32}=await import('./sampler/prepare.mjs');
     try{
@@ -265,7 +264,6 @@ export class PhysicalSynthClient {
   async uploadSamplerNamed(bytes:Uint8Array,folder:string,filename:string,progress?:(received:number,total:number)=>void){
     const text=(s:string)=>{if(!s.length||s.length>64||/[^\x20-\x7e]|[\\/:*?"<>|]/.test(s)||s.startsWith('.')||/[. ]$/.test(s))throw Error('Use a plain folder and filename.');return Array.from(s,c=>c.charCodeAt(0));};
     const f=text(folder),n=text(filename);if(!/\.hbs$/i.test(filename)||bytes.length<512||bytes.length%512)throw Error('Invalid prepared sampler file.');
-    if(this.assetMedium==="flash"&&(new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength).getUint16(18,true)&1))throw Error("This instrument needs SD streaming. Choose SD card storage.");
     await this.stopAndWait();const {crc32}=await import('./sampler/prepare.mjs');
     try{const initial=await this.request<number>(65,[this.assetMedium==="flash"?2:0,f.length,n.length,...f,...n,...u32(bytes.length),...u32(crc32(bytes))]);if(initial!==0)throw Error('Invalid sampler initial offset.');
     await this.transferBlocks(66,bytes,progress);

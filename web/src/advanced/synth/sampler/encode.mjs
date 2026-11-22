@@ -440,20 +440,11 @@ export async function preparePatch(input, onProgress = () => {}) {
   if (corrected.length > 128) throw Error("Loop pitch calibration needs more than 128 recordings. Use fewer tracking slopes.");
   source = corrected; zones = zones.map(z => ({ ...z, asset: assignment.get(z) }));
   if (maximumCorrection > .01) warnings.push(`Calibrated short-loop rounding by up to ${maximumCorrection.toFixed(3)} cents; loop repetition pitch is preserved.`);
-  const estimate = source.reduce(
-      (n, a) => n + a.channels[0].length * a.channels.length * 4,
-      0,
-    ),
-    region = source.some(
-      (a) =>
-        (a.mode === 1 || a.mode === 3) &&
-        (a.loopStart !== 0 || a.loopEnd !== a.channels[0].length),
-    );
-  const streaming =
-    input.storage === "streaming" ||
-    (input.storage !== "resident" && (estimate > 5.5 * 1048576 || region));
-  if (input.storage === "resident" && region)
-    throw Error("Region loops require the SD sound profile.");
+  const streaming = input.storage !== "resident";
+  if (!streaming && source.some(
+    (a) => (a.mode === 1 || a.mode === 3) &&
+      (a.loopStart !== 0 || a.loopEnd !== a.channels[0].length),
+  )) throw Error("Region loops require paged playback.");
   const assets = [],
     newZones = [];
   if (quality === "character")

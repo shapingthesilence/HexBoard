@@ -15,8 +15,7 @@ profile. Reducing voices stops old audition voices when applied. It reduces
 reader/filter work, not the preallocated renderer's SRAM footprint.
 
 The channel choice keeps source channels or explicitly mixes stereo to mono;
-Undo retains the previous PCM. Advanced preserves stereo in both resident and
-SD profiles. Stereo doubles sample bytes and channel processing; configured
+Undo retains the previous PCM. Advanced preserves stereo in paged banks on SD and internal flash. Stereo doubles sample bytes and channel processing; configured
 voices and device qualification determine the useful performance profile.
 Setup also offers optional gentle/pressure vibrato starting points; Keep authored
 motion preserves imported regions. Sound has **Envelope**, **Touch & release** (Advanced), **Motion**
@@ -102,9 +101,9 @@ and identifies regions that could not be verified, including protected copies
 outside the detector's range. These checks are advisory and never secretly
 rewrite imported tuning. Existing device/file capacity limits still apply.
 
-Classic retains its existing resident capacity and conversion limits; Advanced
-retains its current resident/SD profiles. Both store fractional tuning using their
-existing formats. These tools do not add streaming or native effects to Classic.
+Classic retains its resident capacity and conversion limits. Advanced exports
+paged banks for either storage destination. Both store fractional tuning in
+their existing formats.
 
 ## Tiny Periodic Loops And PCM Edits
 

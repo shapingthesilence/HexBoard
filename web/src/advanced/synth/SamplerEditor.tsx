@@ -1336,22 +1336,6 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
               </select>
             </label>
             <label>
-              Storage
-              <select
-                value={patch.storage ?? "auto"}
-                onChange={(e) =>
-                  edit({
-                    ...patch,
-                    storage: e.target.value as Patch["storage"],
-                  })
-                }
-              >
-                <option value="auto">Automatic</option>
-                <option value="resident">Resident · stereo</option>
-                <option value="streaming">SD · long recordings</option>
-              </select>
-            </label>
-            <label>
               USB folder
               <input
                 aria-label="USB folder"
