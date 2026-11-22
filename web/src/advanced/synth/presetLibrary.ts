@@ -4,7 +4,7 @@ import {tableCrc,wavetableFromUnknown,wavetableFormat,type WavetablePreset} from
 import {exportTable,importTable,presetTable,putTable,tableReference} from './wavetable/library.ts';
 export type SoundPreset=PhysicalPreset|ClassicPreset|WavetablePreset;
 export const isWavetablePreset=(p:SoundPreset):p is WavetablePreset=>p.format===wavetableFormat;
-export const isPhysicalPreset=(p:SoundPreset):p is PhysicalPreset=>p.format==='hexboard.physical.v24';
+export const isPhysicalPreset=(p:SoundPreset):p is PhysicalPreset=>p.format==='hexboard.physical.v25';
 export const presetDraftKey=(engine:number)=>engine===7?'hexboard.wavetable.draft.v7':engine<4?'hexboard.physical.draft.v1':`hexboard.advanced.${engine}.draft`;
 export interface LibraryPreset {id:string;folder:string;favorite:boolean;updated:number;preset:SoundPreset}
 export const presetEngine=(p:SoundPreset):2|4|5|7=>isWavetablePreset(p)?7:p.format==='hexboard.advanced.v2'?p.engine:2;

@@ -11,7 +11,7 @@ export class PhysicalPreview extends VisualPreview {
     this.sampleSources([this.preset.modulation.settings], now);
     const values = effectiveParameters(this.preset, this.sources);
     for (let i = 0; i < values.length; ++i) this.parameters[i] = values[i];
-    this.parameters[33]=springEffective(this.preset.modulation.settings,this.sources,0);this.parameters[34]=springEffective(this.preset.modulation.settings,this.sources,1);this.parameters[35]=this.spring.advance(this.preset.modulation.settings,this.sources,now,this.expression?.key,this.expression?.held??true);
+    this.parameters[33]=springEffective(this.preset.modulation.settings,this.sources,0);this.parameters[34]=springEffective(this.preset.modulation.settings,this.sources,1);this.parameters[35]=this.spring.advance(this.preset.modulation.settings,this.sources,now,this.expression?.key,this.expression?.held??true,this.expression?.rock??0);
   }
 }
 

@@ -1,4 +1,4 @@
-import {springDefaults,springDirectionWords,springSourceWords,springUpgrade,springWords} from './pitchSpring.ts';
+import {springDefaults,springDirectionWords,springSourceUpgrade,springSourceWords,springUpgrade,springWords} from './pitchSpring.ts';
 import {type MonoConfig,validateMono} from "./mono.ts";
 import {modulationUsage} from "./modulationBudget.ts";
 import {targetDepths, targetSourceLimit} from "./targetModulation.ts";
@@ -124,9 +124,9 @@ export function validateSample(value:unknown):SampleExciter{
  if(![0,1,2].includes(loop.mode)||![loop.start,loop.end,loop.crossfade].every(Number.isInteger)||loop.start<0||loop.end>s.frames.length||loop.crossfade<0||loop.crossfade>3200||loop.crossfade===1||(loop.mode===0?(loop.start!==0||loop.end!==0||loop.crossfade!==0):(loop.end-loop.start<160||loop.crossfade*2>loop.end-loop.start)))throw Error("Use a loop of at least 10 ms, with a crossfade up to half its length (maximum 200 ms).");
  return {enabled:s.enabled,gain:s.gain,direct,loop:{...loop},name:s.name.slice(0,80),frames:[...s.frames]};
 }
-export interface PhysicalPreset { mono?:MonoConfig; voiceBudget?:VoiceBudgetProfile; controllerRoutes?:number[]; format: "hexboard.physical.v24"; modulation:ModulationSources; tiltRoutes: number[]; effects: FxRack; sample:SampleExciter; name: string; parameters: number[]; routes: number[]; velocityEngine: PhysicalVelocityEngine }
+export interface PhysicalPreset { mono?:MonoConfig; voiceBudget?:VoiceBudgetProfile; controllerRoutes?:number[]; format: "hexboard.physical.v25"; modulation:ModulationSources; tiltRoutes: number[]; effects: FxRack; sample:SampleExciter; name: string; parameters: number[]; routes: number[]; velocityEngine: PhysicalVelocityEngine }
 export const initialPreset: PhysicalPreset = {
-  mono:{flags:0,glideMs:0},format: "hexboard.physical.v24", modulation:defaultModulation(), tiltRoutes: Array(66).fill(0), controllerRoutes:Array(66).fill(0), effects: defaultFx(), sample:defaultSample(), name: "Pressure Sweep", velocityEngine: 0,
+  mono:{flags:0,glideMs:0},format: "hexboard.physical.v25", modulation:defaultModulation(), tiltRoutes: Array(66).fill(0), controllerRoutes:Array(66).fill(0), effects: defaultFx(), sample:defaultSample(), name: "Pressure Sweep", velocityEngine: 0,
   parameters: [56000, 9000, 36000, 30000, 24000, 12000, 14000, 43690, 0, 65535, 30000, 18000, 10000, 18000, 50000, 32768, 32768, 0, 32768, 22000, 16000],
   routes: [0, 0, 0, 0, 0, 0, 14000, 0, 0, 0, 0, -26000, 0, 0, 0, 0, 42000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -50000, 0, ...Array(12).fill(0), 0, -20000, 0, 0, 0, 0, ...Array(15).fill(0)]
 };
@@ -175,17 +175,24 @@ export function physicalPresetFromUnknown(value: unknown): PhysicalPreset {
   const valid = (v: unknown, count: number, low: number, high: number): v is number[] =>
     Array.isArray(v) && v.length === count && v.every(n => Number.isInteger(n) && n >= low && n <= high);
   if (typeof p.name !== "string" || !p.name.trim() || p.name.length > 80) throw Error("Give the preset a name.");
-  if (p.format !== "hexboard.physical.v24" && p.format !== "hexboard.physical.v23")
-    throw Error("This file is not a supported physical string preset. Use JSON v24.");
+  if (p.format !== "hexboard.physical.v25" && p.format !== "hexboard.physical.v24" && p.format !== "hexboard.physical.v23")
+    throw Error("This file is not a supported physical string preset. Use JSON v25.");
   // v23 carried the 40-word Pitch Spring: its Warble is now the spring's Bounce.
-  const modulation=Array.isArray((p.modulation as ModulationSources|undefined)?.settings)?{...(p.modulation as ModulationSources),settings:springUpgrade((p.modulation as ModulationSources).settings)}:p.modulation;
+  const modulation=Array.isArray((p.modulation as ModulationSources|undefined)?.settings)?{...(p.modulation as ModulationSources),settings:[...springUpgrade((p.modulation as ModulationSources).settings)]}:p.modulation;
+  // v23/v24 springs: Tilt becomes Rock, other sources Pressure, and Direction
+  // (then Pressing/Easing) keeps its pitch side when Amount is negative.
+  // A v25 Shake (since removed) becomes Rock.
+  if(Array.isArray((modulation as ModulationSources|undefined)?.settings)&&(modulation as ModulationSources).settings.length===modulationSettingCount){
+    const s=(modulation as ModulationSources).settings,current=p.format==="hexboard.physical.v25";s[springWords.source]=springSourceUpgrade(s[springWords.source],current);
+    if(!current&&s[springWords.amount]<32768&&s[springWords.direction])s[springWords.direction]=s[springWords.direction]===32768?65535:32768;
+  }
   const discrete=[7,8,21,27,31];
   if (!valid(p.tiltRoutes,66,-65536,65536) || discrete.some(id=>(p.tiltRoutes as number[]).slice(id*2,id*2+2).some(Boolean)))throw Error("Invalid tilt modulation routes.");
   if (!valid(p.parameters,33,0,65535) || !valid(p.routes,99,-65536,65536) || discrete.some(id=>(p.routes as number[]).slice(id*3,id*3+3).some(Boolean)) || !velocityEngines.some(e => e.id === p.velocityEngine))
     throw Error("This file is not a supported physical string preset.");
   if(!Array.isArray((p.effects as FxRack)?.steps)||((p.effects as FxRack).values[2][3]>127||(p.effects as FxRack).values[0][2]>4))throw Error("Invalid volume step configuration.");
   if(p.controllerRoutes!==undefined&&(!valid(p.controllerRoutes,66,-65536,65536)||[8,21,27,31].some(id=>(p.controllerRoutes as number[]).slice(id*2,id*2+2).some(Boolean))))throw Error("Invalid controller modulation routes.");
-  const result:PhysicalPreset={mono:validateMono(p.mono),controllerRoutes:[...((p.controllerRoutes as number[]|undefined)??Array(66).fill(0))],format:"hexboard.physical.v24",sample:validateSample({...validateSample(p.sample),direct:p.parameters[32]}),modulation:validateModulation(modulation),tiltRoutes:[...(p.tiltRoutes as number[])],effects:validateFx(p.effects),name:p.name.trim(),parameters:[...p.parameters],routes:[...p.routes],velocityEngine:p.velocityEngine as PhysicalVelocityEngine};
+  const result:PhysicalPreset={mono:validateMono(p.mono),controllerRoutes:[...((p.controllerRoutes as number[]|undefined)??Array(66).fill(0))],format:"hexboard.physical.v25",sample:validateSample({...validateSample(p.sample),direct:p.parameters[32]}),modulation:validateModulation(modulation),tiltRoutes:[...(p.tiltRoutes as number[])],effects:validateFx(p.effects),name:p.name.trim(),parameters:[...p.parameters],routes:[...p.routes],velocityEngine:p.velocityEngine as PhysicalVelocityEngine};
   if(result.parameters.some((_,id)=>targetDepths(result,id).filter(Boolean).length>targetSourceLimit))throw Error("Each target allows four modulation sources. Remove an assignment before adding another.");
   if(!modulationUsage(result).fits||modulationUsage(result).connections+(result.effects.routes??[]).filter(Boolean).length>32)throw Error("Modulation capacity full. Remove a destination before adding another.");
   const voiceBudget=validVoiceBudget(result,p.voiceBudget);return voiceBudget?{...result,voiceBudget}:result;

@@ -47,7 +47,7 @@ class Transport implements MidiTransport {
     const modResponse=[17,...this.modulation.settings.flatMap(encodeU21),...this.modulation.routes.flatMap(v=>encodeU21(v+65536))];
     const motion=frame.payload[1]>=12;
     const fx=frame.payload[1]>=10;
-    const motionResponse=[17,1,1,...encodeU21(32767),...encodeU21(32767),...(frame.payload[1]===13?frame.payload.slice(2):Array(66).fill(65536).flatMap(encodeU21))];
+    const motionResponse=[17,1,1,...encodeU21(32767),...encodeU21(32767),...(frame.payload[1]===13?frame.payload.slice(2):Array(66).fill(65536).flatMap(encodeU21)),...encodeU21(32767)];
     if(frame.payload[1]===27)this.sampleLoop=frame.payload.slice(2);
     if(frame.payload[1]>=20){const sample=[17,0,...encodeU21(32768),...encodeU21(this.sampleLoop?1600:0),0,0,0,0,0,0,...encodeU21(65535),...(this.sampleLoop??[0,...encodeU21(0),...encodeU21(0),...encodeU21(0)])];const reply=this.sampleReplyLength===undefined?sample:Array.from({length:this.sampleReplyLength},(_,i)=>sample[i]??0);queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x3b,frame.transactionId,reply)))));return;}
     const response=frame.payload[1]===11?[18,...frame.payload.slice(2,-1)]:[18,0,0,0,0,0,0,...defaultFx().values.flat().flatMap(encodeU21),...defaultFx().steps.flatMap(encodeU21),...Array(80).fill(65536).flatMap(encodeU21)];
@@ -112,8 +112,10 @@ describe("Advanced physical editor", () => {
   });
 
   it("decodes signed flat/tilted motion and rejects invalid routes",()=>{
-    const packet=[17,1,1,...encodeU21(49151),...encodeU21(16384),...Array(66).fill(65536).flatMap(encodeU21)];
+    const packet=[17,1,1,...encodeU21(49151),...encodeU21(16384),...Array(66).fill(65536).flatMap(encodeU21),...encodeU21(65534)];
     expect(decodeMotion(packet).tiltX).toBeCloseTo(.5,3);expect(decodeMotion(packet).tiltY).toBeCloseTo(-.5,3);
+    expect(decodeMotion(packet).rock).toBeCloseTo(1,3);
+    expect(()=>decodeMotion(packet.slice(0,207))).toThrow();expect(()=>decodeMotion([...packet.slice(0,207),...encodeU21(65535)])).toThrow();
     expect(()=>decodeMotion([17,1,1,...encodeU21(65535),...packet.slice(6)])).toThrow();
     const routes=Array(66).fill(0);routes[14]=1;expect(()=>physicalPresetFromUnknown({...initialPreset,tiltRoutes:routes})).toThrow();
   });

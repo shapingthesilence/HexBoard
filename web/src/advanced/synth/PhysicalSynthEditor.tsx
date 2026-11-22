@@ -1,6 +1,6 @@
 import {AssetStorageSelector} from "./AssetStorageSelector.tsx";
 import {springBase,springDirection,springDirectionWords,springNames,springRise,springRouteWord,springSource,springWord,springWords,springSourceNames,springSourceWords} from './pitchSpring.ts';
-import {PitchSpringView,directionGlyphs} from './PitchSpringView.tsx';
+import {PitchSpringView,directionGlyphs,springDirectionNames,springSourceGlyphs,springSourceHelp} from './PitchSpringView.tsx';
 import {isPhysicalPreset,presetDraftKey} from './presetLibrary.ts';
 import {PresetLibrary} from './PresetLibrary.tsx';
 import {useAutosave} from '../../editor/useAutosave.ts';
@@ -282,7 +282,7 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
   const dropRoute=(id:number,src:number)=>{const t=targetState(id,src);if(!t.modulatable||t.full)return;if(!routeDepth(preset,id,src))setRoute(id,src,dropDepth);};
   const {drag,bind:dragBind,dragged}=useSourceDrag(dropRoute);
   const highlight=drag?.source??budgetSource;
-  const springPressure=springSource(preset.modulation.settings)===0;
+  const springInput=springSource(preset.modulation.settings);
   const springKnob=(word:number,name:string,title:string,describe:(v:number)=>string)=>{const value=preset.modulation.settings[word];
     return <div className="physical-control" key={word} title={title}><strong>{name}</strong><div className="knob-wrap"><Knob label={`Pitch spring ${name.toLowerCase()}`} value={value} valueText={describe(value)} disabled={busy||tool==="modulate"} onChange={v=>setModSetting(word,Math.round(v))}/></div><output>{describe(value)}</output></div>;};
   const control = (id: number) => {
@@ -434,18 +434,13 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
     </div>
     <div className="monitor-grid">
     <fieldset className="pitch-spring-panel" disabled={busy}><legend>Pitch Spring</legend>
+      <div className="spring-bar">
+        <div className="source-tabs spring-sources" role="group" aria-label="Pitch spring source">{springSourceNames.map((name,i)=><button type="button" key={name} disabled={busy} aria-pressed={springInput===i} title={springSourceHelp[i]} onClick={()=>setModSetting(springWords.source,springSourceWords[i])}><svg className="drive-glyph" viewBox="0 0 24 14" aria-hidden="true"><path d={springSourceGlyphs[i]}/></svg>{name}</button>)}</div>
+        <div className="source-tabs spring-direction" role="group" aria-label="Pitch spring direction">{springDirectionNames.map((name,i)=><button type="button" key={name} disabled={busy} aria-label={name} aria-pressed={springDirection(preset.modulation.settings)===i} title={name} onClick={()=>setModSetting(springWords.direction,springDirectionWords[i])}><svg className="drive-glyph" viewBox="0 0 24 14" aria-hidden="true"><path d={directionGlyphs[i]}/></svg></button>)}</div>
+      </div>
       <div className="spring-layout">
         <PitchSpringView settings={preset.modulation.settings}/>
-        <div className="spring-controls">
-          <div className="spring-row">
-            <label className="spring-source">Follows<select aria-label="Pitch spring source" value={preset.modulation.settings[springWords.source]} onChange={e=>setModSetting(springWords.source,+e.target.value)}>{springSourceNames.map((name,i)=><option key={name} value={springSourceWords[i]}>{name}</option>)}</select></label>
-            <div className="source-tabs spring-direction" role="group" aria-label="Pitch spring direction">{(springPressure?["Both ways","Pressing in","Easing off"]:["Both ways","Rising","Falling"]).map((name,i)=><button type="button" key={name} disabled={busy} aria-pressed={springDirection(preset.modulation.settings)===i} title={["Bends while the source moves either way","Bends only while the source rises; coming back is silent","Bends only while the source falls back"][i]} onClick={()=>setModSetting(springWords.direction,springDirectionWords[i])}><svg className="drive-glyph" viewBox="0 0 24 14" aria-hidden="true"><path d={directionGlyphs[i]}/></svg>{name}</button>)}</div>
-          </div>
-          <div className="spring-groups">
-            <div className="spring-group"><span>Bend</span><div>{control(33)}{control(34)}</div></div>
-            <div className="spring-group"><span>Feel</span><div>{springKnob(springWords.weight,"Weight","Heavier springs ease into the bend and wobble more slowly",v=>`${Math.round(springRise(v)*1000)} ms`)}{springKnob(springWords.bounce,"Bounce","Overshoot and wobble as the bend settles. With a short Return it rings about the note",v=>v?`${Math.round(v/65535*100)}%`:"Off")}</div></div>
-          </div>
-        </div>
+        <div className="spring-knobs">{control(33)}{control(34)}{springKnob(springWords.weight,"Weight","Heavier springs ease into the bend and wobble more slowly",v=>`${Math.round(springRise(v)*1000)} ms`)}{springKnob(springWords.bounce,"Bounce","Overshoot and wobble as the bend settles. With a short Return it rings about the note",v=>v?`${Math.round(v/65535*100)}%`:"Off")}</div>
       </div>
     </fieldset>
     <fieldset className="expression-panel" disabled={busy}><legend>Expression</legend>

@@ -56,12 +56,12 @@ export function decodePhysicalState(payload: number[]): PhysicalState {
   const parameters = Array.from({ length: 33 }, (_, i) => decodeU21(payload.slice(6 + i * 3, 9 + i * 3)));
   const routes = Array.from({ length: 99 }, (_, i) => decodeU21(payload.slice(105 + i * 3, 108 + i * 3)) - 65536);
   return { state: (["stopped", "playing", "loading"] as const)[payload[1]], instrument: payload[2], bend,
-    preset: physicalPresetFromUnknown({ format: "hexboard.physical.v24",sample:defaultSample(),modulation:defaultModulation(),effects:defaultFx(),tiltRoutes:Array(66).fill(0), name: "Device RAM", parameters, routes, velocityEngine: payload[402] }) };
+    preset: physicalPresetFromUnknown({ format: "hexboard.physical.v25",sample:defaultSample(),modulation:defaultModulation(),effects:defaultFx(),tiltRoutes:Array(66).fill(0), name: "Device RAM", parameters, routes, velocityEngine: payload[402] }) };
 }
 export interface ControllerState {play:boolean;pedal:number;invert:boolean;minimum:number;maximum:number;tip:number;ring:number;valid:boolean;sustain:boolean;armed:boolean;expression:number;modulation:number}
-export interface MotionState {detected:boolean;valid:boolean;tiltX:number;tiltY:number;tiltRoutes:number[]}
-export function decodeMotion(p:number[]):MotionState {if(p.length!==207||p[0]!==17||p[1]>1||p[2]>1)throw Error("Unsupported motion response. Update Advanced firmware.");const x=decodeU21(p.slice(3,6)),y=decodeU21(p.slice(6,9)),routes=Array.from({length:66},(_,i)=>decodeU21(p.slice(9+i*3,12+i*3))-65536);if(x>65534||y>65534||routes.some(v=>v<-65536||v>65536)||[7,8,21,27,31].some(id=>routes.slice(id*2,id*2+2).some(Boolean)))throw Error("Invalid motion state.");return {detected:!!p[1],valid:!!p[2],tiltX:(x-32767)/32767,tiltY:(y-32767)/32767,tiltRoutes:routes};}
-export interface PhysicalExpression { tiltX?:number;tiltY?:number;motionValid?:boolean;motionDetected?:boolean; key: number | null; held: boolean; velocity: number; pressure: number; release: number }
+export interface MotionState {detected:boolean;valid:boolean;tiltX:number;tiltY:number;tiltRoutes:number[];rock:number}
+export function decodeMotion(p:number[]):MotionState {if(p.length!==210||p[0]!==17||p[1]>1||p[2]>1)throw Error("Unsupported motion response. Update Advanced firmware.");const x=decodeU21(p.slice(3,6)),y=decodeU21(p.slice(6,9)),routes=Array.from({length:66},(_,i)=>decodeU21(p.slice(9+i*3,12+i*3))-65536),rock=decodeU21(p.slice(207,210));if(x>65534||y>65534||rock>65534||routes.some(v=>v<-65536||v>65536)||[7,8,21,27,31].some(id=>routes.slice(id*2,id*2+2).some(Boolean)))throw Error("Invalid motion state.");return {detected:!!p[1],valid:!!p[2],tiltX:(x-32767)/32767,tiltY:(y-32767)/32767,tiltRoutes:routes,rock:(rock-32767)/32767};}
+export interface PhysicalExpression { tiltX?:number;tiltY?:number;/** Largest Pitch Spring Rock since the previous read, −1…1. */rock?:number;motionValid?:boolean;motionDetected?:boolean; key: number | null; held: boolean; velocity: number; pressure: number; release: number }
 export function decodePhysicalExpression(p: number[]): PhysicalExpression {
   const key = decodeU14(p.slice(1, 3)), pressure = decodeU21(p.slice(5, 8));
   if (p.length !== 9 || p[0] !== 17 || (key > 132 && key !== 16383) || p[3] > 1 || p[4] > 127 || p[8] > 127 || pressure > 65535)
@@ -97,7 +97,7 @@ export class PhysicalSynthClient {
   private modulation = defaultModulation();
   private mono=defaultMono();
   private controllerRoutes:number[]=Array(66).fill(0);
-  private motion:MotionState={detected:false,valid:false,tiltX:0,tiltY:0,tiltRoutes:Array(66).fill(0)};
+  private motion:MotionState={detected:false,valid:false,tiltX:0,tiltY:0,tiltRoutes:Array(66).fill(0),rock:0};
   private aborts=new Set<() => void>();
   private serialUpload?:SerialAudioUpload;
   async enableFastUploads(){this.serialUpload=await SerialAudioUpload.choose();}
@@ -235,7 +235,7 @@ export class PhysicalSynthClient {
   async previewSample(){if(!this.sample.frames.length)throw Error("Import a sample first.");this.onProgress?.({label:"Preparing preview…"});try{await this.request<SampleMeta>(24,[1,...encodeU21(this.sample.gain),...encodeU21(this.sample.direct)]);this.sample.enabled=true;const state=await this.request(0);if(state.state==="stopped")await this.start();await this.waitSample();if(this.previewNeedsStartup){this.onProgress?.({label:"Preparing audio…"});await new Promise(resolve=>setTimeout(resolve,2000));this.previewNeedsStartup=false;}await this.request<SampleMeta>(25);return await this.request(0);}finally{this.onProgress?.();}}
   async readEffects(){return validateFx(await this.request<FxRack>(10));}
   async effects(fx:FxRack) { const f=validateFx(fx);await this.request<FxRack>(11,[...f.order,...Array(fxSlotCount-f.order.length).fill(0),...f.values.flat().flatMap(encodeU21),...f.steps.flatMap(encodeU21),...f.routes!.flatMap(v=>encodeU21(v+65536)),roomFxSchema]);return this.request(0); }
-  async expression() {const e=await this.request<PhysicalExpression>(8);this.motion=await this.request<MotionState>(12);return {...e,tiltX:this.motion.tiltX,tiltY:this.motion.tiltY,motionValid:this.motion.valid,motionDetected:this.motion.detected};}
+  async expression() {const e=await this.request<PhysicalExpression>(8);this.motion=await this.request<MotionState>(12);return {...e,tiltX:this.motion.tiltX,tiltY:this.motion.tiltY,rock:this.motion.rock,motionValid:this.motion.valid,motionDetected:this.motion.detected};}
   async zeroMotion(){this.motion=await this.request<MotionState>(15);return this.motion;}
   async tiltRoute(id:number,axis:number,depth:number){this.motion=await this.request<MotionState>(14,[id,axis,...encodeU21(depth+65536)]);return this.request(0);}
   async modSetting(id:number,value:number){this.modulation=await this.request<ModulationSources>(18,[id,...encodeU21(value)]);return this.request(0);}
