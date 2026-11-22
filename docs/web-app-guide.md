@@ -35,9 +35,11 @@ Gerhard are available without downloading anything.
 Use **Scale practice**, **Courses**, and **Progress** to navigate. Learn opens on
 **Courses** the first time, then returns to the section you used last.
 Scale practice uses the same lesson screen and side buttons as a course
-exercise. The left panel holds the side-button guide, **Play freely**, the
-**Scale**, **Root**, **Pattern**, and **Octave** choices, **Color mode** and
-**Contrast**, **Repeat runs**, and **Settings**. Choosing a scale previews its
+exercise. The left panel holds the side-button guide, **Play freely** and
+**Stop lesson**, the
+**Scale**, **Root**, **Pattern**, and **Octave** choices, **Color mode**,
+**Key labels**, **Contrast**, **Repeat runs**, **Fade hints after clean runs**,
+and **Settings**. Choosing a scale previews its
 exact exercise pitches immediately, including every duplicate key in the
 selected register; other notes stay dimly colored. Changing the scale, root,
 octave, or pattern during a run returns to Start without closing the HexBoard
@@ -79,15 +81,33 @@ The default is 50%; saved contrast preferences are retained.
 Targets use full Learn brightness before the board’s normal processing.
 Contrast is saved as your browser preference, separate from courses.
 
-Each run starts with every copy of its first note lit. The copy you press
-first sets the **scale shape**: one key for each scale note, chosen as the
-tightest cluster around that key. With hints on, the board then follows that
-shape. The next note is brightest, the key you just played stays brighter as
-a trail (outlined on screen), the rest of the shape is softly lit, and every
-other key dims further, including other copies of scale notes. Other copies
-still count when played. The next run lights every copy of the first note
-again; press a different one to move the shape. **Hear example** follows the
-latest shape. Without hints the shape stays hidden.
+Until a **scale shape** is chosen, every copy of the first note is lit. The
+shape is one key for each scale note, chosen as the tightest cluster around a
+copy of the first note; it works the same way in every tuning and layout. Press
+a copy of the first note in a run to build the shape there, or use **Show a
+shape** beside the legend (and **Hear example**, which plays it) to start from
+the shape nearest the middle of the board. Once chosen, the shape stays lit
+between runs; playing the first note on another copy moves it, keeping the
+same shape when it fits there. **Another shape** cycles through other compact
+ways to play the scale around the same root, when the layout has them.
+
+With hints on, the board follows the shape. The next note is brightest, the
+key you just played stays brighter as a trail (outlined on screen), the rest of
+the shape is softly lit, and every other key dims further, including other
+copies of scale notes. On screen, an arrow points from the key you just played
+to the next key. Its number is the size of that move in the tuning's own steps,
+for example 2 or 1 in 12 EDO and 5 or 3 in 31 EDO; tunings with unequal steps
+and keys off the step grid show cents instead. Other copies still count when
+played. A wrong press briefly flashes the key white, with a red outline on screen.
+Without hints the shape stays hidden and the note strip shows only position
+dots.
+
+**Fade hints after clean runs** (on by default) trims the hints as your clean
+streak grows: after two clean runs in a row only the shape and trail stay lit,
+and after four only the shape's roots. Any mistake brings every hint back
+immediately, and the streak restarts. **Key labels** switches the on-screen keys,
+note strip and cues between note names and scale degrees (1, 2, 3 …, repeating
+every octave or tuning period).
 
 Choose a **Pattern**: ascending, descending, up and down, down and up,
 or **Thirds** (skip one scale note each time). Round trips play the
@@ -114,13 +134,19 @@ when you change scales.
 **Repeat runs** is on by default so you can keep moving up and down the scale.
 In free timing, the next run starts as soon as you finish: play the first note
 again. A key still held from the previous run does not count; press it again.
-With a metronome tempo, each score shows for a moment, then the next run counts
-in with the same hints choice. The last run's time, score, and mistakes stay
-below the key map. Turn **Repeat runs** off to stop after each run; the result
+With a metronome tempo, the clicks keep going: only the first run counts in,
+and each later run starts on the next bar's high click. A run that does not
+fill whole bars rests until the bar ends (up and down rests one beat in 4/4).
+Each run's score shows in the feedback line as the next one begins. The last
+run's time, score, and mistakes stay below the key map. Turn **Repeat runs** off to stop after each run; the result
 then appears over the bottom of the key map with a suggestion and
 **Repeat without hints** / **Repeat with hints**. Color mode and
-contrast remain adjustable during practice. Scale results last only for this
-visit; course progress is saved separately, as described below.
+contrast remain adjustable during practice. Below the key map, **Streak** counts
+clean runs in a row. Personal bests are saved in this browser for each tuning,
+layout, scale, root, and pattern: the longest streak, the fastest clean
+free-timing run, and the best score at each metronome tempo. A new best is
+announced in the feedback line. Course progress is saved separately, as
+described below.
 
 Under **Settings → Import tuning bundle**, open JSON exported from the editor. EDO,
 equal-step, and Scala cents-table tunings are supported, including non-octave
@@ -330,7 +356,7 @@ distinguishes included material from future authoring work.
 
 ### Creating and Sharing Courses
 
-Use **Stop lesson** at the top of Learn to end a lesson and return HexBoard to normal playing without unplugging it. Saved progress is kept.
+Use **Stop lesson** below the side buttons to end a lesson and return HexBoard to normal playing without unplugging it. Saved progress is kept.
 
 Open **Courses → Settings → Courses** for **Create course**, **Make a copy**,
 **Edit course**, **Export course**, and **Import course…**. Authoring
