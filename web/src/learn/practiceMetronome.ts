@@ -13,13 +13,17 @@ export class PracticeMetronome {
   private nextBeat = 0;
   private firstClick = 0;
   private closed = false;
-  /** Returns the performance time of beat 0, after the count-in. */
-  async start(bpm: number, beats: number, meter?: Meter): Promise<number> {
+  /**
+   * Returns the performance time of beat 0, after the count-in. Without
+   * `loop`, every cycle repeats the count-in. With `loop`, only the first does;
+   * the exercise bars then repeat back to back, each starting on the high click.
+   */
+  async start(bpm: number, beats: number, meter?: Meter, loop = false): Promise<number> {
     await this.context.resume();
     if (this.closed) throw new Error("Practice stopped.");
     const plan = clickPlan(meter);
     const beatSeconds = 60 / bpm, period = beatSeconds * plan.unit;
-    const cycle = plan.countInClicks + Math.ceil(beats / plan.unit - 1e-9);
+    const exerciseClicks = Math.ceil(beats / plan.unit - 1e-9), cycle = plan.countInClicks + exerciseClicks;
     this.firstClick = this.context.currentTime + 0.15;
     const output = this.context.getOutputTimestamp?.();
     const anchor = output && output.performanceTime !== undefined && output.contextTime !== undefined && output.performanceTime > 0
@@ -31,7 +35,8 @@ export class PracticeMetronome {
       this.nextBeat = Math.max(this.nextBeat, Math.ceil((this.context.currentTime - this.firstClick) / period));
       while (this.firstClick + this.nextBeat * period < this.context.currentTime + 0.12) {
         const at = this.firstClick + this.nextBeat * period;
-        const position = this.nextBeat % cycle;
+        const position = !loop ? this.nextBeat % cycle
+          : this.nextBeat < plan.countInClicks ? this.nextBeat : plan.countInClicks + (this.nextBeat - plan.countInClicks) % exerciseClicks;
         const accent = clickAccent(plan, position);
         const oscillator = this.context.createOscillator(), gain = this.context.createGain();
         oscillator.frequency.value = position < plan.countInClicks ? countInPitch[accent] : position === plan.countInClicks ? 1500 : playPitch[accent];

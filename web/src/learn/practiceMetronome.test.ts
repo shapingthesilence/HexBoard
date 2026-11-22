@@ -40,6 +40,15 @@ describe("practice metronome lifecycle", () => {
     expect(oscillators.slice(0, 10).map((node) => node.frequency.value)).toEqual([1320,1100,1100,1100,1100,1100,1500,800,800,900]);
     clock.stop();
   });
+  it("loops the exercise bars without another count-in", async () => {
+    const clock = new PracticeMetronome();
+    expect(await clock.start(60, 8, undefined, true)).toBe(14150);
+    await vi.advanceTimersByTimeAsync(13250);
+    expect(oscillators.slice(0, 14).map((node) => node.start.mock.calls[0][0])).toEqual([10.15,11.15,12.15,13.15,14.15,15.15,16.15,17.15,18.15,19.15,20.15,21.15,22.15,23.15]);
+    // Count-in, eight exercise clicks, then the next run's downbeat straight away.
+    expect(oscillators.slice(0, 14).map((node) => node.frequency.value)).toEqual([1320,1100,1100,1100,1500,800,800,800,1000,800,800,800,1500,800]);
+    clock.stop();
+  });
   it("cancels scheduled clicks and cannot keep scheduling after stop", async () => {
     const clock = new PracticeMetronome(); await clock.start(180, 8);
     await vi.advanceTimersByTimeAsync(1000);

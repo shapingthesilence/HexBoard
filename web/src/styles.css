@@ -36,8 +36,26 @@ button.courseControlRow:disabled { cursor: default; }
 .learnMuted { color: var(--text-soft); font-size: .8rem; }
 .learnWarning { color: var(--warning); background: var(--warning-soft); padding: 8px; border-radius: var(--radius-sm); font-size: .85rem; }
 .learnActions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.learnTransport { margin-bottom: 12px; }
-.learnTransport .checkField { margin-left: auto; }
+.learnScaleHeading { flex-shrink: 0; margin-bottom: 8px; }
+.learnScaleHeading p { margin: 2px 0 0; }
+.learnScalePicker, .learnScaleColors { display: grid; gap: 10px; }
+.learnScaleColors { border-top: 1px solid var(--border); padding-top: 10px; }
+.learnSessionActions { display: flex; gap: 8px; }
+.learnSessionActions > button { flex: 1; }
+/* White fill, dark outline and a light halo keep the arrow readable over any key color. */
+.learnRouteArrow { pointer-events: none; }
+.learnRouteArrow polygon { fill: #ffffff; stroke: #101914; stroke-width: 3.5; stroke-linejoin: round; paint-order: stroke; }
+.learnRouteArrow polygon.halo { fill: none; stroke: #ffffff; stroke-width: 8; opacity: 0.85; }
+.learnRouteStep rect { fill: #ffffff; stroke: #101914; stroke-width: 2; }
+.learnRouteStep text { font-size: 10px; font-weight: 700; fill: #101914; }
+.learnRootChips { min-width: 0; margin: 0; padding: 0; border: 0; }
+.learnRootChips legend { margin-bottom: 4px; padding: 0; font-size: .8rem; font-weight: 650; }
+.learnRootChips > div { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
+.learnRootChips button { min-width: 0; padding: 5px 0; font-size: .8rem; }
+.learnRootChips button[aria-pressed=true] { background: var(--brand); border-color: var(--brand); color: white; }
+.learnStepper { display: grid; grid-template-columns: 32px minmax(0, 1fr) 32px; align-items: center; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.learnStepper button { min-width: 0; padding: 6px 0; border: 0; border-radius: 0; }
+.learnStepper output { text-align: center; font-size: .85rem; font-weight: 650; }
 .learnPracticeHeader { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .learnPracticeHeader h3 { font-size: 1.05rem; }
 .learnPracticeHeader > span { font-size: .8rem; color: var(--text-soft); white-space: nowrap; }
@@ -55,7 +73,17 @@ button.courseControlRow:disabled { cursor: default; }
 .learnKey.target polygon:not(.learnTimingRing) { stroke: var(--text); stroke-width: 3; }
 .learnKey.held polygon:not(.learnTimingRing) { stroke: var(--text); stroke-width: 3; stroke-dasharray: 4 2; }
 .learnKey.off polygon:not(.learnTimingRing) { fill: var(--surface-muted); stroke: var(--border); }
+.learnKey.trail polygon:not(.learnTimingRing) { stroke: var(--text); stroke-width: 2; }
+.learnKey.outside polygon:not(.learnTimingRing) { stroke: var(--border); }
+.learnKey.wrong polygon:not(.learnTimingRing) { stroke: var(--danger); stroke-width: 4; }
+.learnStepDots li { color: var(--text-soft); }
+.learnStepDots .current { color: var(--brand); }
 .learnLegend { font-size: .75rem; color: var(--text-soft); }
+/* The shape button stays in place (enabled or not) so the board never resizes. */
+.learnLegend:has(.learnShapeButton) { display: flex; align-items: center; gap: 8px; }
+.learnLegend .learnShapeButton { flex: 0 0 auto; font-size: .75rem; padding: 2px 10px; min-height: 0; }
+/* Scale practice legends change with the hint level; two reserved lines keep the board one size. */
+.learnScaleWorkspace .learnLegend { min-height: 2.8em; line-height: 1.4; }
 .learnFeedback { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px; font-size: .85rem; }
 .learnCompletion { background: var(--surface-accent); border-radius: var(--radius-md); padding: 10px; margin-top: 8px; }
 .learnProgressList { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 16px 0; }
@@ -64,8 +92,9 @@ button.courseControlRow:disabled { cursor: default; }
 @media (max-width: 700px) {
   .learnIntro { align-items: flex-start; flex-direction: column; }
   .learnWorkspace { grid-template-columns: 1fr; }
-  .learnCourseWorkspace > .learnGuide { order: 2; }
-  .learnCourseWorkspace > article, .learnCourseWorkspace > .learnPractice { order: 1; }
+  .learnWorkspace > .learnGuide { order: 2; }
+  .learnWorkspace > article, .learnWorkspace > .learnPractice { order: 1; }
+  .learnScaleWorkspace > .learnGuide { display: flex; }
   .learnGuide { display: grid; grid-template-columns: 1fr 1fr; }
   .learnGuide > .learnSettings, .learnGuide > p { grid-column: 1 / -1; }
   .learnCard { padding: 12px; }
@@ -2336,7 +2365,6 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
   .learnScaleWorkspace > .learnPractice { display: flex; flex-direction: column; min-height: 0; }
   .learnPracticeWorkspace.learnScalePractice { grid-template-rows: minmax(0, 1fr); }
   .learnScalePractice .learnPreviewPane { grid-row: 1; }
-  .learnScalePractice .learnTransport { flex-shrink: 0; margin-bottom: 8px; }
   .learnProgressCard { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
   .learnProgressCard > :not(.learnProgressList) { flex-shrink: 0; }
   .learnProgressCard > p { margin: 0; }
@@ -2370,11 +2398,11 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
   .learnPracticeWorkspace .learnRunStats:empty { display: none; }
   .learnPracticeWorkspace .learnFingering { margin: 4px 0; font-size: .75rem; }
   .learnPracticeControls:empty { display: none; }
-  /* Lessons reserve the feedback and score rows so the board keeps one size. */
-  .learnCourseWorkspace .learnPracticeControls { min-height: 1.9rem; }
-  .learnCourseWorkspace .learnPracticeControls:empty { display: block; }
-  .learnCourseWorkspace .learnPracticeWorkspace .learnRunStats { min-height: 1.2rem; }
-  .learnCourseWorkspace .learnPracticeWorkspace .learnRunStats:empty { display: flex; }
+  /* Lessons and scale practice reserve the feedback and score rows so the board keeps one size. */
+  .learnWorkspace .learnPracticeControls { min-height: 1.9rem; }
+  .learnWorkspace .learnPracticeControls:empty { display: block; }
+  .learnWorkspace .learnPracticeWorkspace .learnRunStats { min-height: 1.2rem; }
+  .learnWorkspace .learnPracticeWorkspace .learnRunStats:empty { display: flex; }
   .learnPracticeControls { flex-shrink: 0; margin-top: 4px; }
   .learnPracticeControls .learnFeedback { margin-top: 0; padding-top: 5px; }
   .learnCompletion { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin-top: 4px; padding: 8px; }
@@ -2413,6 +2441,8 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .learnCourseTempo input[type="range"] { width: 100%; min-width: 0; min-height: 20px; height: 20px; margin: 0; padding: 0; }
 @media (max-width: 700px) {
   .learnPracticeHeader:has(.learnCourseTempo) { flex-wrap: wrap; }
+  .learnPracticeWorkspace .learnPracticeHeader:has(.learnCourseTempo) { height: auto; min-height: 5rem; }
+  .learnPracticeHeader > .learnLessonStart { flex-basis: 100%; }
   .learnCourseTempo { margin-left: 0; }
 }
 
