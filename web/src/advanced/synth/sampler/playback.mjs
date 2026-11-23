@@ -1,10 +1,12 @@
+import { pagedLimits, residentLimits } from "./limits.mjs";
 // One authoring contract for voice admission, browser audition and HBS export.
 export function playbackLimits(patch, classic = false) {
   if (classic) return {voices:8,tails:0};
-  const voices = patch.playback?.voices ?? 16;
-  const tails = patch.playback?.tails ?? (classic ? 0 : 4);
-  if (!Number.isInteger(voices) || voices < 1 || voices > (classic ? 8 : 16) || !Number.isInteger(tails) || tails < 0 || tails > (classic ? 0 : 4))
-    throw Error('Choose 1–16 held voices and 0–4 release tails for Advanced.');
+  const max = patch.storage === "resident" ? residentLimits.held : pagedLimits.held;
+  const voices = patch.playback?.voices ?? residentLimits.held;
+  const tails = patch.playback?.tails ?? 4;
+  if (!Number.isInteger(voices) || voices < 1 || voices > max || !Number.isInteger(tails) || tails < 0 || tails > 4)
+    throw Error(`Choose 1–${max} held voices and 0–4 release tails for Advanced.`);
   return { voices, tails };
 }
 export function resourceSummary(patch, classic = false) {

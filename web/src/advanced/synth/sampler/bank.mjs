@@ -20,8 +20,11 @@ export function readBank(bytes, options = {}) {
   header.fill(0, 36, 40);
   if (crc32(header) !== u32(36))
     throw Error("Sound header checksum failed.");
-  // 114-119 hold signed envelope bends; -32768 is out of range. 126-127 are reserved.
-  if(bytes[106]>=16||bytes[107]>4||u16(126)||[114,116,118].some(at=>u16(at)===0x8000))throw Error("Invalid sound voice reservations.");
+  // 114-119 hold signed envelope bends; -32768 is out of range. 126 extends held voices on paged banks; 127 is reserved.
+  const extendedHeld=bytes[126];
+  if(bytes[106]>=residentLimits.held||bytes[107]>4||bytes[127]||
+     (extendedHeld&&(!(u16(18)&1)||bytes[106]||extendedHeld<=residentLimits.held||extendedHeld>pagedLimits.held))||
+     [114,116,118].some(at=>u16(at)===0x8000))throw Error("Invalid sound voice reservations.");
   const a = u16(12),
     l = u16(14),
     z = u16(16),
@@ -129,7 +132,7 @@ export function readBank(bytes, options = {}) {
       .replace(/\0.*$/s, ""),
     assets,
     zones,
-    playback:{voices:16-bytes[106],tails:4-bytes[107]},
+    playback:{voices:extendedHeld||residentLimits.held-bytes[106],tails:4-bytes[107]},
     settings: {
       ...defaults,
       attack: u16(48),

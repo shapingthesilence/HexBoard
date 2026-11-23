@@ -558,6 +558,7 @@ export async function preparePatch(input, onProgress = () => {}) {
       nextLevel += levels.length;
     }
   }
+  if(playback.voices>residentLimits.held)warnings.push("More than 16 held voices requires updated Advanced firmware and a device playback test with this sound and its effects.");
   if(assets.some(a=>a.channels.length===2)&&(playback.voices>8||playback.tails>2))warnings.push("Stereo sounds with motion and reverb should start at 8 held voices + 2 tails. Larger stereo profiles need device qualification; the selected voice count is preserved.");
   if (zones.length > limits.zones)
     throw Error(
@@ -664,7 +665,8 @@ export async function preparePatch(input, onProgress = () => {}) {
     settings.pedalRelease,
     settings.pressureGain * 65535,
   ].forEach((n, i) => u16(96 + i * 2, Math.round(n)));
-  bytes[106] = 16 - playback.voices;
+  bytes[106] = Math.max(0,residentLimits.held-playback.voices);
+  if(playback.voices>residentLimits.held)bytes[126]=playback.voices;
   bytes[107] = 4 - playback.tails;
   // Bytes 114-119: signed envelope bends x32767 (zero is straight).
   [settings.attackShape, settings.decayShape, settings.releaseShape].forEach((b, i) => u16(114 + i * 2, Math.round(b * 32767) & 0xffff));
