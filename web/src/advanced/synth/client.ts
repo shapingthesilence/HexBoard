@@ -1,3 +1,4 @@
+import { pagedLimits, residentLimits } from "./sampler/limits.mjs";
 import {type TuningGrid} from './wavetableIntervals.ts';
 import {SerialAudioUpload} from "./serialAudioUpload.ts";
 import {isPhysicalPreset,isWavetablePreset,presetEngine,storedPreset,type SoundPreset} from './presetLibrary.ts';
@@ -44,7 +45,7 @@ export function decodeSamplerLoading(p:number[]):SamplerLoadingState {
   const source=p.length===20?decodeU14(p.slice(18,20)):undefined;
   if(source!==undefined&&(source>=16384||source%8192>1025||source===8193))throw Error('Invalid sampler source.');
   const state={phase:p[1] as 0|1|2|3,voices:p[2],ready:decodeU14(p.slice(3,5)),total:decodeU14(p.slice(5,7)),loadedBytes:p.slice(7,12).reduce((a,b)=>a*128+b,0),totalBytes:p.slice(12,17).reduce((a,b)=>a*128+b,0)};
-  if(state.total>128||state.ready>state.total||state.loadedBytes>state.totalBytes||state.totalBytes>0x40000000||state.voices>16||state.phase===0&&(state.voices||state.ready||state.total||state.loadedBytes||state.totalBytes)||(state.phase===1||state.phase===3)&&(!state.total||!state.totalBytes||(state.voices<1||state.voices>4))||state.phase===2&&(!state.total||state.ready!==state.total||state.loadedBytes!==state.totalBytes||state.voices<1))throw Error('Invalid sampler loading progress.');
+  if(state.total>(p[17]?pagedLimits.recordings:residentLimits.recordings)||state.ready>state.total||state.loadedBytes>state.totalBytes||state.totalBytes>0x40000000||state.voices>16||state.phase===0&&(state.voices||state.ready||state.total||state.loadedBytes||state.totalBytes)||(state.phase===1||state.phase===3)&&(!state.total||!state.totalBytes||(state.voices<1||state.voices>4))||state.phase===2&&(!state.total||state.ready!==state.total||state.loadedBytes!==state.totalBytes||state.voices<1))throw Error('Invalid sampler loading progress.');
   return {...state,streaming:!!p[17],source};
 }
 export interface PhysicalState { state: "stopped" | "playing" | "loading"; instrument: number; bend: number; preset: PhysicalPreset }

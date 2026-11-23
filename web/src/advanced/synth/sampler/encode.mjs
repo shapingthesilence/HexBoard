@@ -1,3 +1,4 @@
+import { pagedLimits, residentLimits } from "./limits.mjs";
 import {motionSettings,encodeMotion,pitchBound} from "./motion.mjs";
 import {playbackLimits} from './playback.mjs';
 import { crc32, resample, downsample, rate } from "./prepare.mjs";
@@ -356,8 +357,10 @@ function lowpass(data, cutoff, periodic = false) {
 }
 const tick = () => new Promise((r) => setTimeout(r, 0));
 export async function preparePatch(input, onProgress = () => {}) {
-  if (!input?.assets?.length || input.assets.length > 128)
-    throw Error("Use 1–128 recordings per sound.");
+  const streaming = input?.storage !== "resident";
+  const limits = streaming ? pagedLimits : residentLimits;
+  if (!input?.assets?.length || input.assets.length > limits.recordings)
+    throw Error(`Use 1–${limits.recordings} recordings per sound.`);
   const playback = playbackLimits(input);
   const globalMotion=motionSettings(input.motion),hasMotion=!!input.motion||input.zones?.some(z=>z.motion);
   const settings = settingsFor(input.settings),
@@ -374,8 +377,8 @@ export async function preparePatch(input, onProgress = () => {}) {
     input.zones ??
     source.map((_, asset) => ({ asset, lowMidi: -0.5, highMidi: 127.5 }))
   ).map((z) => ({ ...z }));
-  if (!zones.length || zones.length > 256)
-    throw Error("Use 1–256 zones per sound.");
+  if (!zones.length || zones.length > limits.zones)
+    throw Error(`Use 1–${limits.zones} zones per sound.`);
   for (const z of zones) {
     if(hasMotion)z.motion=motionSettings({...globalMotion,...z.motion});
     if((z.fixed||z.keyTrack===0)&&pitchBound(z.motion??globalMotion)>970)throw Error("Fixed-pitch regions support up to 970 cents of motion. Reduce pitch motion or use pitched tracking.");
@@ -437,10 +440,9 @@ export async function preparePatch(input, onProgress = () => {}) {
       else maximumCorrection = Math.max(maximumCorrection, Math.abs(shift * 100));
     }
   }
-  if (corrected.length > 128) throw Error("Loop pitch calibration needs more than 128 recordings. Use fewer tracking slopes.");
+  if (corrected.length > limits.recordings) throw Error(`Loop pitch calibration needs more than ${limits.recordings} recordings. Use fewer tracking slopes.`);
   source = corrected; zones = zones.map(z => ({ ...z, asset: assignment.get(z) }));
   if (maximumCorrection > .01) warnings.push(`Calibrated short-loop rounding by up to ${maximumCorrection.toFixed(3)} cents; loop repetition pitch is preserved.`);
-  const streaming = input.storage !== "resident";
   if (!streaming && source.some(
     (a) => (a.mode === 1 || a.mode === 3) &&
       (a.loopStart !== 0 || a.loopEnd !== a.channels[0].length),
@@ -507,9 +509,9 @@ export async function preparePatch(input, onProgress = () => {}) {
             return result;
           });
           const id = assets.length;
-          if (id >= 128)
+          if (id >= limits.recordings)
             throw Error(
-              "Pitch protection requires more than 128 recordings. Narrow the range or reduce velocity layers.",
+              `Pitch protection requires more than ${limits.recordings} recordings. Narrow the range or reduce velocity layers.`,
             );
           assets.push({
             ...variant,
@@ -557,9 +559,9 @@ export async function preparePatch(input, onProgress = () => {}) {
     }
   }
   if(assets.some(a=>a.channels.length===2)&&(playback.voices>8||playback.tails>2))warnings.push("Stereo sounds with motion and reverb should start at 8 held voices + 2 tails. Larger stereo profiles need device qualification; the selected voice count is preserved.");
-  if (zones.length > 256)
+  if (zones.length > limits.zones)
     throw Error(
-      "Pitch protection requires more than 256 zones. Narrow the map or reduce layers.",
+      `Pitch protection requires more than ${limits.zones} zones. Narrow the map or reduce layers.`,
     );
   let peak = 0;
   for (const a of assets)

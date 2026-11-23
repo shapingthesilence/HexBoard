@@ -1,3 +1,4 @@
+import { pagedLimits, residentLimits } from "./limits.mjs";
 import {decodeMotion} from "./motion.mjs";
 import { crc32 } from "./prepare.mjs";
 import { decodePerformance, defaults, defaultPerformance } from "./encode.mjs";
@@ -28,13 +29,15 @@ export function readBank(bytes, options = {}) {
     meta = u32(24),
     pages = u32(40),
     end = 128 + a * 48 + l * 16 + z * 48 + pages * 4;
+  const streaming = (flags & 1) !== 0;
+  const limits = streaming ? pagedLimits : residentLimits;
   if (
     !a ||
-    a > 128 ||
+    a > limits.recordings ||
     !l ||
-    l > 1536 ||
+    (streaming ? l !== a : l > residentLimits.levels) ||
     !z ||
-    z > 256 ||
+    z > limits.zones ||
     flags & ~7 ||
     end + (flags & 2 ? 184 : 0)+(flags&4?(z+1)*64:0) > meta ||
     meta > bytes.length ||

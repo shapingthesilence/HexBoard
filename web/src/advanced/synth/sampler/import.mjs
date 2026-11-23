@@ -1,3 +1,4 @@
+import { pagedLimits } from "./limits.mjs";
 import {motionSettings} from "./motion.mjs";
 import {
   BasicSoundBank,
@@ -261,10 +262,10 @@ export function directSoundFont(bank, id) {
       "Simultaneous source layers are combined into one recording per key/velocity region.",
     );
   }
-  if (assets.length > 128 || zones.length > 256) {
+  if (assets.length > pagedLimits.recordings || zones.length > pagedLimits.zones) {
     complex = bakeRequired = true;
     report.add(
-      "The source map is consolidated to fit 128 recordings and 256 regions.",
+      `The source map is consolidated to fit ${pagedLimits.recordings} recordings and ${pagedLimits.zones} regions.`,
     );
   }
   return {
