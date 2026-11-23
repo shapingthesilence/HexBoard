@@ -126,6 +126,7 @@ export const defaults = {
   releaseResponse: 0.9,
   releaseCurve: 1.5,
   pedalRelease: 150,
+  pianoDamper: 0,
   attackShape: 0,
   decayShape: 0,
   releaseShape: 0,
@@ -134,7 +135,7 @@ function settingsFor(input) {
   const s = { ...defaults, ...input };
   for (const [k, v] of Object.entries(s)) finite(v, k);
   if (
-    s.ensemble<0||s.ensemble>1||s.drive<0||s.drive>1||Math.abs(s.velocityCutoff)>4800||s.roomDecay<200||s.roomDecay>8000||s.roomTone<0||s.roomTone>1||s.roomWidth<0||s.roomWidth>1||
+    ![0,1].includes(s.pianoDamper)||s.ensemble<0||s.ensemble>1||s.drive<0||s.drive>1||Math.abs(s.velocityCutoff)>4800||s.roomDecay<200||s.roomDecay>8000||s.roomTone<0||s.roomTone>1||s.roomWidth<0||s.roomWidth>1||
     s.attack < 0 ||
     s.attack > 10000 ||
     s.decay < 0 ||
@@ -381,7 +382,9 @@ export async function preparePatch(input, onProgress = () => {}) {
     throw Error(`Use 1–${limits.zones} zones per sound.`);
   for (const z of zones) {
     if(hasMotion)z.motion=motionSettings({...globalMotion,...z.motion});
-    if((z.fixed||z.keyTrack===0)&&pitchBound(z.motion??globalMotion)>970)throw Error("Fixed-pitch regions support up to 970 cents of motion. Reduce pitch motion or use pitched tracking.");
+    const tune=z.tuneCents??0;
+    if(!Number.isInteger(tune)||Math.abs(tune)>1200||![0,1,2].includes(z.damper??0))throw Error("Invalid region tuning or damper.");
+    if((z.fixed||z.keyTrack===0)&&tune+pitchBound(z.motion??globalMotion)>970)throw Error("Fixed-pitch regions support up to 970 cents of motion. Reduce pitch motion or use pitched tracking.");
     if (!Number.isInteger(z.asset) || !source[z.asset])
       throw Error("A zone has no recording.");
     const lo = z.lowMidi ?? -0.5,
@@ -472,7 +475,7 @@ export async function preparePatch(input, onProgress = () => {}) {
           variantZones = [];
         for (const z of originalZones) {
           const track = z.fixed ? 0 : (z.keyTrack ?? 1),
-            max = track ? a.rootMidi + (9.7 + shift-pitchBound(z.motion??globalMotion)/100) / track : Infinity;
+            max = track ? a.rootMidi + (9.7 + shift-(pitchBound(z.motion??globalMotion)+(z.tuneCents??0))/100) / track : Infinity;
           const start = covered.get(z),
             end = Math.min(z.highMidi, max);
           if (start < end) {
@@ -494,10 +497,10 @@ export async function preparePatch(input, onProgress = () => {}) {
             maxRate = Math.max(
               ...variantZones.map((z) =>
                 z.fixed
-                  ? 2**(pitchBound(z.motion??globalMotion)/1200)
+                  ? 2**((pitchBound(z.motion??globalMotion)+(z.tuneCents??0))/1200)
                   : 2 **
                     (((z.highMidi - root) * (z.keyTrack ?? 1) +
-                      (quality === "clean" ? 2.25 : 0)+pitchBound(z.motion??globalMotion)/100) /
+                      (quality === "clean" ? 2.25 : 0)+(pitchBound(z.motion??globalMotion)+(z.tuneCents??0))/100) /
                       12),
               ),
             ),
@@ -668,6 +671,7 @@ export async function preparePatch(input, onProgress = () => {}) {
   bytes[106] = Math.max(0,residentLimits.held-playback.voices);
   if(playback.voices>residentLimits.held)bytes[126]=playback.voices;
   bytes[107] = 4 - playback.tails;
+  bytes[127] = settings.pianoDamper;
   // Bytes 114-119: signed envelope bends x32767 (zero is straight).
   [settings.attackShape, settings.decayShape, settings.releaseShape].forEach((b, i) => u16(114 + i * 2, Math.round(b * 32767) & 0xffff));
   u16(120,Math.round(settings.ensemble*65535));u16(122,Math.round(settings.drive*65535));u16(124,Math.round(settings.velocityCutoff)&0xffff);
@@ -776,7 +780,8 @@ export async function preparePatch(input, onProgress = () => {}) {
     bytes[at + 15] = z.roundRobin ?? 0;
     u16(at + 16, Math.round(gain * 32768));
     v.setInt16(at + 18, Math.round(pan * 32767), true);
-    bytes[at + 20] = +!!z.fixed;
+    bytes[at + 20] = Number(!!z.fixed) | ((z.damper??0)<<1);
+    v.setInt16(at+46,z.tuneCents??0,true);
     if (z.color) {
       if (!/^#[0-9a-f]{6}$/i.test(z.color) || key === 65535)
         throw Error("Key colors need a mapped key.");

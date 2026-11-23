@@ -1159,6 +1159,10 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
               ].map((group) => (
                 <fieldset key={group.title}>
                   <legend>{group.title}</legend>
+                  {group.title==="Key release"&&<label>
+                    <input type="checkbox" checked={!!settings.pianoDamper} onChange={e=>edit({...patch,settings:{...patch.settings,pianoDamper:Number(e.target.checked)}})}/>
+                    Piano damping <small>Works with switch and continuous sustain pedals.</small>
+                  </label>}
                   <div className="knob-bank">
                     {group.controls.map(([k, label, min, max, unit]) => (
                       <label className="sampler-knob" key={k}>

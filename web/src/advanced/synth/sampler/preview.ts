@@ -1,5 +1,5 @@
 import { PreviewEffects } from "./previewEffects.ts";
-import { envelopeLevel, rampCurve } from "../envelopeCurve.ts";
+import { envelopeCurve, envelopeLevel, rampCurve } from "../envelopeCurve.ts";
 import {motionSettings,motionActive,evaluateMotion,motionEnvelope,keyTime} from "./motion.mjs";
 import {playbackLimits} from './playback.mjs';
 import type { Patch, Recording, Zone, Settings } from "./prepare.mjs";
@@ -14,7 +14,7 @@ export function editedCompactAudition(patch: Patch, source: Patch, converted: Pa
       || patch.zones.some((zone, i) => zone.asset !== source.zones![i].asset || zone.fixed || zone.key !== undefined || zone.choke || zone.roundRobin)) return;
   return { ...converted, zones: converted.zones?.map((zone, i) => {
     const edited = patch.zones![i];
-    return { ...zone, ...edited, motion:undefined,resonance:undefined,fixedVelocity:undefined,fixedNote:undefined,asset: zone.asset, cutoff: 20000, pan: 0,
+    return { ...zone, ...edited, motion:undefined,resonance:undefined,fixedVelocity:undefined,fixedNote:undefined,tuneCents:undefined,damper:undefined,asset: zone.asset, cutoff: 20000, pan: 0,
       attack: edited.attack ?? patch.settings?.attack ?? defaults.attack,
       decay: edited.decay ?? patch.settings?.decay ?? defaults.decay,
       sustain: edited.sustain ?? patch.settings?.sustain ?? defaults.sustain,
@@ -56,6 +56,9 @@ export function releaseSeconds(
     )
   );
 }
+interface PianoRelease {
+  from:number; progress:number; at:number; rate:number; seconds:number;
+}
 interface Voice {
   source: AudioBufferSourceNode;
   readerGain: GainNode;
@@ -69,6 +72,7 @@ interface Voice {
   start: number;
   peak: number;
   release?: number;
+  pianoRelease?:PianoRelease;
   key: string;
   pedal: boolean;
   held: boolean;
@@ -110,6 +114,7 @@ export class PatchPreview {
   private pressure = 1;
   private bend = 0;
   private sustain = false;
+  private damperByChannel=new Map<string,number>();
   async ready() {
     if (!this.ctx) {
       this.ctx = new AudioContext();
@@ -173,7 +178,7 @@ export class PatchPreview {
         if(!a||a===v.asset||![1,3].includes(a.mode??0))continue;
         const ctx=this.ctx!,now=ctx.currentTime,source=ctx.createBufferSource(),readerGain=ctx.createGain(),old=v.source,oldGain=v.readerGain,fade=crossfadeFrames(a),start=a.start??0;
         source.buffer=this.buffer(a);source.loop=true;source.loopStart=((a.loopStart??start)-start+fade)/source.buffer.sampleRate;source.loopEnd=((a.loopEnd??a.end??a.channels[0].length)-start+fade)/source.buffer.sampleRate;
-        const held=this.held.get(v.key);const rate=(a.rate/source.buffer.sampleRate)*2**(((v.zone.fixed?0:(held?.note??a.rootMidi)-a.rootMidi)*(v.zone.keyTrack??1))/12);
+        const held=this.held.get(v.key);const rate=(a.rate/source.buffer.sampleRate)*2**(((v.zone.fixed?0:(held?.note??a.rootMidi)-a.rootMidi)*(v.zone.keyTrack??1)+(v.zone.tuneCents??0)/100)/12);
         source.playbackRate.value=rate*2**((this.bend+(this.expressionByKey.get(v.key)?.bend??0))/12);source.connect(readerGain).connect(v.filter);readerGain.gain.setValueAtTime(0,now);readerGain.gain.linearRampToValueAtTime(1,now+.02);oldGain.gain.cancelScheduledValues(now);oldGain.gain.setValueAtTime(oldGain.gain.value,now);oldGain.gain.linearRampToValueAtTime(0,now+.02);
         v.source=source;v.readerGain=readerGain;v.asset=a;v.rate=rate;source.onended=()=>{source.disconnect();readerGain.disconnect();if(v.source===source){this.voices=this.voices.filter(x=>x!==v);v.filter.disconnect();v.gain.disconnect();v.pressure.disconnect();v.pan.disconnect();}};
         source.start(now,source.loopStart);try{old.stop(now+.025);}catch{}
@@ -335,7 +340,7 @@ export class PatchPreview {
         (a.rate / source.buffer.sampleRate) *
         2 **
           (((choice.fixed ? 0 : note - a.rootMidi) * (choice.keyTrack ?? 1) +
-            this.bend) /
+            this.bend+(choice.tuneCents??0)/100) /
             12),
       curve = choice.velocityCurve ?? 0,
       vel =
@@ -407,22 +412,49 @@ export class PatchPreview {
     }
     if(active)this.motionTimer=setTimeout(()=>this.updateMotion(),8);
   }
-  private stopVoice(v: Voice, seconds: number) {
-    if (v.release !== undefined) return;
-    v.held = false;
-    v.release = this.ctx!.currentTime;
-    const p = this.patch.settings ?? {},
-      elapsed = v.release - v.start,
+  private keyLevel(v:Voice,now:number) {
+    const p=this.patch.settings??{},
+      elapsed = now - v.start,
       delay = (v.zone.delay ?? 0) / 1000,
       attack = (v.zone.attack ?? p.attack ?? 5) / 1000,
       hold = (v.zone.hold ?? 0) / 1000,
       decay = (v.zone.decay ?? p.decay ?? 150) / 1000,
       sustain = v.zone.sustain ?? p.sustain ?? 1,
       level = envelopeLevel({delay, attack: Math.max(0.0001, attack), hold, decay: Math.max(0.0001, decay), sustain, attackBend: p.attackShape ?? 0, decayBend: p.decayShape ?? 0}, elapsed);
-    const now = v.release;
+    return v.peak*level;
+  }
+  private pianoLevel(release:PianoRelease,now:number) {
+    const progress=Math.min(1,release.progress+(now-release.at)*release.rate);
+    return release.from*(1-envelopeCurve(progress,this.patch.settings?.releaseShape??0));
+  }
+  private changeDamper(v:Voice,position:number) {
+    const release=v.pianoRelease!;
+    const now=this.ctx!.currentTime,level=this.pianoLevel(release,now);
+    release.progress=Math.min(1,release.progress+(now-release.at)*release.rate);
+    release.at=now;release.rate=(1-position)**2/release.seconds;
+    const duration=release.rate?(1-release.progress)/release.rate:Infinity;
     v.gain.gain.cancelScheduledValues(now);
-    v.gain.gain.setValueAtTime(v.peak * level, now);
-    rampCurve(v.gain.gain, v.peak * level, 0, now, Math.max(0.001, seconds), p.releaseShape ?? 0);
+    v.gain.gain.setValueAtTime(level,now);
+    if(Number.isFinite(duration)){
+      if(!this.patch.settings?.releaseShape||duration<=.002)v.gain.gain.linearRampToValueAtTime(0,now+Math.max(.001,duration));
+      else for(let i=1;i<=16;i++){
+        const at=now+duration*i/16;
+        v.gain.gain.linearRampToValueAtTime(this.pianoLevel(release,at),at);
+      }
+    }
+    // Reschedule a pending stop when a pedal catches the tail. The unlooped
+    // recording still ends naturally while the damper is fully open.
+    try{v.source.stop(now+Math.max(.001,Math.min(3600,duration))+.005);}catch{}
+  }
+  private stopVoice(v: Voice, seconds: number) {
+    if(v.release!==undefined&&!v.pianoRelease)return;
+    const now=this.ctx!.currentTime;
+    const level=v.pianoRelease?this.pianoLevel(v.pianoRelease,now):this.keyLevel(v,now);
+    const p=this.patch.settings??{};
+    v.pianoRelease=undefined;v.held=false;v.release=now;
+    v.gain.gain.cancelScheduledValues(now);
+    v.gain.gain.setValueAtTime(level,now);
+    rampCurve(v.gain.gain, level, 0, now, Math.max(0.001, seconds), p.releaseShape ?? 0);
     try {
       v.source.stop(now + Math.max(0.001, seconds) + 0.005);
     } catch {
@@ -434,7 +466,17 @@ export class PatchPreview {
     for (const v of this.voices.filter(v=>v.key===key)) {
       v.held=false;
       if(v.asset.mode===2)continue;
-      if (this.sustain) {
+      const settings=this.patch.settings??{},depth=this.damperByChannel.get(this.damperChannel(v.key))??Number(this.sustain);
+      if(settings.pianoDamper&&!(v.asset.mode??0)){
+        if(v.zone.damper===2||v.pianoRelease)continue;
+        const now=this.ctx!.currentTime;
+        const seconds=v.zone.damper===1?(v.zone.release??settings.release??defaults.release)/1000:releaseSeconds(settings,v.zone,velocity,depth>0||pedalRelease);
+        v.pianoRelease={from:this.keyLevel(v,now),progress:0,at:now,rate:0,seconds:Math.max(.001,seconds)};
+        v.release=now;
+        this.changeDamper(v,depth);
+        continue;
+      }
+      if (depth>=.5) {
         v.pedal = true;
         continue;
       }
@@ -447,14 +489,27 @@ export class PatchPreview {
     if (!this.held.size && !this.patch.performance?.values[S.latch])
       this.stopArp();
   }
+  private damperChannel(key:string) { return key.slice(0,key.lastIndexOf(":")+1); }
+  pianoPedal(channel:string,position:number) {
+    this.damperByChannel.set(channel,position);
+    for(const v of this.voices)if(this.damperChannel(v.key)===channel){
+      if(v.pianoRelease)this.changeDamper(v,position);
+      else if(v.pedal&&position<.5){
+        v.pedal=false;
+        if(v.asset.mode===3)v.source.loop=false;
+        this.stopVoice(v,releaseSeconds(this.patch.settings??{},v.zone,0,true));
+      }
+    }
+  }
   pedal(down: boolean) {
     this.sustain = down;
+    for(const v of this.voices)if(v.pianoRelease&&!this.damperByChannel.has(this.damperChannel(v.key)))this.changeDamper(v,Number(down));
     if (!down)
       for (const v of this.voices.filter((v) => v.pedal)) {
         if (v.asset.mode === 3) v.source.loop = false;
         this.stopVoice(
           v,
-          releaseSeconds(this.patch.settings ?? {}, v.zone, 0, true),
+          releaseSeconds(this.patch.settings ?? {}, v.zone, 0, !(this.patch.settings?.pianoDamper&&v.zone.damper===1)),
         );
       }
   }
@@ -561,6 +616,7 @@ export class PatchPreview {
     this.stopArp();
     for (const v of this.voices) this.stopVoice(v, 0.02);
     this.sustain = false;
+    this.damperByChannel.clear();
     if (this.room) {
       this.effects?.roomInput.disconnect(this.room);
       this.room.disconnect();

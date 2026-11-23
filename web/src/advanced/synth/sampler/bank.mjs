@@ -20,9 +20,9 @@ export function readBank(bytes, options = {}) {
   header.fill(0, 36, 40);
   if (crc32(header) !== u32(36))
     throw Error("Sound header checksum failed.");
-  // 114-119 hold signed envelope bends; -32768 is out of range. 126 extends held voices on paged banks; 127 is reserved.
+  // 114–119 are envelope bends, 126 extends paged voices and 127 enables piano damping.
   const extendedHeld=bytes[126];
-  if(bytes[106]>=residentLimits.held||bytes[107]>4||bytes[127]||
+  if(bytes[106]>=residentLimits.held||bytes[107]>4||bytes[127]>1||
      (extendedHeld&&(!(u16(18)&1)||bytes[106]||extendedHeld<=residentLimits.held||extendedHeld>pagedLimits.held))||
      [114,116,118].some(at=>u16(at)===0x8000))throw Error("Invalid sound voice reservations.");
   const a = u16(12),
@@ -84,7 +84,8 @@ export function readBank(bytes, options = {}) {
     const p = 128 + a * 48 + l * 16 + i * 48,
       key = u16(p + 10);
     if (u16(p + 8) >= a) throw Error("Invalid region recording.");
-    if(bytes[p+44]>127||bytes[p+45]>128||bytes[p+46]||bytes[p+47])throw Error("Invalid fixed region controls.");
+    const tuneCents=v.getInt16(p+46,true),damper=bytes[p+20]>>1;
+    if(bytes[p+44]>127||bytes[p+45]>128||Math.abs(tuneCents)>1200||damper>2)throw Error("Invalid region controls.");
     return {
       asset: u16(p + 8),
       lowMidi: midi(v.getInt32(p, true)),
@@ -96,7 +97,9 @@ export function readBank(bytes, options = {}) {
       roundRobin: bytes[p + 15],
       gain: u16(p + 16) / 32768,
       pan: v.getInt16(p + 18, true) / 32767,
-      fixed: !!bytes[p + 20],
+      fixed: !!(bytes[p + 20]&1),
+      tuneCents:tuneCents||undefined,
+      damper:damper||undefined,
       color: bytes[p + 24]
         ? "#" +
           Array.from(bytes.subarray(p + 21, p + 24), (x) =>
@@ -149,6 +152,7 @@ export function readBank(bytes, options = {}) {
       releaseResponse: u16(98) / 65535,
       releaseCurve: 0.25 + (u16(100) / 65535) * 3.75,
       pedalRelease: u16(102),
+      pianoDamper:bytes[127],
       pressureGain: u16(104) / 65535,
       attackShape: ((u16(114) << 16) >> 16) / 32767,
       decayShape: ((u16(116) << 16) >> 16) / 32767,

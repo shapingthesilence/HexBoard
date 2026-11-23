@@ -25,6 +25,8 @@ export interface Zone {
   resonance?:number;
   fixedVelocity?:number;
   fixedNote?:number;
+  tuneCents?:number;
+  damper?:0|1|2;
   asset: number;
   lowMidi?: number;
   highMidi?: number;
@@ -67,6 +69,7 @@ export interface Settings {
   releaseResponse?: number;
   releaseCurve?: number;
   pedalRelease?: number;
+  pianoDamper?: number;
   /** Amp envelope segment bends, -1..1 (0 straight); shared Modulators curve. */
   attackShape?: number;
   decayShape?: number;
