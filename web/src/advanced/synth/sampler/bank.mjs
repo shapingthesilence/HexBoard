@@ -20,8 +20,8 @@ export function readBank(bytes, options = {}) {
   header.fill(0, 36, 40);
   if (crc32(header) !== u32(36))
     throw Error("Sound header checksum failed.");
-  // 114-119 hold signed envelope bends; -32768 is out of range. 120-127 are reserved.
-  if(bytes[106]>=16||bytes[107]>4||bytes.subarray(120,128).some(x=>x)||[114,116,118].some(at=>u16(at)===0x8000))throw Error("Invalid sound voice reservations.");
+  // 114-119 hold signed envelope bends; -32768 is out of range. 126-127 are reserved.
+  if(bytes[106]>=16||bytes[107]>4||u16(126)||[114,116,118].some(at=>u16(at)===0x8000))throw Error("Invalid sound voice reservations.");
   const a = u16(12),
     l = u16(14),
     z = u16(16),
@@ -120,6 +120,7 @@ export function readBank(bytes, options = {}) {
       : { velocityEngine: 0, performance: defaultPerformance() };
   let motion;
   if(flags&4){let at=end+(flags&2?184:0);motion=decodeMotion(bytes.subarray(at,at+64));for(const zone of zones){at+=64;zone.motion=decodeMotion(bytes.subarray(at,at+64));}}
+  const velocityCutoff=v.getInt16(124,true);if(Math.abs(velocityCutoff)>4800)throw Error("Invalid velocity cutoff.");
   const roomDecay=u16(108)||1600;if(roomDecay<200||roomDecay>8000)throw Error("Invalid reverb decay");
   return {
     motion,
@@ -139,6 +140,7 @@ export function readBank(bytes, options = {}) {
       resonance: 0.5 + (u16(58) / 65535) * 3.5,
       pressure: u16(60) / 65535,
       space: u16(62) / 65535,
+      ensemble:u16(120)/65535,drive:u16(122)/65535,velocityCutoff,
       roomDecay,roomTone:u16(110)?(u16(110)-1)/65534:defaults.roomTone,roomWidth:u16(112)?(u16(112)-1)/65534:1,
       fastRelease: u16(96),
       releaseResponse: u16(98) / 65535,

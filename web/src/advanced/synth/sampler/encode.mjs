@@ -121,7 +121,7 @@ export const defaults = {
   pressure: 0.15,
   pressureGain: 0,
   space: 0,
-  roomDecay:1600,roomTone:.34090909,roomWidth:1,
+  roomDecay:1600,roomTone:.34090909,roomWidth:1,ensemble:0,drive:0,velocityCutoff:0,
   fastRelease: 110,
   releaseResponse: 0.9,
   releaseCurve: 1.5,
@@ -134,7 +134,7 @@ function settingsFor(input) {
   const s = { ...defaults, ...input };
   for (const [k, v] of Object.entries(s)) finite(v, k);
   if (
-    s.roomDecay<200||s.roomDecay>8000||s.roomTone<0||s.roomTone>1||s.roomWidth<0||s.roomWidth>1||
+    s.ensemble<0||s.ensemble>1||s.drive<0||s.drive>1||Math.abs(s.velocityCutoff)>4800||s.roomDecay<200||s.roomDecay>8000||s.roomTone<0||s.roomTone>1||s.roomWidth<0||s.roomWidth>1||
     s.attack < 0 ||
     s.attack > 10000 ||
     s.decay < 0 ||
@@ -668,6 +668,7 @@ export async function preparePatch(input, onProgress = () => {}) {
   bytes[107] = 4 - playback.tails;
   // Bytes 114-119: signed envelope bends x32767 (zero is straight).
   [settings.attackShape, settings.decayShape, settings.releaseShape].forEach((b, i) => u16(114 + i * 2, Math.round(b * 32767) & 0xffff));
+  u16(120,Math.round(settings.ensemble*65535));u16(122,Math.round(settings.drive*65535));u16(124,Math.round(settings.velocityCutoff)&0xffff);
   u16(108,Math.round(settings.roomDecay));u16(110,1+Math.round(settings.roomTone*65534));u16(112,1+Math.round(settings.roomWidth*65534));
   let pcmAt = metadata,
     levelIndex = 0,

@@ -60,6 +60,9 @@ export interface Settings {
   roomDecay?:number;
   roomTone?:number;
   roomWidth?:number;
+  ensemble?:number;
+  drive?:number;
+  velocityCutoff?:number;
   fastRelease?: number;
   releaseResponse?: number;
   releaseCurve?: number;

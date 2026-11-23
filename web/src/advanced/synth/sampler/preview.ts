@@ -1,3 +1,4 @@
+import { PreviewEffects } from "./previewEffects.ts";
 import { envelopeLevel, rampCurve } from "../envelopeCurve.ts";
 import {motionSettings,motionActive,evaluateMotion,motionEnvelope,keyTime} from "./motion.mjs";
 import {playbackLimits} from './playback.mjs';
@@ -105,6 +106,7 @@ export class PatchPreview {
   private step = 0;
   private sequence = 0;
   private rr = 0;
+  private effects?: PreviewEffects;
   private pressure = 1;
   private bend = 0;
   private sustain = false;
@@ -122,18 +124,20 @@ export class PatchPreview {
       this.limiter.connect(this.output).connect(this.ctx.destination);
       this.bus = this.ctx.createGain();
       this.roomDry=this.ctx.createGain();
-      this.bus.connect(this.roomDry).connect(this.limiter);
+      this.effects=new PreviewEffects(this.ctx,this.bus,this.limiter);
+      this.effects.roomInput.connect(this.roomDry).connect(this.effects.roomOutput);
     }
+    this.effects?.apply(this.patch.settings);
     this.setRoom(this.patch.settings?.space ?? 0);
     await this.ctx.resume();
   }
   private installRoom(impulse:Float32Array[]){
-    if(!this.ctx||!this.bus||!this.limiter)return;
+    if(!this.ctx||!this.effects)return;
     const buffer=this.ctx.createBuffer(2,impulse[0].length,this.ctx.sampleRate);impulse.forEach((c,i)=>buffer.getChannelData(i).set(c));this.roomBuffer=buffer;
     const previous=this.room,oldGain=this.roomGain,room=this.ctx.createConvolver(),gain=this.ctx.createGain(),now=this.ctx.currentTime;
     room.normalize=false;room.buffer=buffer;gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(this.patch.settings?.space??0,now+.025);
-    this.bus.connect(room).connect(gain).connect(this.limiter);this.room=room;this.roomGain=gain;
-    if(previous&&oldGain){oldGain.gain.cancelScheduledValues(now);oldGain.gain.setTargetAtTime(0,now,.006);setTimeout(()=>{this.bus?.disconnect(previous);previous.disconnect();oldGain.disconnect();},60);}
+    this.effects.roomInput.connect(room).connect(gain).connect(this.effects.roomOutput);this.room=room;this.roomGain=gain;
+    if(previous&&oldGain){oldGain.gain.cancelScheduledValues(now);oldGain.gain.setTargetAtTime(0,now,.006);setTimeout(()=>{this.effects?.roomInput.disconnect(previous);previous.disconnect();oldGain.disconnect();},60);}
   }
   private setRoom(amount:number){
     if(!this.ctx||!this.bus||!this.limiter)return;
@@ -153,12 +157,13 @@ export class PatchPreview {
   private expressionByKey = new Map<string,{pressure:number;bend:number}>();
   private volume=.6;
   setVolume(value:number){this.volume=Math.max(0,Math.min(1,value));if(this.output&&this.ctx)this.output.gain.setTargetAtTime(this.volume,this.ctx.currentTime,.01);}
-  noteExpression(key:string,pressure:number,bend:number){this.expressionByKey.set(key,{pressure,bend});for(const v of this.voices.filter(v=>v.key===key)){v.source.playbackRate.setTargetAtTime(v.rate*2**((this.bend+bend)/12),this.ctx!.currentTime,.005);v.pressure.gain.setTargetAtTime(this.pressureLevel(pressure),this.ctx!.currentTime,.01);v.filter.frequency.setTargetAtTime(this.cutoff(v.zone,pressure),this.ctx!.currentTime,.01);}}
+  noteExpression(key:string,pressure:number,bend:number){this.expressionByKey.set(key,{pressure,bend});for(const v of this.voices.filter(v=>v.key===key)){v.source.playbackRate.setTargetAtTime(v.rate*2**((this.bend+bend)/12),this.ctx!.currentTime,.005);v.pressure.gain.setTargetAtTime(this.pressureLevel(pressure),this.ctx!.currentTime,.01);v.filter.frequency.setTargetAtTime(this.cutoff(v.zone,pressure,v.strikeVelocity),this.ctx!.currentTime,.01);}}
   stopNote(key:string){this.held.delete(key);for(const v of this.voices.filter(v=>v.key===key))this.stopVoice(v,.01);this.expressionByKey.delete(key);}
   setPatch(patch: Patch) {
     const before=playbackLimits(this.patch),after=playbackLimits(patch);
     if(before.voices!==after.voices||before.tails!==after.tails)this.clear();
     this.patch = patch;
+    this.effects?.apply(patch.settings);
     if(this.readerTimer)clearTimeout(this.readerTimer);
     if(this.voices.some(v=>patch.assets[v.assetIndex]!==v.asset))this.readerTimer=setTimeout(()=>{
       this.readerTimer=undefined;
@@ -178,7 +183,7 @@ export class PatchPreview {
     for (const v of this.voices) {
       if(patch.zones?.[v.zoneIndex]?.asset===v.assetIndex)v.zone=patch.zones[v.zoneIndex];
       v.filter.frequency.setTargetAtTime(
-        this.cutoff(v.zone,this.expressionByKey.get(v.key)?.pressure),
+        this.cutoff(v.zone,this.expressionByKey.get(v.key)?.pressure,v.strikeVelocity),
         this.ctx!.currentTime,
         0.01,
       );
@@ -192,10 +197,11 @@ export class PatchPreview {
     this.updateMotion();
     if (!patch.performance?.values[S.enabled] && this.timer) this.clear();
   }
-  private cutoff(z: Zone, pressure=this.pressure) {
+  private cutoff(z: Zone, pressure=this.pressure, strike=1) {
     const p = this.patch.settings;
     return (
       Math.min(p?.cutoff ?? defaults.cutoff, z.cutoff ?? 20000) *
+      2**((p?.velocityCutoff??0)*(strike-1)/1200) *
       (0.25 +
         0.75 *
           (1 -
@@ -222,7 +228,7 @@ export class PatchPreview {
         0.01,
       );
       v.filter.frequency.setTargetAtTime(
-        this.cutoff(v.zone,this.expressionByKey.get(v.key)?.pressure),
+        this.cutoff(v.zone,this.expressionByKey.get(v.key)?.pressure,v.strikeVelocity),
         this.ctx!.currentTime,
         0.01,
       );
@@ -311,7 +317,7 @@ export class PatchPreview {
       pan = ctx.createStereoPanner();
     source.buffer = this.buffer(a);
     filter.type = "lowpass";
-    filter.frequency.value = this.cutoff(choice,this.expressionByKey.get(key)?.pressure);
+    filter.frequency.value = this.cutoff(choice,this.expressionByKey.get(key)?.pressure,(choice.fixedVelocity??velocity)/127);
     filter.Q.value = choice.resonance??p.resonance ?? 0.7;
     pan.pan.value = choice.pan ?? 0;
     pressure.gain.value = this.pressureLevel(this.expressionByKey.get(key)?.pressure);
@@ -396,7 +402,7 @@ export class PatchPreview {
     if(!this.ctx)return;const now=this.ctx.currentTime;let active=false;
     for(const v of this.voices){const m=motionSettings({...this.patch.motion,...v.zone.motion});if(motionActive(m))active=true;const time=now-v.start,pressure=this.expressionByKey.get(v.key)?.pressure??this.pressure,released=v.release===undefined?-1:v.release-v.start,value=evaluateMotion(m,time,v.note,pressure,v.strikeVelocity,released,released<0?0:motionEnvelope(m,released,v.note));
       v.source.playbackRate.setTargetAtTime(v.rate*2**((this.bend+(this.expressionByKey.get(v.key)?.bend??0)+value.pitch/100)/12),now,.004);
-      v.filter.frequency.setTargetAtTime(Math.max(40,Math.min(19000,this.cutoff(v.zone,pressure)*2**(value.filter/1200))),now,.004);
+      v.filter.frequency.setTargetAtTime(Math.max(40,Math.min(19000,this.cutoff(v.zone,pressure,v.strikeVelocity)*2**(value.filter/1200))),now,.004);
       v.pressure.gain.setTargetAtTime(this.pressureLevel(pressure)*value.gain,now,.004);
     }
     if(active)this.motionTimer=setTimeout(()=>this.updateMotion(),8);
@@ -556,7 +562,7 @@ export class PatchPreview {
     for (const v of this.voices) this.stopVoice(v, 0.02);
     this.sustain = false;
     if (this.room) {
-      this.bus?.disconnect(this.room);
+      this.effects?.roomInput.disconnect(this.room);
       this.room.disconnect();
       this.roomGain?.disconnect();
       this.room = undefined;

@@ -1086,7 +1086,7 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
             </fieldset>
           )}
 </>} sound={<>
-          <nav className="sampler-tabs sampler-sound-pages" aria-label="Sound sections">{([['voice','Envelope'],...(!classic?[['response','Touch & release']]:[]),['motion','Motion'],['room','Room']] as [string,string][]).map(([id,label])=><button key={id} aria-pressed={soundPage===id} onClick={()=>setSoundPage(id)}>{label}</button>)}</nav>
+          <nav className="sampler-tabs sampler-sound-pages" aria-label="Sound sections">{([['voice','Envelope'],...(!classic?[['response','Touch & release']]:[]),['motion','Motion'],['room',classic?'Room':'Effects']] as [string,string][]).map(([id,label])=><button key={id} aria-pressed={soundPage===id} onClick={()=>setSoundPage(id)}>{label}</button>)}</nav>
           <div className="sampler-sound-page" hidden={soundPage!=='voice'}>
             <RegionEnvelope zones={zones} index={zone ? zones.indexOf(zone) : -1} names={patch.assets.map(a => a.name ?? "Recording")} settings={settings}
             onSelect={index => { setZoneIndex(index); setSelected(zones[index].asset);if(zones[index].key!==undefined&&zones[index].key!==65535)setSelectedKey(zones[index].key!); }}
@@ -1142,6 +1142,7 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
                   title: "Touch & tone",
                   controls: [
                     ["cutoff", "Tone", 40, 20000, "Hz"],
+                    ["velocityCutoff", "Velocity to cutoff", -4800, 4800, "cents"],
                     ["pressure", "Pressure → tone", 0, 1, ""],
                     ["pressureGain", "Pressure → level", 0, 1, ""],
                   ],
@@ -1202,7 +1203,13 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
           <div className="sampler-sound-focus" hidden={soundPage!=='motion'}>{zone?<MotionEditor classic={classic} value={{...patch.motion,...zone?.motion}} onEnd={()=>{gesture.current=false;}} onChange={change=>{if(!zone)return;const m=motionSettings({...patch.motion,...zone.motion,...change});edit({...patch,zones:zones.map(z=>z===zone?{...z,motion:m}:z)},!gesture.current);gesture.current=true;}} onApplyAll={()=>{const m=motionSettings({...patch.motion,...zone?.motion});edit({...patch,motion:m,zones:zones.map(z=>({...z,motion:m}))});}}/>:<p className="panel-note">Select a recording with a mapped region to edit its motion.</p>}</div>
           <div className="sampler-sound-focus" hidden={soundPage!=='room'}><fieldset><legend>Room</legend><button aria-pressed={settings.space>0} onClick={()=>{if(settings.space>0)lastSpace.current=settings.space;global('space',settings.space>0?0:lastSpace.current);gesture.current=false;}}>Room · {settings.space>0?'On':'Off'}</button>
             <p className="panel-note">{classic?'Heard in the browser only; Classic export omits reverb.':'One shared reverb for the whole sound.'}</p>
-            <div className="knob-bank">{([['space','Amount',0,1,''],['roomDecay','Decay',200,8000,'ms'],['roomTone','Tone',0,1,''],['roomWidth','Width',0,1,'']] as const).map(([k,label,min,max,unit])=><label className="sampler-knob" key={k}><span>{label}</span><Knob label={'Room '+label} min={min} max={max} value={settings[k]} onChange={v=>global(k,v)} onRelease={()=>{gesture.current=false;}}/><output>{settings[k].toFixed(max>1?0:2)} {unit}</output></label>)}</div></fieldset></div>
+            <div className="knob-bank">{([['space','Amount',0,1,''],['roomDecay','Decay',200,8000,'ms'],['roomTone','Tone',0,1,''],['roomWidth','Width',0,1,'']] as const).map(([k,label,min,max,unit])=><label className="sampler-knob" key={k}><span>{label}</span><Knob label={'Room '+label} min={min} max={max} value={settings[k]} onChange={v=>global(k,v)} onRelease={()=>{gesture.current=false;}}/><output>{settings[k].toFixed(max>1?0:2)} {unit}</output></label>)}</div></fieldset>
+              {!classic&&<fieldset><legend>Output effects</legend><div className="knob-bank">
+                {([['ensemble','Ensemble'],['drive','Drive']] as const).map(([key,label])=><label className="sampler-knob" key={key}>
+                  <span>{label}</span><Knob label={label} min={0} max={1} value={settings[key]} onChange={value=>global(key,value)} onRelease={()=>{gesture.current=false;}}/><output>{settings[key].toFixed(2)}</output>
+                </label>)}
+              </div></fieldset>}
+            </div>
       </>}/></main>
       </div>
 
