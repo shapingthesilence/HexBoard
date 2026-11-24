@@ -1131,7 +1131,14 @@ side rack.
 ### Advanced sampler experiment
 
 A device advertising Sampler support adds **Sampler** to the Advanced engine
-selector. Add mono/stereo PCM16/24/32 or float WAV files, including ordinary
+selector. After connecting, **Playing on HexBoard** shows the active sampler
+sound. Turn a knob to hear changes immediately on the board. Piano sounds
+show a **Piano mix** with independent **Room** and **Sympathetic resonance**
+bypass. **Output effects** adds room decay, tone and width, ensemble, and
+drive. **Save settings to sound** briefly pauses playback to keep the changes
+with the HBS sound. **Browse sounds** selects another device instrument.
+
+To create a sound, add mono/stereo PCM16/24/32 or float WAV files, including ordinary
 PCM/float WAVE_FORMAT_EXTENSIBLE files. Instrument fills pitch ranges from
 editable roots. Kit maps recordings to playing keys. Slices cuts the selected
 recording at detected hits (adjust **Sensitivity**) or into 2–64 equal parts,
@@ -1176,8 +1183,8 @@ to 5.5 MiB of prepared PCM. The compact mono piano now passes the hardware
 ±2-semitone bends. Its short reader accepts subtle spectral artifacts to keep
 the playback cost practical; this does not qualify every bank or an effects rack.
 
-For the directly copied CC0 piano, choose **Sound on SD → KW upright · compact**
-and **Start synth**. Loading progress shows how many recordings are ready and
+For the directly copied CC0 piano, choose **Browse sounds → KW upright · compact**
+and **Play on HexBoard**. Loading progress shows how many recordings are ready and
 allows four-note audition while the rest load. Pressing a key prioritizes its
 recording; release cancels a waiting note. Fully loaded sounds enable 16 notes.
 Stopping and starting the same sound reuses its loaded recordings for a quick

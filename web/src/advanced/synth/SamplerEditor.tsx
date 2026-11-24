@@ -28,9 +28,8 @@ import {
   PhysicalSynthClient,
   type SamplerInstrument,
 } from "./client.ts";
-import {SamplerLoadingStatus} from "./sampler/SamplerLoadingStatus.tsx";
+import {LiveSamplerPanel} from "./sampler/LiveSamplerPanel.tsx";
 import {PianoMixPanel} from "./sampler/PianoMixPanel.tsx";
-import {decodePianoMix, encodePianoMix, pianoMixDefaults, pianoMixKeys, pianoMixParameter, type PianoMix, type PianoMixKey} from "./sampler/pianoMix.mjs";
 import { samplerDrafts, draftWorthSaving } from "./sampler/draftStorage.ts";
 import type {
   Patch,
@@ -39,7 +38,6 @@ import type {
   Settings,
   Zone,
 } from "./sampler/prepare.mjs";
-import { crc32 } from "./sampler/prepare.mjs";
 import { defaults, defaultPerformance } from "./sampler/encode.mjs";
 import {
   openSoundFont,
@@ -169,7 +167,7 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
   const draftId=classic?"classic":"advanced";
   const [sustainDesign,setSustainDesign]=useState<SustainDesign>("natural");
   const [loopCycles,setLoopCycles]=useState(4);
-  const [exportOpen,setExportOpen]=useState(false);
+  const [exportOpen,setExportOpen]=useState<"export" | "library">();
   const [loopAuditionError, setLoopAuditionError] = useState("");
   const [loopSelection, setLoopSelection] = useState<boolean[]>([]);
   const loopAudition = useRef<TuningAudition | undefined>(undefined);
@@ -185,32 +183,16 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
     [auditionChoice, setAuditionChoice] = useState(0),
     [adaptation, setAdaptation] = useState<"faithful" | "compact">(classic ? "compact" : "faithful"),
     [sourceNote, setSourceNote] = useState(60),
-    [exportFolder, setExportFolder] = useState("My sounds"),
-    [deviceSpace, setDeviceSpace] = useState(0),
-    [devicePiano, setDevicePiano] = useState(false),
-    [deviceMix, setDeviceMix] = useState<PianoMix>({...pianoMixDefaults}),
-    [deviceSettings, setDeviceSettings] = useState(false),
-    [loadedSource, setLoadedSource] = useState(-1);
+    [exportFolder, setExportFolder] = useState("My sounds");
   const [folders, setFolders] = useState<SamplerInstrument[]>([]),
     [instruments, setInstruments] = useState<SamplerInstrument[]>([]),
     [folder, setFolder] = useState(0),
     [sdSource, setSdSource] = useState(0),
-    [playing, setPlaying] = useState(false);
+    [activeSource, setActiveSource] = useState<number>();
   const tuningTargets = useTuningTargets();
   const [tuningStop, setTuningStop] = useState(0);
   const gesture = useRef(false);
-  const effectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
-      undefined,
-    ),
-    lastSpace = useRef(0.18),
-    lastDeviceSpace = useRef(0.18);
-  const pendingDeviceEffects = useRef(new Map<number,number>());
-  const deviceEffectGeneration = useRef(0);
-  const cancelDeviceEffects = () => {
-    if (effectTimer.current) clearTimeout(effectTimer.current);
-    pendingDeviceEffects.current.clear();
-    ++deviceEffectGeneration.current;
-  };
+  const lastSpace = useRef(0.18);
   const patchRef = useRef(patch);
   patchRef.current = patch;
   const client = useRef<PhysicalSynthClient | undefined>(undefined),
@@ -269,7 +251,7 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
   }, [patch, template, draftId, draftReady], e => setDraftError(e instanceof DOMException && e.name === "QuotaExceededError" ? "This sound is too large to autosave in the browser. Export it to keep it." : `Autosave failed: ${e instanceof Error ? e.message : e}`), 800);
   useEffect(() => {
     client.current = transport && !classic ? new PhysicalSynthClient(transport) : undefined;
-    return () => { cancelDeviceEffects(); client.current?.close(); };
+    return () => client.current?.close();
   }, [transport, classic]);
   useEffect(
     () => () => {
@@ -277,7 +259,6 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
       preview.current?.close();
       source.current?.close();
       worker.current?.terminate();
-      cancelDeviceEffects();
     },
     [],
   );
@@ -612,7 +593,6 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
           (n, total) =>
             setBusy(`Copying audio · ${Math.round((n / total) * 100)}%`),
         );
-        setPlaying(false);
         const refreshed = await client.current.samplerLibrary(true, 32);
         setFolders(refreshed);
         const target = refreshed.find((f) => f.name === exportFolder);
@@ -647,97 +627,36 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
       const id = f.some((x) => x.id === folder) ? folder : (f[0]?.id ?? 0);
       setFolder(id);
       setInstruments(await client.current!.samplerLibrary(true, id));
-      setPlaying(false);
     } catch (e) {
       setError(String(e));
     } finally {
       setBusy("");
     }
   }
-  async function devicePlay(value = sdSource) {
-    cancelDeviceEffects();
-    setPlaying(false);
+  async function devicePlay(source = sdSource) {
     setBusy("Loading sound…");
     setError("");
     try {
-      await client.current!.start(6, value);
-      if (value !== 1) {
-        const header = await client.current!.playingSamplerSettings();
-        const view = new DataView(header.buffer, header.byteOffset, header.byteLength);
-        const savedSpace = view.getUint16(62, true) / 65535;
-        setDevicePiano(header[127] === 1);
-        setDeviceMix(decodePianoMix(view.getUint32(44, true)));
-        setDeviceSpace(savedSpace);
-        lastDeviceSpace.current = savedSpace > 0 ? savedSpace : 0.18;
-        setDeviceSettings(true);
-      } else {
-        setDeviceSpace(0);
-        setDevicePiano(false);
-        setDeviceMix({...pianoMixDefaults});
-        setDeviceSettings(false);
-      }
-      setLoadedSource(value);
-      setPlaying(true);
-    } catch (e) {
-      setError(String(e));
-      setPlaying(false);
+      await client.current!.start(6, source);
+    } catch (error) {
+      setError(String(error));
     } finally {
       setBusy("");
     }
   }
-  function queueDeviceEffect(parameter: number, value: number) {
-    const connected = client.current;
-    if (!playing || !connected) return;
-    pendingDeviceEffects.current.set(parameter, value);
-    if (effectTimer.current) clearTimeout(effectTimer.current);
-    const generation = deviceEffectGeneration.current;
-    effectTimer.current = setTimeout(() => {
-      const edits = [...pendingDeviceEffects.current];
-      pendingDeviceEffects.current.clear();
-      void (async () => {
-        for (const [id, next] of edits) {
-          if (generation !== deviceEffectGeneration.current) return;
-          await connected.samplerParameter(id, next);
-        }
-      })().catch(e => {
-        if (generation === deviceEffectGeneration.current) setError(String(e));
-      });
-    }, 30);
-  }
-  const changeDeviceSpace = (amount: number) => {
-    setDeviceSpace(amount);
-    if (amount > 0) lastDeviceSpace.current = amount;
-    queueDeviceEffect(12, Math.round(amount * 65535));
-  };
-  const changeDeviceMix = (key: PianoMixKey, level: number) => {
-    setDeviceMix(previous => ({...previous, [key]: level}));
-    queueDeviceEffect(pianoMixParameter + pianoMixKeys.indexOf(key), level);
-  };
-  async function saveDeviceEffects() {
-    if (!client.current || !deviceSettings || loadedSource !== sdSource) return;
-    setBusy("Saving sound effects…");
+
+  async function stopDevice() {
+    setBusy("Stopping sampler…");
     setError("");
-    const resume = playing;
     try {
-      cancelDeviceEffects();
-      const header = await client.current.samplerSettings();
-      setPlaying(false);
-      const v = new DataView(header.buffer, header.byteOffset, header.byteLength);
-      v.setUint16(62, Math.round(deviceSpace * 65535), true);
-      if (devicePiano) v.setUint32(44, encodePianoMix(!!(v.getUint32(44, true) & 1), deviceMix), true);
-      v.setUint32(36, 0, true);
-      v.setUint32(36, crc32(header), true);
-      await client.current.samplerSettings(header);
-      if (resume) {
-        await client.current.start(6);
-        setPlaying(true);
-      }
-    } catch (e) {
-      setError(String(e));
+      await client.current!.stopAndWait();
+    } catch (error) {
+      setError(String(error));
     } finally {
       setBusy("");
     }
   }
+
   const on = (key: string, note: number, physical?: number) => {
       void preview
         .current!.on(key, note, velocity, physical)
@@ -1282,6 +1201,8 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
         {classic && <span>HexBoard Classic · eight voices</span>}
         {(busy || draftError || draftNotice) && <p role="status" className={!busy && draftError ? "error" : ""}>{busy || draftError || draftNotice}</p>}
       </div>
+      {!classic && <LiveSamplerPanel client={client} transport={transport} paused={!!busy}
+        onPlayback={setActiveSource} onBrowse={() => setExportOpen("library")}/>}
       <div className="sampler-toolbar">
         <input
           aria-label="Sound name"
@@ -1338,7 +1259,7 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
           </button>
         </span>
         <InstrumentResources patch={patch} classic={classic} disabled={!!busy} onSetup={()=>setSetupOpen(true)}/>
-        <button className="sampler-toolbar-end" disabled={!!busy} onClick={()=>setExportOpen(true)}>Save / export…</button>
+        <button className="sampler-toolbar-end" disabled={!!busy} onClick={()=>setExportOpen("export")}>Save / export…</button>
       </div>
       {classic && <section className="sampler-workflow" aria-label="Prepare and send sound">
         <div>
@@ -1367,9 +1288,9 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
       {setupOpen&&<InstrumentSetup patch={patch} classic={classic} design={sustainDesign} cycles={loopCycles} mode={template} onClose={()=>setSetupOpen(false)} onApply={(next,design,cycles,mode)=>{preview.current!.clear();const zones=mode!==template?(mode==="instrument"?automatic(next.assets):mappedZones(assignSequentially(next.assets.length),next.assets.length)):next.zones;edit({...next,zones});setTemplate(mode);setSustainDesign(design);setLoopCycles(cycles);if(mode!==template)setWorkspaceView(mode==="instrument"?"sample":"mapping");}}/>}
       {editingControls}
       {auditionControls}
-      {exportOpen&&<WorkspaceDialog title="Save, export and HexBoard library" onClose={()=>setExportOpen(false)}><div className="sampler-bottom">
-        <label className="sampler-export-name">Sound name<input aria-label="Export sound name" value={patch.name??""} maxLength={32} onChange={e=>edit({...patch,name:e.target.value},false)}/></label>
-        {!classic && <fieldset>
+      {exportOpen&&<WorkspaceDialog title={exportOpen === "library" ? "HexBoard sound library" : "Save, export and HexBoard library"} onClose={()=>setExportOpen(undefined)}><div className="sampler-bottom">
+        {exportOpen === "export" && <label className="sampler-export-name">Sound name<input aria-label="Export sound name" value={patch.name??""} maxLength={32} onChange={e=>edit({...patch,name:e.target.value},false)}/></label>}
+        {!classic && exportOpen === "export" && <fieldset>
           <legend>Export sound</legend>
           <div className="sampler-fields">
             <label>
@@ -1421,7 +1342,7 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
         </fieldset>}
         {!classic && <fieldset>
           <legend>HexBoard library</legend>
-          <AssetStorageSelector client={client.current} disabled={!!busy} onChange={()=>{setFolders([]);setInstruments([]);setLoadedSource(-1);}}/>
+          <AssetStorageSelector client={client.current} disabled={!!busy} onChange={()=>{setFolders([]);setInstruments([]);}}/>
           <div className="sampler-fields">
             <button
               disabled={!transport || !!busy}
@@ -1441,10 +1362,7 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
                   ?.samplerLibrary(true, id)
                   .then(setInstruments)
                   .catch((e) => setError(String(e)))
-                  .finally(() => {
-                    setBusy("");
-                    setPlaying(false);
-                  });
+                  .finally(() => setBusy(""));
               }}
             >
               {!folders.length && <option value={0}>Choose a folder</option>}
@@ -1461,7 +1379,7 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
               onChange={(e) => {
                 const id = +e.target.value;
                 setSdSource(id);
-                if (playing) void devicePlay(id);
+                if (activeSource !== undefined) void devicePlay(id);
               }}
             >
               <option value={0}>Saved sampler patch</option>
@@ -1474,37 +1392,11 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
             </select>
             <button
               disabled={!transport || !!busy}
-              onClick={() => {
-                cancelDeviceEffects();
-                if (playing)
-                  void client
-                    .current!.stopAndWait()
-                    .then(() => setPlaying(false));
-                else void devicePlay();
-              }}
+              onClick={() => void (activeSource === sdSource ? stopDevice() : devicePlay())}
             >
-              {playing ? "Stop HexBoard" : "Play on HexBoard"}
+              {activeSource === sdSource ? "Stop HexBoard" : "Play on HexBoard"}
             </button>
           </div>
-          <div className="sampler-device-effects">
-            <PianoMixPanel
-              key={loadedSource}
-              mix={devicePiano ? deviceMix : undefined}
-              onChange={changeDeviceMix}
-              room={{
-                amount: deviceSpace,
-                onChange: changeDeviceSpace,
-                onToggle: () => changeDeviceSpace(deviceSpace > 0 ? 0 : lastDeviceSpace.current),
-              }}
-              disabled={!playing || !!busy}
-            />
-            <button type="button"
-              disabled={!deviceSettings || loadedSource !== sdSource || !!busy || !transport}
-              onClick={() => void saveDeviceEffects()}>
-              Save effects to sound
-            </button>
-          </div>
-          <SamplerLoadingStatus client={client} playing={playing}/>
         </fieldset>}
       </div>
       {report.length > 0 && (
@@ -1514,7 +1406,7 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
           </summary>
           <ul>
             {report.map((line, i) => (
-              <li key={i}>{line}{patch.assets.map((a,index)=>a.name&&line.includes(a.name)&&<button key={index} aria-label={`Review ${a.name}`} onClick={()=>{setSelected(index);setZoneIndex(zones.findIndex(z=>z.asset===index));setWorkspaceView("sample");setExportOpen(false);}}>Review</button>)}</li>
+              <li key={i}>{line}{patch.assets.map((a,index)=>a.name&&line.includes(a.name)&&<button key={index} aria-label={`Review ${a.name}`} onClick={()=>{setSelected(index);setZoneIndex(zones.findIndex(z=>z.asset===index));setWorkspaceView("sample");setExportOpen(undefined);}}>Review</button>)}</li>
             ))}
           </ul>
           <button

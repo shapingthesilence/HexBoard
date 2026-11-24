@@ -16,10 +16,24 @@ export function AdvancedSynthEditor({ transport, engines = false, sampler = fals
     sampler?: boolean;
 }) {
     const [engine, setEngine] = useState<2 | 4 | 5 | 6 | 7>(2), [changing, setChanging] = useState(false), [error, setError] = useState(''), [progress, setProgress] = useState<Progress>();
-    useEffect(() => { if (!transport || !engines)
-        return; let disposed = false; const c = new PhysicalSynthClient(transport); void c.status().then(s => { if (!disposed)
-        setEngine(s.instrument === 7 ? 7 : s.instrument === 6 && sampler ? 6 : s.instrument === 4 ? 4 : s.instrument === 5 ? 5 : 2); }).catch(e => { if (!disposed)
-        setError(String(e)); }).finally(() => c.close()); return () => { disposed = true; c.close(); }; }, [transport, engines, sampler]);
+    const [probed, setProbed] = useState<{transport: MidiTransport; success: boolean}>();
+    const checking = !!transport && engines && probed?.transport !== transport;
+    const editorTransport = changing || (engines && !probed?.success) ? undefined : transport;
+    useEffect(() => {
+        if (!transport || !engines) { setProbed(undefined); return; }
+        let disposed = false;
+        const client = new PhysicalSynthClient(transport);
+        void client.status().then(state => {
+            if (disposed) return;
+            setEngine(state.instrument === 7 ? 7 : state.instrument === 6 && sampler ? 6 : state.instrument === 4 ? 4 : state.instrument === 5 ? 5 : 2);
+            setProbed({transport, success: true});
+        }).catch(error => {
+            if (disposed) return;
+            setError(String(error));
+            setProbed({transport, success: false});
+        }).finally(() => client.close());
+        return () => { disposed = true; client.close(); };
+    }, [transport, engines, sampler]);
     const choose = async (next: 2 | 4 | 5 | 6 | 7) => {
         if (next === engine)
             return;
@@ -31,8 +45,13 @@ export function AdvancedSynthEditor({ transport, engines = false, sampler = fals
         const c = transport ? new PhysicalSynthClient(transport, report, true) : undefined;
         try {
             if (c) {
+                const state = await c.status();
+                const resume = state.state !== 'stopped';
+                if (next === 6 && state.instrument === 6 && resume) {
+                    setEngine(next);
+                    return;
+                }
                 setProgress({ label: 'Stopping current engine…', startedAt, expectedMs });
-                const resume = (await c.status()).state !== 'stopped';
                 await c.stop();
                 for (let i = 0; i < 100; i++) {
                     if ((await c.status()).state === 'stopped')
@@ -62,5 +81,5 @@ export function AdvancedSynthEditor({ transport, engines = false, sampler = fals
             setChanging(false);
         }
     };
-    return <><nav className="engine-selector" aria-label="Synth engine">{([[2, 'Physical Strings', 'strings'], [7, 'Wavetable', 'wavetable'], [4, 'Juno', 'juno'], [5, 'DX7', 'dx7'], [6, 'Sampler', 'sampler']] as const).map(([id, name, identity]) => <button key={id} data-engine={identity} aria-pressed={engine === id} disabled={changing || (id !== 2 && !engines && !!transport) || (id===6 && !!transport && !sampler)} onClick={() => void choose(id)}>{name}</button>)}</nav>{progress && <SynthProgress progress={progress}/>} {error && <p role="alert">{error}</p>}<Suspense fallback={<p role="status">Opening instrument…</p>}>{engine===7?<WavetableSynthEditor onDeviceEngineLoaded={setEngine} key={`wavetable:${transport?.label}`} transport={changing?undefined:transport}/>:engine===6?<SamplerEditor transport={changing?undefined:transport}/>:engine === 2 ? <PhysicalSynthEditor onDeviceEngineLoaded={setEngine} advanced={engines} key={`physical:${transport?.label}`} transport={changing ? undefined : transport}/> : <ClassicSynthEditor onDeviceEngineLoaded={setEngine} key={`${engine}:${transport?.label}`} engine={engine} transport={changing ? undefined : transport}/>}</Suspense></>;
+    return <><nav className="engine-selector" aria-label="Synth engine">{([[2, 'Physical Strings', 'strings'], [7, 'Wavetable', 'wavetable'], [4, 'Juno', 'juno'], [5, 'DX7', 'dx7'], [6, 'Sampler', 'sampler']] as const).map(([id, name, identity]) => <button key={id} data-engine={identity} aria-pressed={engine === id} disabled={checking || changing || (id !== 2 && !engines && !!transport) || (id===6 && !!transport && !sampler)} onClick={() => void choose(id)}>{name}</button>)}</nav>{progress && <SynthProgress progress={progress}/>} {error && <p role="alert">{error}</p>}<Suspense fallback={<p role="status">Opening instrument…</p>}>{checking ? <p role="status">Checking the playing instrument…</p> : engine===7?<WavetableSynthEditor onDeviceEngineLoaded={setEngine} key={`wavetable:${transport?.label}`} transport={editorTransport}/>:engine===6?<SamplerEditor transport={editorTransport}/>:engine === 2 ? <PhysicalSynthEditor onDeviceEngineLoaded={setEngine} advanced={engines} key={`physical:${transport?.label}`} transport={editorTransport}/> : <ClassicSynthEditor onDeviceEngineLoaded={setEngine} key={`${engine}:${transport?.label}`} engine={engine} transport={editorTransport}/>}</Suspense></>;
 }

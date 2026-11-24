@@ -815,4 +815,10 @@
 .sampler-piano-panel .sampler-piano-control { width: auto; min-width: 0; }
 .sampler-piano-panel .sampler-piano-control > strong { font-size: .75rem; height: 1.7rem; }
 .sampler-piano-panel .sampler-piano-control output { font-size: .73rem; }
-.sampler-device-effects { display: grid; justify-items: start; gap: .65rem; margin-top: .55rem; }
+.sampler-live { display: grid; gap: .75rem; padding: .8rem; margin-bottom: .8rem; border: 1px solid var(--edge); border-radius: 10px; }
+.sampler-live-header, .sampler-live-actions { display: flex; align-items: center; justify-content: space-between; gap: .6rem; flex-wrap: wrap; }
+.sampler-live-header h3 { margin: 0 0 .3rem; font-size: .85rem; }
+.sampler-live-header p { margin: .2rem 0 0; color: var(--muted); }
+.sampler-live-output > summary { width: fit-content; margin-bottom: .35rem; cursor: pointer; color: var(--text); font-weight: 600; }
+.sampler-live-actions { justify-content: flex-start; }
+.sampler-live-actions:empty { display: none; }

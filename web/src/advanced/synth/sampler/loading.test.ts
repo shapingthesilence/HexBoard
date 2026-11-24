@@ -1,6 +1,7 @@
 import {describe,it,expect} from 'vitest';
 import {decodeSamplerLoading} from '../client.ts';
 import {samplerLoadingLabel} from './loading.ts';
+import {sameSamplerSession} from './liveSettings.ts';
 const u35=(x:number)=>Array.from({length:5},(_,i)=>Math.floor(x/2**(7*(4-i)))%128);
 const packet=(phase:number,voices:number,ready:number,total:number,loaded:number,size:number)=>[17,phase,voices,ready>>7,ready&127,total>>7,total&127,...u35(loaded),...u35(size),0];
 describe('progressive sampler readiness',()=>{
@@ -9,4 +10,13 @@ describe('progressive sampler readiness',()=>{
  it('identifies streaming readiness and rejects unknown extensions',()=>{const ready=[...packet(2,16,14,14,100,100).slice(0,-1),1];expect(samplerLoadingLabel(decodeSamplerLoading(ready))).toBe('Ready · 16 notes available');expect(samplerLoadingLabel(decodeSamplerLoading([...packet(1,4,3,14,25,100).slice(0,-1),1]))).toContain('Loading sample starts');expect(()=>decodeSamplerLoading([...ready.slice(0,-1),2])).toThrow();expect(()=>decodeSamplerLoading(ready.slice(0,-1))).toThrow();});
  it('reports configured voice counts through loading and readiness',()=>{expect(samplerLoadingLabel(decodeSamplerLoading(packet(1,1,3,14,25,100)))).toContain('1 note while loading');expect(samplerLoadingLabel(decodeSamplerLoading(packet(2,2,14,14,100,100)))).toBe('Ready · 2 notes available');expect(()=>decodeSamplerLoading(packet(2,0,14,14,100,100))).toThrow();});
  it('shows pending status until telemetry arrives',()=>{expect(samplerLoadingLabel()).toContain('Checking');});
+});
+
+it('recognizes a new live session after restarting the same sampler sound', () => {
+ const ready = packet(2,16,14,14,100,100);
+ const before = decodeSamplerLoading([...ready,1,3,0,4,1]);
+ expect(before).toMatchObject({source:131,session:513});
+ expect(sameSamplerSession(before, before)).toBe(true);
+ expect(sameSamplerSession(before, decodeSamplerLoading([...ready,1,3,0,4,3]))).toBe(false);
+ expect(sameSamplerSession(before, decodeSamplerLoading([...ready,1,2,0,4,1]))).toBe(false);
 });

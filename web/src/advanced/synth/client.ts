@@ -39,14 +39,14 @@ export function decodeSamplerLibrary(p:number[],first:number):SamplerInstrument[
  for(let i=0;i<4;i++){const bytes=v.getUint32(i*36+32,true),nameBytes=raw.slice(i*36,i*36+32),end=nameBytes.indexOf(0),text=nameBytes.slice(0,end<0?32:end);if(end>=0&&nameBytes.slice(end).some(Boolean)||text.some(c=>c<32||c>126)||bytes&&(!text.length||bytes%512||bytes<512||bytes>0x40000000)||!bytes&&text.length)throw Error('Invalid sampler instrument entry.');if(bytes)entries.push({id:first%8192>=1024?first%8192-1024+i:first+i+2,name:new TextDecoder().decode(text),bytes});}
  return entries;
 }
-export interface SamplerLoadingState {phase:0|1|2|3;voices:number;ready:number;total:number;loadedBytes:number;totalBytes:number;streaming?:boolean;source?:number}
+export interface SamplerLoadingState {phase:0|1|2|3;voices:number;ready:number;total:number;loadedBytes:number;totalBytes:number;streaming?:boolean;source?:number;session?:number}
 export function decodeSamplerLoading(p:number[]):SamplerLoadingState {
-  if((p.length!==18&&p.length!==20)||p[0]!==17||p[1]>3||p[17]>1)throw Error('Invalid sampler loading response.');
-  const source=p.length===20?decodeU14(p.slice(18,20)):undefined;
+  if((p.length!==18&&p.length!==20&&p.length!==23)||p[0]!==17||p[1]>3||p[17]>1)throw Error('Invalid sampler loading response.');
+  const source=p.length>=20?decodeU14(p.slice(18,20)):undefined;
   if(source!==undefined&&(source>=16384||source%8192>1025||source===8193))throw Error('Invalid sampler source.');
   const state={phase:p[1] as 0|1|2|3,voices:p[2],ready:decodeU14(p.slice(3,5)),total:decodeU14(p.slice(5,7)),loadedBytes:p.slice(7,12).reduce((a,b)=>a*128+b,0),totalBytes:p.slice(12,17).reduce((a,b)=>a*128+b,0)};
   if(state.total>(p[17]?pagedLimits.recordings:residentLimits.recordings)||state.ready>state.total||state.loadedBytes>state.totalBytes||state.totalBytes>0x40000000||state.voices>(p[17]?pagedLimits.held:residentLimits.held)||state.phase===0&&(state.voices||state.ready||state.total||state.loadedBytes||state.totalBytes)||(state.phase===1||state.phase===3)&&(!state.total||!state.totalBytes||(state.voices<1||state.voices>4))||state.phase===2&&(!state.total||state.ready!==state.total||state.loadedBytes!==state.totalBytes||state.voices<1))throw Error('Invalid sampler loading progress.');
-  return {...state,streaming:!!p[17],source};
+  return {...state,streaming:!!p[17],source,session:p.length===23?decodeU21(p.slice(20,23)):undefined};
 }
 export interface PhysicalState { state: "stopped" | "playing" | "loading"; instrument: number; bend: number; preset: PhysicalPreset }
 export function decodePhysicalState(payload: number[]): PhysicalState {
@@ -244,10 +244,25 @@ export class PhysicalSynthClient {
   async setModulation(value:ModulationSources){const m=validateModulation(value);this.modulation=await this.request<ModulationSources>(17,[...m.settings.flatMap(encodeU21),...m.routes.flatMap(v=>encodeU21(v+65536))]);return this.request(0);}
   status(){return this.request(0);}
   samplerLoading(includeSource=false){return this.request<SamplerLoadingState>(63,includeSource?[1]:[]);}
+  private samplerSessionSupported?: boolean;
+  async liveSamplerLoading() {
+    if (this.samplerSessionSupported !== false) {
+      try {
+        const state = await this.request<SamplerLoadingState>(63,[2]);
+        this.samplerSessionSupported = state.session !== undefined;
+        if (this.samplerSessionSupported) return state;
+      } catch (error) {
+        if (this.samplerSessionSupported || !(error instanceof Error) ||
+            error.message !== "The board rejected this synth operation.") throw error;
+        this.samplerSessionSupported = false;
+      }
+    }
+    return this.samplerLoading(true);
+  }
   async samplerSource(source:'patch'|'piano'){return this.samplerInstrument(source==='piano'?1:0);}
   async samplerInstrument(id:number){if(!Number.isInteger(id)||id<0||id>=16384||id%8192>1025||id===8193)throw Error('Invalid sampler instrument.');await this.stopAndWait();return this.request(51,encodeU14(id));}
   async samplerLibrary(refresh=false,folder=0):Promise<SamplerInstrument[]>{if(!Number.isInteger(folder)||folder<0||folder>32)throw Error("Invalid sampler folder.");const entries:SamplerInstrument[]=[];for(let first=folder*32+(this.assetMedium==="flash"?8192:0);first<folder*32+32+(this.assetMedium==="flash"?8192:0);first+=4)entries.push(...await this.request<SamplerInstrument[]>(64,[...encodeU14(first),refresh?1:0]));return entries;}
-  samplerParameter(id:number,value:number){return this.request(46,[id,...encodeU21(value)]);}
+  samplerParameter(id:number,value:number,session?:number){return this.request(46,[id,...encodeU21(value),...(session===undefined?[]:encodeU21(session))]);}
   async uploadSampler(bytes:Uint8Array,progress?:(received:number,total:number)=>void){
     if(bytes.length<512||bytes.length%512)throw Error('Invalid prepared sampler file.');
     await this.stopAndWait();
@@ -259,9 +274,15 @@ export class PhysicalSynthClient {
     }catch(error){try{await this.request(50);}catch{/* Explicit retry starts a new temporary-file transaction. */}throw error;}
   }
   async samplerSettings(header?:Uint8Array):Promise<Uint8Array>{
-    if(header&&header.length!==128)throw Error('Sampler settings require a complete header.');await this.stopAndWait();return this.request<Uint8Array>(69,header?[1,...Array.from(header).flatMap(b=>[b>>7,b&127])]:[0]);
+    if(header && header.length!==128)throw Error('Sampler settings require a complete header.');
+    await this.stopAndWait();
+    return header ? this.writeStoppedSamplerSettings(header) : this.request<Uint8Array>(69,[0]);
   }
-  playingSamplerSettings(){return this.request<Uint8Array>(69,[0]);}
+  writeStoppedSamplerSettings(header:Uint8Array,source?:number):Promise<Uint8Array> {
+    if(header.length!==128)throw Error('Sampler settings require a complete header.');
+    return this.request<Uint8Array>(69,[1,...Array.from(header).flatMap(b=>[b>>7,b&127]),...(source===undefined?[]:encodeU14(source))]);
+  }
+  playingSamplerSettings(session?:number){return this.request<Uint8Array>(69,session===undefined?[0]:[0,...encodeU21(session)]);}
   async uploadSamplerNamed(bytes:Uint8Array,folder:string,filename:string,progress?:(received:number,total:number)=>void){
     const text=(s:string)=>{if(!s.length||s.length>64||/[^\x20-\x7e]|[\\/:*?"<>|]/.test(s)||s.startsWith('.')||/[. ]$/.test(s))throw Error('Use a plain folder and filename.');return Array.from(s,c=>c.charCodeAt(0));};
     const f=text(folder),n=text(filename);if(!/\.hbs$/i.test(filename)||bytes.length<512||bytes.length%512)throw Error('Invalid prepared sampler file.');
@@ -385,7 +406,7 @@ export class PhysicalSynthClient {
     if(this.advanced||instrument>=4)this.previewNeedsStartup=false;return state;
     }finally{this.onProgress?.();}
   }
-  stop() { return this.request(2); }
+  stop(samplerSession?:number) { return this.request(2,samplerSession===undefined?[]:encodeU21(samplerSession)); }
   parameter(id: number, value: number) { return this.request(3, [id, ...encodeU21(value)]); }
   route(id: number, source: number, depth: number) { return this.request(4, [id, source, ...encodeU21(depth + 65536)]); }
   bend(semitones: number) { return this.request(5, encodeU21(Math.round(semitones * 65536) + 131072)); }
@@ -406,7 +427,7 @@ export class PhysicalSynthClient {
     } finally {this.onProgress?.();try{if(resume)await this.start();}finally{await this.request(62);}}
     return this.read();
   }
-  async stopAndWait(){await this.stop();for(let i=0;i<100;i++){if((await this.request(0)).state==="stopped")return;await new Promise(r=>setTimeout(r,30));}throw Error("Synth did not stop for patch storage.");}
+  async stopAndWait(samplerSession?:number){await this.stop(samplerSession);for(let i=0;i<100;i++){if((await this.request(0)).state==="stopped")return;await new Promise(r=>setTimeout(r,30));}throw Error("Synth did not stop for patch storage.");}
   async apply(preset: PhysicalPreset,withSample=true) {
     const p = physicalPresetFromUnknown(preset);
     if(!dspUsage(p).fits)throw Error("DSP budget full. Reduce the effects, Drive, Pin or modulation before loading this patch.");

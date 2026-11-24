@@ -18,7 +18,7 @@ class Transport implements MidiTransport {
   sent: number[][] = [];
   tableAudioActive=false;tableCandidate=false;samplerBytes=0;samplerReceived=0;badSamplerOffset=false;respond = true;state = 1;sampleLoop:number[]|undefined;sampleReplyLength?:number;catalogReplies?:number[][];
   modulation=defaultModulation();
-  instrument=2;samplerSource=encodeU14(0);
+  instrument=2;samplerSource=encodeU14(0);samplerSession?:number;
   async send(bytes: ArrayLike<number>) {
     this.sent.push(Array.from(bytes));
     const frame = decodePresetSyncFrame(bytes);
@@ -26,9 +26,9 @@ class Transport implements MidiTransport {
 
     if(frame.payload[1]===1){this.state=1;this.instrument=frame.payload[2];if(frame.payload.length===5)this.samplerSource=frame.payload.slice(3);}
     if(frame.payload[1]===2)this.state=0;
-    if(frame.payload[1]===63){const reply=[17,2,16,0,1,0,1,0,0,0,0,1,0,0,0,0,1,0,...(frame.payload[2]?this.samplerSource:[])];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x47,frame.transactionId,reply)))));return;}
+    if(frame.payload[1]===63){const reply=[17,2,16,0,1,0,1,0,0,0,0,1,0,0,0,0,1,0,...(frame.payload[2]?this.samplerSource:[]),...(frame.payload[2]===2&&this.samplerSession!==undefined?encodeU21(this.samplerSession):[])];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x47,frame.transactionId,reply)))));return;}
     if(frame.payload[1]===64){const reply=[17,...frame.payload.slice(2,4),4,...Array(288).fill(0)];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x48,frame.transactionId,reply)))));return;}
-    if(frame.payload[1]===69){const bytes=frame.payload[2]?frame.payload.slice(3):Array(256).fill(0);queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x4a,frame.transactionId,[17,...bytes])))));return;}
+    if(frame.payload[1]===69){const bytes=frame.payload[2]?frame.payload.slice(3,259):Array(256).fill(0);queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x4a,frame.transactionId,[17,...bytes])))));return;}
     if(frame.payload[1]>=65&&frame.payload[1]<=67){const op=frame.payload[1],n=(p:number[])=>p.reduce((x,y)=>x*128+y,0),encoded=(x:number)=>Array.from({length:5},(_,i)=>Math.floor(x/128**(4-i))%128);if(op===65){const at=5+frame.payload[3]+frame.payload[4];this.samplerBytes=n(frame.payload.slice(at,at+5));this.samplerReceived=0;}if(op===66)this.samplerReceived=frame.payload[2]===16?n(frame.payload.slice(3,8))+n(frame.payload.slice(8,10)):n(frame.payload.slice(2,7))+n(frame.payload.slice(7,9));const received=op===67?this.samplerBytes:this.samplerReceived+(this.badSamplerOffset?1:0);queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x49,frame.transactionId,[17,...encoded(received)])))));return;}
     if(frame.payload[1]===28){queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x35,frame.transactionId,[17,this.state,...payload().slice(2)])))));return;}
     if(frame.payload[1]>=46&&frame.payload[1]<=51){queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x35,frame.transactionId,[17,this.state,...payload().slice(2)])))));return;}
@@ -65,6 +65,26 @@ describe("Advanced physical editor", () => {
         [17,1,6,...encodeU14(id)],[17,63,1],[17,69,0],
       ]);
     }finally{c.close();}
+  });
+  it("attaches and edits the playing sampler without starting or stopping it", async () => {
+    const t = new Transport(), client = new PhysicalSynthClient(t);
+    t.instrument = 6;
+    t.samplerSource = encodeU14(131);
+    t.samplerSession = 8783;
+    try {
+      const live = await client.liveSamplerLoading();
+      expect(live).toMatchObject({phase: 2, source: 131, session: 8783});
+      expect(await client.playingSamplerSettings(live.session)).toHaveLength(128);
+      await client.samplerParameter(22, 45, live.session);
+      expect(t.sent.map(decodePresetSyncFrame).map(frame => frame.payload)).toEqual([
+        [17, 63, 2], [17, 69, 0, ...encodeU21(8783)], [17, 46, 22, ...encodeU21(45), ...encodeU21(8783)],
+      ]);
+      await client.stopAndWait(live.session);
+      await client.writeStoppedSamplerSettings(new Uint8Array(128), live.source);
+      const frames = t.sent.map(decodePresetSyncFrame).map(frame => frame.payload);
+      expect(frames[3]).toEqual([17, 2, ...encodeU21(8783)]);
+      expect(frames.at(-1)?.slice(-2)).toEqual(encodeU14(131));
+    } finally { client.close(); }
   });
   it('refreshes SD names without stopping the active synth',async()=>{const t=new Transport(),c=new PhysicalSynthClient(t);try{expect(await c.samplerLibrary(true,32)).toEqual([]);const frames=t.sent.map(decodePresetSyncFrame);expect(frames).toHaveLength(8);expect(frames.every(f=>f.payload[1]===64&&f.payload[4]===1)).toBe(true);expect(t.state).toBe(1);}finally{c.close();}});
   it('reads and writes a settings header while stopping only the music lease',async()=>{const t=new Transport(),c=new PhysicalSynthClient(t);try{const header=await c.samplerSettings();expect(header).toHaveLength(128);header[62]=135;const readback=await c.samplerSettings(header);expect(readback[62]).toBe(135);expect(t.sent.map(decodePresetSyncFrame).filter(f=>f.payload[1]===69).map(f=>f.payload[2])).toEqual([0,1]);expect(t.sent.map(decodePresetSyncFrame).some(f=>f.payload[1]===2)).toBe(true);}finally{c.close();}});
