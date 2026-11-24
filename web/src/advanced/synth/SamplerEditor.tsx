@@ -29,6 +29,8 @@ import {
   type SamplerInstrument,
 } from "./client.ts";
 import {SamplerLoadingStatus} from "./sampler/SamplerLoadingStatus.tsx";
+import {PianoMixPanel} from "./sampler/PianoMixPanel.tsx";
+import {decodePianoMix, encodePianoMix, pianoMixDefaults, pianoMixKeys, pianoMixParameter, type PianoMix, type PianoMixKey} from "./sampler/pianoMix.mjs";
 import { samplerDrafts, draftWorthSaving } from "./sampler/draftStorage.ts";
 import type {
   Patch,
@@ -185,6 +187,8 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
     [sourceNote, setSourceNote] = useState(60),
     [exportFolder, setExportFolder] = useState("My sounds"),
     [deviceSpace, setDeviceSpace] = useState(0),
+    [devicePiano, setDevicePiano] = useState(false),
+    [deviceMix, setDeviceMix] = useState<PianoMix>({...pianoMixDefaults}),
     [deviceSettings, setDeviceSettings] = useState(false),
     [loadedSource, setLoadedSource] = useState(-1);
   const [folders, setFolders] = useState<SamplerInstrument[]>([]),
@@ -200,6 +204,13 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
     ),
     lastSpace = useRef(0.18),
     lastDeviceSpace = useRef(0.18);
+  const pendingDeviceEffects = useRef(new Map<number,number>());
+  const deviceEffectGeneration = useRef(0);
+  const cancelDeviceEffects = () => {
+    if (effectTimer.current) clearTimeout(effectTimer.current);
+    pendingDeviceEffects.current.clear();
+    ++deviceEffectGeneration.current;
+  };
   const patchRef = useRef(patch);
   patchRef.current = patch;
   const client = useRef<PhysicalSynthClient | undefined>(undefined),
@@ -258,7 +269,7 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
   }, [patch, template, draftId, draftReady], e => setDraftError(e instanceof DOMException && e.name === "QuotaExceededError" ? "This sound is too large to autosave in the browser. Export it to keep it." : `Autosave failed: ${e instanceof Error ? e.message : e}`), 800);
   useEffect(() => {
     client.current = transport && !classic ? new PhysicalSynthClient(transport) : undefined;
-    return () => client.current?.close();
+    return () => { cancelDeviceEffects(); client.current?.close(); };
   }, [transport, classic]);
   useEffect(
     () => () => {
@@ -266,7 +277,7 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
       preview.current?.close();
       source.current?.close();
       worker.current?.terminate();
-      if (effectTimer.current) clearTimeout(effectTimer.current);
+      cancelDeviceEffects();
     },
     [],
   );
@@ -644,7 +655,7 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
     }
   }
   async function devicePlay(value = sdSource) {
-    if (effectTimer.current) clearTimeout(effectTimer.current);
+    cancelDeviceEffects();
     setPlaying(false);
     setBusy("Loading sound…");
     setError("");
@@ -652,14 +663,17 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
       await client.current!.start(6, value);
       if (value !== 1) {
         const header = await client.current!.playingSamplerSettings();
-        const savedSpace =
-          new DataView(header.buffer, header.byteOffset).getUint16(62, true) /
-          65535;
+        const view = new DataView(header.buffer, header.byteOffset, header.byteLength);
+        const savedSpace = view.getUint16(62, true) / 65535;
+        setDevicePiano(header[127] === 1);
+        setDeviceMix(decodePianoMix(view.getUint32(44, true)));
         setDeviceSpace(savedSpace);
         lastDeviceSpace.current = savedSpace > 0 ? savedSpace : 0.18;
         setDeviceSettings(true);
       } else {
         setDeviceSpace(0);
+        setDevicePiano(false);
+        setDeviceMix({...pianoMixDefaults});
         setDeviceSettings(false);
       }
       setLoadedSource(value);
@@ -671,32 +685,46 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
       setBusy("");
     }
   }
+  function queueDeviceEffect(parameter: number, value: number) {
+    const connected = client.current;
+    if (!playing || !connected) return;
+    pendingDeviceEffects.current.set(parameter, value);
+    if (effectTimer.current) clearTimeout(effectTimer.current);
+    const generation = deviceEffectGeneration.current;
+    effectTimer.current = setTimeout(() => {
+      const edits = [...pendingDeviceEffects.current];
+      pendingDeviceEffects.current.clear();
+      void (async () => {
+        for (const [id, next] of edits) {
+          if (generation !== deviceEffectGeneration.current) return;
+          await connected.samplerParameter(id, next);
+        }
+      })().catch(e => {
+        if (generation === deviceEffectGeneration.current) setError(String(e));
+      });
+    }, 30);
+  }
   const changeDeviceSpace = (amount: number) => {
     setDeviceSpace(amount);
     if (amount > 0) lastDeviceSpace.current = amount;
-    if (effectTimer.current) clearTimeout(effectTimer.current);
-    if (playing && client.current)
-      effectTimer.current = setTimeout(() => {
-        void client.current
-          ?.samplerParameter(12, Math.round(amount * 65535))
-          .catch((e) => setError(String(e)));
-      }, 30);
+    queueDeviceEffect(12, Math.round(amount * 65535));
   };
-  async function saveDeviceSpace() {
+  const changeDeviceMix = (key: PianoMixKey, level: number) => {
+    setDeviceMix(previous => ({...previous, [key]: level}));
+    queueDeviceEffect(pianoMixParameter + pianoMixKeys.indexOf(key), level);
+  };
+  async function saveDeviceEffects() {
     if (!client.current || !deviceSettings || loadedSource !== sdSource) return;
-    setBusy("Saving sound reverb…");
+    setBusy("Saving sound effects…");
     setError("");
     const resume = playing;
     try {
-      if (effectTimer.current) clearTimeout(effectTimer.current);
+      cancelDeviceEffects();
       const header = await client.current.samplerSettings();
       setPlaying(false);
-      const v = new DataView(
-        header.buffer,
-        header.byteOffset,
-        header.byteLength,
-      );
+      const v = new DataView(header.buffer, header.byteOffset, header.byteLength);
       v.setUint16(62, Math.round(deviceSpace * 65535), true);
+      if (devicePiano) v.setUint32(44, encodePianoMix(!!(v.getUint32(44, true) & 1), deviceMix), true);
       v.setUint32(36, 0, true);
       v.setUint32(36, crc32(header), true);
       await client.current.samplerSettings(header);
@@ -1086,7 +1114,7 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
             </fieldset>
           )}
 </>} sound={<>
-          <nav className="sampler-tabs sampler-sound-pages" aria-label="Sound sections">{([['voice','Envelope'],...(!classic?[['response','Touch & release']]:[]),['motion','Motion'],['room',classic?'Room':'Effects']] as [string,string][]).map(([id,label])=><button key={id} aria-pressed={soundPage===id} onClick={()=>setSoundPage(id)}>{label}</button>)}</nav>
+          <nav className="sampler-tabs sampler-sound-pages" aria-label="Sound sections">{([['voice','Envelope'],...(!classic?[['response','Touch & release'], ...(settings.pianoDamper ? [['piano','Piano']] : [])]:[]),['motion','Motion'],['room',classic?'Room':'Effects']] as [string,string][]).map(([id,label])=><button key={id} aria-pressed={(soundPage==='piano'&&!settings.pianoDamper?'response':soundPage)===id} onClick={()=>setSoundPage(id)}>{label}</button>)}</nav>
           <div className="sampler-sound-page" hidden={soundPage!=='voice'}>
             <RegionEnvelope zones={zones} index={zone ? zones.indexOf(zone) : -1} names={patch.assets.map(a => a.name ?? "Recording")} settings={settings}
             onSelect={index => { setZoneIndex(index); setSelected(zones[index].asset);if(zones[index].key!==undefined&&zones[index].key!==65535)setSelectedKey(zones[index].key!); }}
@@ -1135,7 +1163,7 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
               )}
             </fieldset>
           </div>
-          {!classic && <div className="sampler-sound-page" hidden={soundPage!=='response'}>
+          {!classic && <div className="sampler-sound-page" hidden={soundPage!=='response'&&(soundPage!=='piano'||!!settings.pianoDamper)}>
             <div className="sampler-shaping">
               {[
                 {
@@ -1203,6 +1231,22 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
                 <p className="panel-note">Saved with the sound. Recalled when HexBoard’s Follow preset setting is on.</p>
               </fieldset>
             </div>
+          </div>}
+          {!classic && !!settings.pianoDamper && <div className="sampler-sound-focus" hidden={soundPage !== 'piano'}>
+            <PianoMixPanel
+              mix={settings}
+              onChange={global}
+              onRelease={() => { gesture.current = false; }}
+              room={{
+                amount: settings.space,
+                onChange: amount => global("space", amount),
+                onToggle: () => {
+                  if (settings.space > 0) lastSpace.current = settings.space;
+                  global("space", settings.space > 0 ? 0 : lastSpace.current);
+                  gesture.current = false;
+                },
+              }}
+            />
           </div>}
           <div className="sampler-sound-focus" hidden={soundPage!=='motion'}>{zone?<MotionEditor classic={classic} value={{...patch.motion,...zone?.motion}} onEnd={()=>{gesture.current=false;}} onChange={change=>{if(!zone)return;const m=motionSettings({...patch.motion,...zone.motion,...change});edit({...patch,zones:zones.map(z=>z===zone?{...z,motion:m}:z)},!gesture.current);gesture.current=true;}} onApplyAll={()=>{const m=motionSettings({...patch.motion,...zone?.motion});edit({...patch,motion:m,zones:zones.map(z=>({...z,motion:m}))});}}/>:<p className="panel-note">Select a recording with a mapped region to edit its motion.</p>}</div>
           <div className="sampler-sound-focus" hidden={soundPage!=='room'}><fieldset><legend>Room</legend><button aria-pressed={settings.space>0} onClick={()=>{if(settings.space>0)lastSpace.current=settings.space;global('space',settings.space>0?0:lastSpace.current);gesture.current=false;}}>Room · {settings.space>0?'On':'Off'}</button>
@@ -1431,7 +1475,7 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
             <button
               disabled={!transport || !!busy}
               onClick={() => {
-                if (effectTimer.current) clearTimeout(effectTimer.current);
+                cancelDeviceEffects();
                 if (playing)
                   void client
                     .current!.stopAndWait()
@@ -1442,45 +1486,24 @@ export function SamplerEditor({ transport, target = "advanced", sound, onBack }:
               {playing ? "Stop HexBoard" : "Play on HexBoard"}
             </button>
           </div>
-          <div className="sampler-fields sampler-device-reverb">
-            <button
+          <div className="sampler-device-effects">
+            <PianoMixPanel
+              key={loadedSource}
+              mix={devicePiano ? deviceMix : undefined}
+              onChange={changeDeviceMix}
+              room={{
+                amount: deviceSpace,
+                onChange: changeDeviceSpace,
+                onToggle: () => changeDeviceSpace(deviceSpace > 0 ? 0 : lastDeviceSpace.current),
+              }}
               disabled={!playing || !!busy}
-              aria-pressed={deviceSpace > 0}
-              onClick={() =>
-                changeDeviceSpace(deviceSpace > 0 ? 0 : lastDeviceSpace.current)
-              }
-            >
-              HexBoard room reverb · {deviceSpace > 0 ? "On" : "Off"}
-            </button>
-            <label>
-              Amount
-              <input
-                aria-label="HexBoard reverb amount"
-                type="range"
-                min={0}
-                max={1}
-                step={0.01}
-                value={deviceSpace}
-                disabled={!playing || !!busy}
-                onChange={(e) => changeDeviceSpace(+e.target.value)}
-              />
-            </label>
-            <button
-              disabled={
-                !deviceSettings ||
-                loadedSource !== sdSource ||
-                !!busy ||
-                !transport
-              }
-              onClick={() => void saveDeviceSpace()}
-            >
-              Save effect to sound
+            />
+            <button type="button"
+              disabled={!deviceSettings || loadedSource !== sdSource || !!busy || !transport}
+              onClick={() => void saveDeviceEffects()}>
+              Save effects to sound
             </button>
           </div>
-          <p className="panel-note">
-            Try reverb on the sound playing from the SD card, then save it
-            to that sound.
-          </p>
           <SamplerLoadingStatus client={client} playing={playing}/>
         </fieldset>}
       </div>

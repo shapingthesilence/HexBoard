@@ -70,6 +70,10 @@ export interface Settings {
   releaseCurve?: number;
   pedalRelease?: number;
   pianoDamper?: number;
+  pianoKeyNoise?: number;
+  pianoPedalNoise?: number;
+  pianoStringRelease?: number;
+  pianoResonance?: number;
   /** Amp envelope segment bends, -1..1 (0 straight); shared Modulators curve. */
   attackShape?: number;
   decayShape?: number;

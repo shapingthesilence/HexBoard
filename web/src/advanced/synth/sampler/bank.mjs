@@ -1,3 +1,4 @@
+import {decodePianoMix} from "./pianoMix.mjs";
 import { pagedLimits, residentLimits } from "./limits.mjs";
 import {decodeMotion} from "./motion.mjs";
 import { crc32 } from "./prepare.mjs";
@@ -33,6 +34,9 @@ export function readBank(bytes, options = {}) {
     pages = u32(40),
     end = 128 + a * 48 + l * 16 + z * 48 + pages * 4;
   const streaming = (flags & 1) !== 0;
+  const descriptor = u32(44);
+  if ((descriptor & 1) !== +streaming) throw Error("Sound storage mode differs from its header.");
+  const pianoMix = decodePianoMix(descriptor);
   const limits = streaming ? pagedLimits : residentLimits;
   if (
     !a ||
@@ -153,6 +157,7 @@ export function readBank(bytes, options = {}) {
       releaseCurve: 0.25 + (u16(100) / 65535) * 3.75,
       pedalRelease: u16(102),
       pianoDamper:bytes[127],
+      ...pianoMix,
       pressureGain: u16(104) / 65535,
       attackShape: ((u16(114) << 16) >> 16) / 32767,
       decayShape: ((u16(116) << 16) >> 16) / 32767,

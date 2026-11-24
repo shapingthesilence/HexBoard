@@ -807,3 +807,12 @@
 .sampler-sample-header .sampler-workspace-heading > div { flex:1 1 200px; min-width:0; flex-direction:column; align-items:flex-start; gap:2px; }
 .sampler-sample-header .sampler-name-input { width:100%; }
 .sampler-editor .sampler-back { align-self: center; min-height: 26px; padding: 2px 9px; font-size: 11px; }
+
+/* Identical rotating controls and readouts to the Advanced wavetable stages. */
+.sampler-piano-panel { width: 100%; min-width: 0; margin: 0; }
+.sampler-piano-bypass { display: flex; flex-wrap: wrap; gap: .45rem; margin-bottom: .7rem; }
+.sampler-editor .sampler-piano-panel .sampler-piano-knobs { display: grid; grid-template-columns: repeat(auto-fit,minmax(84px,1fr)); gap: .6rem .35rem; justify-items: center; align-items: start; }
+.sampler-piano-panel .sampler-piano-control { width: auto; min-width: 0; }
+.sampler-piano-panel .sampler-piano-control > strong { font-size: .75rem; height: 1.7rem; }
+.sampler-piano-panel .sampler-piano-control output { font-size: .73rem; }
+.sampler-device-effects { display: grid; justify-items: start; gap: .65rem; margin-top: .55rem; }

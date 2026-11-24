@@ -1,3 +1,4 @@
+import {encodePianoMix, pianoMixDefaults} from "./pianoMix.mjs";
 import { pagedLimits, residentLimits } from "./limits.mjs";
 import {motionSettings,encodeMotion,pitchBound} from "./motion.mjs";
 import {playbackLimits} from './playback.mjs';
@@ -127,6 +128,7 @@ export const defaults = {
   releaseCurve: 1.5,
   pedalRelease: 150,
   pianoDamper: 0,
+  ...pianoMixDefaults,
   attackShape: 0,
   decayShape: 0,
   releaseShape: 0,
@@ -646,7 +648,7 @@ export async function preparePatch(input, onProgress = () => {}) {
   u32(20, total);
   u32(24, metadata);
   u32(40, pages);
-  u32(44, +streaming);
+  u32(44, encodePianoMix(streaming, settings));
   [
     settings.attack,
     settings.decay,
