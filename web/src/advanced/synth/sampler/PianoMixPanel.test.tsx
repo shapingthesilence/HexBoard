@@ -7,8 +7,8 @@ import {decodePianoMix, encodePianoMix, pianoMixDefaults} from "./pianoMix.mjs";
 
 test("piano levels round trip at the HBS boundary; legacy banks get quiet defaults", async () => {
   expect(decodePianoMix(1)).toEqual(pianoMixDefaults);
-  const authored = {...pianoMixDefaults, pianoKeyNoise: 0, pianoResonance: 116};
-  expect(() => encodePianoMix(true, {...authored, pianoResonance: 122})).toThrow(/mixer/);
+  const authored = {...pianoMixDefaults, pianoKeyNoise: 0, pianoResonance: 127};
+  expect(() => encodePianoMix(true, {...authored, pianoKeyNoise: 122})).toThrow(/mixer/);
   const recording = {rootMidi: 60, rate: 44100, channels: [Float32Array.from({length: 4096}, (_, n) => .2 * Math.sin(n * .04))]};
   for (const storage of ["resident","streaming"] as const) {
     const result = await preparePatch({storage, assets: [recording], settings: {pianoDamper: 1, ...authored}});

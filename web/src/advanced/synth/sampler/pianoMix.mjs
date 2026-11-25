@@ -8,6 +8,8 @@ export const pianoMixDefaults = Object.freeze({
 });
 export const pianoMixKeys = Object.freeze(Object.keys(pianoMixDefaults));
 export const pianoMixMax = 121;
+export const pianoResonanceMax = 127;
+export const pianoMixMaximum = key => key === "pianoResonance" ? pianoResonanceMax : pianoMixMax;
 export const pianoMixParameter = 22;
 
 export function decodePianoMix(descriptor) {
@@ -18,14 +20,14 @@ export function decodePianoMix(descriptor) {
   if (descriptor & 0x60000000) throw Error("Invalid piano mix descriptor.");
   return Object.fromEntries(pianoMixKeys.map((key, i) => {
     const value = descriptor >>> (1 + 7 * i) & 127;
-    if (value > pianoMixMax) throw Error("Invalid piano mixer level.");
+    if (value > pianoMixMaximum(key)) throw Error("Invalid piano mixer level.");
     return [key, value];
   }));
 }
 
 export function encodePianoMix(streaming, mix) {
   const values = pianoMixKeys.map(key => mix[key] ?? pianoMixDefaults[key]);
-  if (values.some(v => !Number.isInteger(v) || v < 0 || v > pianoMixMax))
+  if (values.some((v, i) => !Number.isInteger(v) || v < 0 || v > pianoMixMaximum(pianoMixKeys[i])))
     throw Error("Invalid piano mixer level.");
   if (values.every((v, i) => v === pianoMixDefaults[pianoMixKeys[i]])) return +streaming;
   return values.reduce((word, value, i) => word | value << (1 + 7 * i), 0x80000000 | +streaming) >>> 0;
@@ -33,6 +35,6 @@ export function encodePianoMix(streaming, mix) {
 
 export function pianoMixText(value) {
   if (!value) return "Off";
-  const db = (value - 97) / 2;
+  const db = value <= pianoMixMax ? (value - 97) / 2 : 12 + 4 * (value - pianoMixMax);
   return `${db > 0 ? "+" : ""}${db.toFixed(1)} dB`;
 }
