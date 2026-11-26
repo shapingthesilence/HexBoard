@@ -32,7 +32,7 @@ import { StringAnimation } from "./StringAnimation.tsx";
 import { StringResponseView, driveGlyphs } from "./StringResponseView.tsx";
 import { SampleEditor } from "./SampleEditor.tsx";
 import { ModSourceEditor, modSourceHelp } from "./ModSourceEditor.tsx";
-import { modulationRouteCount, modulationSeconds, modulationRate, type FxRack, type SampleExciter,  initialPreset, physicalParameters, physicalSources, physicalPresetFromUnknown, type PhysicalPreset } from "./schema.ts";
+import { modulationRouteCount, modulationSeconds, modulationRate, type FxRack, type SampleExciter, bowKind, exciterValues, initialPreset, physicalParameters, physicalSources, physicalPresetFromUnknown, type PhysicalPreset } from "./schema.ts";
 import "./PhysicalSynthEditor.css";
 import "./SynthIdentity.css";
 import {targetingEscape, sourceClickTool} from "./modulationTargeting.ts";
@@ -42,6 +42,8 @@ import {FxRackEditor} from "./FxRackEditor.tsx";
 
 const previewParameterIds = physicalParameters.map((_, id) => id);
 const draftKey = "hexboard.physical.draft.v1";
+type ExciterMode="strike"|"natural"|"clean"|"sample";
+const exciterModes:[ExciterMode,string][]=[["strike","Strike"],["natural","Natural bow"],["clean","Clean bow"],["sample","Sample"]];
 function readDraft(): PhysicalPreset | undefined {
   try { const raw = window.localStorage.getItem(draftKey); return raw ? physicalPresetFromUnknown(JSON.parse(raw)) : undefined; } catch { return undefined; }
 }
@@ -190,11 +192,12 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
     try{if(client&&ready){if(preview){await client.parameter(21,0);await client.setSample(sample);await client.previewSample();}else{edits.current.clear();clearTimeout(fxTimer.current);setFxWaiting(false);await client.load({...preset,sample,parameters:preset.parameters.map((v,i)=>i===21?0:v)});}setDevice(await client.read());setFailed(false);}else if(preview)throw Error("Connect Advanced to preview through the string.");}
     catch(error){fail(error);throw error;}finally{setLoading(false);}
   };
-  const chooseExciter=(mode:number)=>{
-    if(mode===2&&!preset.sample.frames.length){setSampleEditor(true);return;}
-    const candidate={...parameterPatch(preset,21,mode===1?65535:0),sample:{...preset.sample,enabled:mode===2}};if(!admit(candidate))return;
-    retainedDraft.current=true;const sample={...preset.sample,enabled:mode===2};setPreset(p=>({...p,sample,parameters:p.parameters.map((v,i)=>i===21?(mode===1?65535:0):v)}));
-    queue("p21",()=>client!.parameter(21,mode===1?65535:0));
+  const chooseExciter=(mode:ExciterMode)=>{
+    if(mode==="sample"&&!preset.sample.frames.length){setSampleEditor(true);return;}
+    const value=mode==="sample"?0:exciterValues[mode],sample={...preset.sample,enabled:mode==="sample"};
+    if(!admit({...parameterPatch(preset,21,value),sample}))return;
+    retainedDraft.current=true;setPreset(p=>({...p,sample,parameters:p.parameters.map((v,i)=>i===21?value:v)}));
+    queue("p21",()=>client!.parameter(21,value));
     queue("sample",()=>client!.setSample(sample));
   };
   const setBody=(index:number,value:number)=>{
@@ -230,7 +233,8 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
   const activity=failed?undefined:progress??(loading?{label:operationLabel}:device?.state==="loading"?{label:"Starting synth…"}:undefined);
   const busy = loading || (!failed&&device?.state === "loading") || Boolean(progress);
   const stringGradient = `string-gradient-${useId().replace(/:/g, "")}`;
-  const bowMode=preset.parameters[21]>32767;
+  const bow=bowKind(preset.parameters[21]),bowMode=bow!=="strike";
+  const exciter:ExciterMode=bowMode?bow:preset.sample.enabled?"sample":"strike";
   const showBowPad=bowMode;
   const marbleMode = Math.round(preset.parameters[8]*4/65535)===4;
   const position = (id: number) => 30 + (0.05 + 0.9 * preset.parameters[id] / 65535) * 540;
@@ -363,7 +367,7 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
     <div className="physical-grid compact-shaping"><fieldset className={`material-panel exciter-panel${preset.sample.enabled&&!bowMode?" sample-exciter":""}`} disabled={busy}><legend>Exciter</legend>
 
 
-        <div className="material-body"><div className="material-surface"><div className="exciter-mode" role="radiogroup" aria-label="Excitation mode">{["Strike","Bow","Sample"].map((label,i)=><label key={label} className={(bowMode?1:preset.sample.enabled?2:0)===i?"selected":""}><input type="radio" name="physical-exciter-mode" value={i} checked={(bowMode?1:preset.sample.enabled?2:0)===i} onChange={()=>chooseExciter(i)} />{label}</label>)}</div>
+        <div className="material-body"><div className="material-surface"><select className="exciter-mode" aria-label="Exciter" value={exciter} onChange={e=>chooseExciter(e.target.value as ExciterMode)}>{exciterModes.map(([mode,label])=><option key={mode} value={mode}>{label}</option>)}</select>
         {(!preset.sample.enabled||bowMode)&&<div className="material-pad" role="slider" tabIndex={busy ? -1 : 0} aria-label={showBowPad?"Bow character":"Striker material"} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(preset.parameters[showBowPad?23:2]/65535*100)} aria-valuetext={showBowPad?`${Math.round(preset.parameters[23]/65535*100)} percent speed, ${Math.round(preset.parameters[22]/65535*100)} percent force`:`${Math.round(preset.parameters[2]/65535*100)} percent hardness, ${Math.round(preset.parameters[12]/65535*100)} percent resonance`}
           onPointerDown={e=>{if(!busy){e.currentTarget.setPointerCapture(e.pointerId);strikerMove(e);}}}
           onPointerMove={e=>{if(!busy && e.currentTarget.hasPointerCapture(e.pointerId))strikerMove(e);}}
@@ -376,7 +380,7 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
         </div>{(!preset.sample.enabled||bowMode)&&<div className="physical-grid mini-controls">{(showBowPad?[23,22]:[2,12]).map(control)}</div>}</div>
 
 
-      <div className="sample-panel-controls">{preset.sample.enabled&&!bowMode&&<>{control(32)}</>}</div><div className="sample-access"><button type="button" disabled={busy} onClick={()=>setSampleEditor(true)}>{preset.sample.frames.length?"Edit sample…":"Import sample…"}</button><span>{preset.sample.frames.length?`${preset.sample.name} · ${Math.round(preset.sample.frames.length/16)} ms`: "Recorded impacts & textures"}</span></div>      {(bowMode||preset.sample.enabled)&&<p className="panel-note">{bowMode?"Pressure controls force; speed moves from creaking drag through singing to scrape.":"Direct blends the recording with the string."}</p>}
+      <div className="sample-panel-controls">{preset.sample.enabled&&!bowMode&&<>{control(32)}</>}</div><div className="sample-access"><button type="button" disabled={busy} onClick={()=>setSampleEditor(true)}>{preset.sample.frames.length?"Edit sample…":"Import sample…"}</button><span>{preset.sample.frames.length?`${preset.sample.name} · ${Math.round(preset.sample.frames.length/16)} ms`: "Recorded impacts & textures"}</span></div>      {(bowMode||preset.sample.enabled)&&<p className="panel-note">{bow==="natural"?"Pressure moves from airy to raucous; speed sets loudness, and a slow bow bites harder.":bowMode?"Pressure controls force; speed moves from creaking drag through singing to scrape.":"Direct blends the recording with the string."}</p>}
 </fieldset>
       <fieldset className="material-panel resonator-panel" disabled={busy}><legend>Resonator</legend>
         <div className="material-body"><div className="material-surface"><div className="material-context" aria-hidden="true"/>

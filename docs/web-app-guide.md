@@ -72,7 +72,12 @@ string Stiffness and Loss. Higher stiffness gives more stretched partials.
 On desktop, Exciter and Resonator sit beside the string, with Contact below
 both pads and String response below the string. Body EQ stays in the FX rack;
 its Intensity and Focus use compact sliders. The pads are centered, with the
-Exciter and Resonator knobs below them. Active controls stay visible. On smaller
+Exciter and Resonator knobs below them. Active controls stay visible. The
+Exciter dropdown chooses **Strike**, **Natural bow**, **Clean bow** or
+**Sample**. Natural bow is a stick-slip bow: pressure moves it from airy to
+raucous and speed sets loudness. Clean bow is the original, smoother bow that
+earlier bowed presets keep. Changing the exciter briefly silences sounding
+notes while Advanced loads that exciter's code. On smaller
 monitors, the two pads lead into full-width String workspace, String response
 and Contact rows; the pads stack on narrow phones.
 Drag **Strike/Bow**, **Pickup L**, **Pickup R**, the pin or marble drop center

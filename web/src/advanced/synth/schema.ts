@@ -25,7 +25,7 @@ export const physicalParameters = [
   { id: 16, name: "Contact strength", describe: (v: number) => `${Math.round(v / 65535 * 100)}%`, behavior: "Stronger impacts" },
   { id: 17, name: "Marbles", describe: (v: number) => v === 0 ? "Off" : `${(.5 + 29.5 * v / 65535+30*Math.pow(Math.max(0,(v/65535-.8)/.2),2)).toFixed(1)}/s average`, behavior: "More marbles" },
   { id: 18, name: "Drop center", describe: (v: number) => `${Math.round(5+90*v/65535)}% along string`, behavior: "Drops toward bridge" },
-  { id: 19, name: "Drop spread", describe: (v: number) => `${Math.round(90*v/65535)}% of string`, behavior: "Wider drop region" } ,{ id: 20, name: "Timing randomness", describe: (v: number) => `${Math.round(v / 65535 * 100)}%`, behavior: "Less regular timing" } ,{id:21,name:"Excitation mode",describe:(v:number)=>v>32767?"Bow":"Strike",behavior:""}
+  { id: 19, name: "Drop spread", describe: (v: number) => `${Math.round(90*v/65535)}% of string`, behavior: "Wider drop region" } ,{ id: 20, name: "Timing randomness", describe: (v: number) => `${Math.round(v / 65535 * 100)}%`, behavior: "Less regular timing" } ,{id:21,name:"Excitation mode",describe:(v:number)=>exciterNames[bowKind(v)],behavior:""}
  ,{id:22,name:"Bow force",describe:(v:number)=>`${Math.round(v/65535*100)}%`,behavior:"More bow pressure"}
  ,{id:23,name:"Bow speed",describe:(v:number)=>`${Math.round(v/65535*100)}%`,behavior:"Faster bow"},
   { id: 24, name: "Marble hardness", describe: (v: number) => `${Math.round(v / 65535 * 100)}%`, behavior: "Harder marble impacts" },
@@ -115,6 +115,13 @@ export function validateModulation(value:unknown):ModulationSources {
 }
 export interface SampleLoop {mode:0|1|2;start:number;end:number;crossfade:number}
 export const defaultSampleLoop=():SampleLoop=>({mode:0,start:0,end:0,crossfade:0});
+// Parameter 21 selects the exciter. The original bow keeps the value earlier
+// presets store (Clean bow); the stick-slip bow sits between (Natural bow).
+// Firmware and DSP budget treat any value above 32767 as bowed.
+export const exciterValues={strike:0,natural:32768,clean:65535} as const;
+export type BowKind="strike"|"natural"|"clean";
+export const bowKind=(v:number):BowKind=>v>49151?"clean":v>32767?"natural":"strike";
+const exciterNames:Record<BowKind,string>={strike:"Strike",natural:"Natural bow",clean:"Clean bow"};
 export interface SampleExciter {loop?:SampleLoop;enabled:boolean;gain:number;direct:number;name:string;frames:number[]}
 export const defaultSample=():SampleExciter=>({enabled:false,gain:32768,direct:65535,loop:defaultSampleLoop(),name:"",frames:[]});
 export function validateSample(value:unknown):SampleExciter{
