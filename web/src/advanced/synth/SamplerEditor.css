@@ -810,7 +810,6 @@
 
 /* Identical rotating controls and readouts to the Advanced wavetable stages. */
 .sampler-piano-panel { width: 100%; min-width: 0; margin: 0; }
-.sampler-piano-bypass { display: flex; flex-wrap: wrap; gap: .45rem; margin-bottom: .7rem; }
 .sampler-editor .sampler-piano-panel .sampler-piano-knobs { display: grid; grid-template-columns: repeat(auto-fit,minmax(84px,1fr)); gap: .6rem .35rem; justify-items: center; align-items: start; }
 .sampler-piano-panel .sampler-piano-control { width: auto; min-width: 0; }
 .sampler-piano-panel .sampler-piano-control > strong { font-size: .75rem; height: 1.7rem; }
@@ -822,3 +821,75 @@
 .sampler-live-output > summary { width: fit-content; margin-bottom: .35rem; cursor: pointer; color: var(--text); font-weight: 600; }
 .sampler-live-actions { justify-content: flex-start; }
 .sampler-live-actions:empty { display: none; }
+
+/* Piano mix: a side-section diagram linked to one fader strip per source. */
+.piano-mix { display: grid; gap: .6rem; }
+.piano-diagram { display: block; width: 100%; max-height: 240px; overflow: visible; font-size: 13px; user-select: none; }
+.piano-diagram text { fill: var(--text-soft); font-weight: 600; letter-spacing: .01em; }
+.piano-case rect { fill: color-mix(in srgb, var(--surface-muted) 80%, transparent); stroke: var(--border-strong); stroke-width: 1.5; }
+.piano-case path, .piano-struck path, .piano-part path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.piano-soundboard { stroke: color-mix(in srgb, var(--sampler-2) 45%, var(--border-strong)); stroke-width: 4; }
+.piano-keybed, .piano-legs { stroke: var(--border-strong); stroke-width: 3; }
+.piano-string { stroke: var(--text-soft); stroke-width: 1.6; }
+.piano-pin { fill: var(--text-soft); }
+.piano-hammer-shank { stroke: var(--border-strong); stroke-width: 3; }
+.piano-hammer { fill: color-mix(in srgb, var(--text) 18%, var(--surface)); stroke: var(--border-strong); }
+.piano-part { --tone: var(--text-soft); cursor: pointer; outline: none; }
+.piano-part[data-part="pianoKeyNoise"] { --tone: var(--sampler-2); }
+.piano-part[data-part="pianoPedalNoise"] { --tone: var(--wavetable-1); }
+.piano-part[data-part="pianoStringRelease"] { --tone: var(--strings-1); }
+.piano-part[data-part="pianoResonance"] { --tone: var(--sampler-1); }
+.piano-part[data-part="room"] { --tone: var(--brand); }
+.piano-glow { fill: var(--tone); opacity: calc(var(--glow) * .4); filter: url(#piano-glow); transition: opacity .18s; }
+.piano-hit { fill: transparent; }
+.piano-part text { fill: color-mix(in srgb, var(--tone) calc(45% + var(--glow) * 55%), var(--text-soft)); transition: fill .18s; }
+.piano-part.is-off text { fill: var(--text-soft); opacity: .55; text-decoration: line-through; }
+.piano-part.is-active text, .piano-part:hover text { fill: var(--tone); text-decoration: underline; text-underline-offset: 3px; }
+.piano-part.is-active .piano-glow, .piano-part:hover .piano-glow { opacity: calc(.15 + var(--glow) * .35); }
+.piano-key { fill: var(--surface); stroke: color-mix(in srgb, var(--tone) calc(var(--glow) * 100%), var(--border-strong)); stroke-width: 1.6; }
+.piano-balance { fill: var(--border-strong); }
+.piano-damper { fill: color-mix(in srgb, var(--tone) calc(var(--glow) * 70%), var(--surface)); stroke: var(--border-strong); }
+.piano-damper-wire, .piano-lyre { stroke: var(--border-strong); stroke-width: 2.5; }
+.piano-trap { stroke: color-mix(in srgb, var(--tone) calc(var(--glow) * 100%), var(--border-strong)); stroke-width: 2; stroke-dasharray: 3 4; }
+.piano-pedal { fill: color-mix(in srgb, var(--tone) calc(var(--glow) * 80%), var(--surface)); stroke: var(--border-strong); }
+.piano-bridge { fill: color-mix(in srgb, var(--sampler-2) 40%, var(--surface)) !important; stroke: var(--border-strong) !important; }
+.piano-string.is-sympathetic { stroke: color-mix(in srgb, var(--tone) calc(30% + var(--glow) * 70%), var(--text-soft)); stroke-width: calc(1.2px + var(--glow) * 1.4px); transform-box: fill-box; transform-origin: center; }
+.piano-part.is-off .piano-string.is-sympathetic { stroke: var(--border-strong); stroke-dasharray: 2 4; }
+.piano-wave { stroke: var(--tone); stroke-width: 3; transition: opacity .18s; }
+.piano-diagram.is-boosted .piano-part[data-part="pianoResonance"] text { fill: var(--sampler-1); }
+.piano-diagram.is-solo .piano-part:not([data-part="pianoResonance"]):not([data-part="room"]), .piano-diagram.is-solo .piano-struck { opacity: .22; }
+.piano-diagram.is-solo .piano-part[data-part="pianoResonance"] .piano-glow { opacity: calc(.2 + var(--glow) * .35); }
+.piano-solo-tag { fill: var(--sampler-1) !important; font-size: 12px; text-transform: uppercase; letter-spacing: .12em !important; }
+@media (prefers-reduced-motion: no-preference) {
+  .piano-part:not(.is-off) .piano-string.is-sympathetic { animation: piano-string var(--period) ease-in-out infinite; }
+}
+@keyframes piano-string { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(-1); } }
+
+.piano-strips { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: .5rem; }
+.piano-strip { --fader: var(--brand); display: grid; justify-items: center; align-content: start; gap: .35rem; padding: .55rem .35rem .5rem; border: 1px solid var(--border); border-radius: 10px; background: color-mix(in srgb, var(--surface) 70%, transparent); transition: border-color .15s, opacity .15s, background .15s; }
+.piano-strip > strong { font-size: .72rem; color: var(--text); white-space: nowrap; }
+.piano-strip > output { font-size: .74rem; font-variant-numeric: tabular-nums; color: var(--text); min-height: 1.1em; }
+.piano-strip > output.is-audition { color: var(--sampler-1); font-weight: 700; }
+.piano-strip.is-active, .piano-strip:focus-within { border-color: var(--fader); background: color-mix(in srgb, var(--fader) 8%, var(--surface)); }
+.piano-strip.is-off > strong, .piano-strip.is-off > output { color: var(--text-soft); }
+.piano-strip.is-silent { opacity: .35; filter: saturate(.3); }
+.piano-strip-buttons { display: flex; flex-wrap: wrap; justify-content: center; gap: .25rem; }
+.piano-mix .piano-strip-buttons button { min-height: 24px; padding: 1px 8px; font-size: .7rem; border-radius: 999px; }
+.piano-mix .piano-strip-buttons button[aria-pressed="true"] { border-color: var(--fader); background: color-mix(in srgb, var(--fader) 22%, var(--surface)); color: var(--text); }
+.piano-mix .piano-strip-buttons .piano-strip-solo[aria-pressed="true"] { background: var(--sampler-1); border-color: var(--sampler-1); color: #fff; }
+.piano-mix .piano-strip-buttons .piano-strip-boost[aria-pressed="true"] { border-color: var(--sampler-1); background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--sampler-1) 40%, var(--surface)) 0 5px, var(--surface) 5px 10px); font-weight: 700; }
+.piano-solo-note { margin: 0; padding: .45rem .65rem; border-radius: 8px; border-left: 3px solid var(--sampler-1); background: color-mix(in srgb, var(--sampler-1) 12%, var(--surface)); color: var(--text); font-size: .78rem; }
+
+.mix-fader { --level-h: 150px; position: relative; display: grid; grid-template-columns: 26px 22px; align-items: stretch; height: var(--level-h); padding: 6px 0; cursor: ns-resize; touch-action: none; outline: none; }
+.mix-fader[aria-disabled="true"] { cursor: default; opacity: .55; }
+.mix-fader-scale { position: relative; }
+.mix-fader-scale span { position: absolute; right: 4px; transform: translateY(50%); font-size: 9px; line-height: 1; color: var(--text-soft); font-variant-numeric: tabular-nums; }
+.mix-fader-track { position: relative; justify-self: center; width: 6px; border-radius: 3px; background: var(--surface-muted); box-shadow: inset 0 0 0 1px var(--border); }
+.mix-fader-track > i { position: absolute; left: -5px; right: -5px; height: 1px; background: var(--border-strong); opacity: .6; }
+.mix-fader-track > i.is-unity { left: -8px; right: -8px; height: 2px; background: var(--text-soft); opacity: .9; }
+.mix-fader-zone { position: absolute; top: 0; left: -3px; right: -3px; border-radius: 3px; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--sampler-1) 55%, transparent) 0 4px, transparent 4px 8px); }
+.mix-fader-fill { position: absolute; bottom: 0; left: 0; right: 0; border-radius: 3px; background: linear-gradient(to top, color-mix(in srgb, var(--fader) 40%, transparent), var(--fader)); }
+.mix-fader-cap { position: absolute; left: 50%; width: 30px; height: 14px; transform: translate(-50%, 50%); border-radius: 4px; border: 1px solid var(--border-strong); background: linear-gradient(var(--surface-raised), var(--surface-muted)); box-shadow: var(--shadow-sm); transition: box-shadow .12s; }
+.mix-fader-cap::after { content: ""; position: absolute; left: 4px; right: 4px; top: 50%; height: 2px; margin-top: -1px; border-radius: 1px; background: var(--fader); }
+.mix-fader:focus-visible .mix-fader-cap, .mix-fader:hover .mix-fader-cap { box-shadow: 0 0 0 3px color-mix(in srgb, var(--fader) 35%, transparent), var(--shadow-sm); }
+@media (max-width: 520px) { .piano-strips { grid-template-columns: repeat(3, minmax(0, 1fr)); } .mix-fader { --level-h: 120px; } .piano-diagram text { font-size: 18px; } }
