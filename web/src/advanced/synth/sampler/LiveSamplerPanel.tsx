@@ -2,7 +2,7 @@ import {useEffect, useRef, useState, type RefObject} from 'react';
 import type {PhysicalSynthClient, SamplerLoadingState} from '../client.ts';
 import type {MidiTransport} from '../../../midi/types.ts';
 import {PianoMixPanel, SamplerMixKnob} from './PianoMixPanel.tsx';
-import {pianoMixDefaults, pianoMixKeys, pianoMixParameter} from './pianoMix.mjs';
+import {pianoMixDefaults, pianoMixKeys, pianoMixParameter, pianoResonanceSoloParameter} from './pianoMix.mjs';
 import {samplerLoadingLabel} from './loading.ts';
 import {mergeLegacySamplerEdits, outputEffects, readLiveSettings, roomAmount, sameSamplerSession} from './liveSettings.ts';
 
@@ -106,14 +106,34 @@ function LiveControls({client, loading, settings, disabled, onSaving, onSaved}: 
   const sending = useRef<Promise<void> | undefined>(undefined);
   const active = useRef(true);
   const previousRoom = useRef(words.get(roomAmount) || Math.round(.18 * 65535));
+  const [solo, setSolo] = useState(false);
+  const soloing = useRef(false);
   useEffect(() => {
     active.current = true;
     return () => {
       active.current = false;
       clearTimeout(timer.current);
       pending.current.clear();
+      // The audition is never saved. Leave the piano audible when this panel goes.
+      if (soloing.current) void client.samplerParameter(pianoResonanceSoloParameter, 0, loading.session).catch(() => {});
     };
-  }, []);
+  }, [client, loading.session]);
+
+  async function toggleSolo() {
+    const next = !soloing.current;
+    soloing.current = next;
+    setSolo(next);
+    try {
+      await client.samplerParameter(pianoResonanceSoloParameter, +next, loading.session);
+      if (active.current) setFeedback({text: '', error: false});
+    } catch (error) {
+      soloing.current = !next;
+      if (active.current) {
+        setSolo(!next);
+        setFeedback({text: error instanceof Error ? error.message : String(error), error: true});
+      }
+    }
+  }
 
   function flush() {
     clearTimeout(timer.current);
@@ -153,6 +173,9 @@ function LiveControls({client, loading, settings, disabled, onSaving, onSaved}: 
     const source = loading.source;
     if (source === undefined) return;
     onSaving(true);
+    // Restarting the engine clears the audition on HexBoard.
+    soloing.current = false;
+    setSolo(false);
     setFeedback({text: 'Saving settings…', error: false});
     let stopped = false;
     try {
@@ -186,6 +209,7 @@ function LiveControls({client, loading, settings, disabled, onSaving, onSaved}: 
   pianoMixKeys.forEach((key, index) => { mix[key] = words.get(pianoMixParameter + index) ?? mix[key]; });
   return <>
     <PianoMixPanel mix={settings.piano ? mix : undefined} disabled={disabled}
+      solo={settings.piano ? {active: solo, onToggle: () => void toggleSolo()} : undefined}
       onChange={(key, value) => change(pianoMixParameter + pianoMixKeys.indexOf(key), value)}
       room={{
         amount: amount / 65535,

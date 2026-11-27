@@ -33,8 +33,16 @@ export function encodePianoMix(streaming, mix) {
   return values.reduce((word, value, i) => word | value << (1 + 7 * i), 0x80000000 | +streaming) >>> 0;
 }
 
+// Live-only firmware audition: 1 hears the sympathetic strings without the
+// dry piano. It is never stored with the sound.
+export const pianoResonanceSoloParameter = 26;
+
+export function pianoMixDb(value) {
+  return value <= pianoMixMax ? (value - 97) / 2 : 12 + 4 * (value - pianoMixMax);
+}
+
 export function pianoMixText(value) {
   if (!value) return "Off";
-  const db = value <= pianoMixMax ? (value - 97) / 2 : 12 + 4 * (value - pianoMixMax);
+  const db = pianoMixDb(value);
   return `${db > 0 ? "+" : ""}${db.toFixed(1)} dB`;
 }

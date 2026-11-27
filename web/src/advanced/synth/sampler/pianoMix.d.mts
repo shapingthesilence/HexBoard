@@ -8,4 +8,6 @@ export function pianoMixMaximum(key: PianoMixKey): number;
 export const pianoMixParameter: number;
 export function decodePianoMix(descriptor: number): PianoMix;
 export function encodePianoMix(streaming: boolean, mix: Partial<PianoMix>): number;
+export const pianoResonanceSoloParameter: number;
+export function pianoMixDb(value: number): number;
 export function pianoMixText(value: number): string;
